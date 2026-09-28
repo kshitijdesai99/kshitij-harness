@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -51,8 +50,10 @@ func Bash(c config.Config) Tool {
 				return "", fmt.Errorf("user said no")
 			}
 			out, err := run(ctx, append(argv, in.Command), timeout, c.OutputCap)
+			// The error is the same for our sandbox and for macOS privacy, so name both.
 			if c.Sandbox && strings.Contains(out, "Operation not permitted") {
-				out += "\n(kh sandbox blocks writes outside the project. Tell the user to rerun with -nosandbox or add the dir to writable in ~/.kh/config.json.)"
+				out += "\n(kh: if this was a write outside the project, kh's sandbox blocked it; the user can rerun with -nosandbox or add the dir to writable in ~/.kh/config.json. " +
+					"If it was a read, macOS privacy settings are blocking this folder for the user's terminal app.)"
 			}
 			return out, err
 		},
@@ -75,6 +76,10 @@ func run(ctx context.Context, argv []string, timeout time.Duration, outputCap in
 	}
 	if err != nil {
 		s += "\n" + err.Error()
+	}
+	// Our timeout, not the user's Ctrl-C: tell the model so it retries smaller.
+	if ctx.Err() == context.DeadlineExceeded {
+		s += fmt.Sprintf("\n(kh: timed out after %v and was killed. Try a narrower command.)", timeout)
 	}
 	return s, nil // a failing command is information for the model, not a tool error
 }
@@ -131,6 +136,6 @@ func ask() bool {
 	askMu.Lock()
 	defer askMu.Unlock()
 	fmt.Fprint(os.Stderr, "  run it? [y/N] ")
-	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	line, _ := In.ReadString('\n')
 	return strings.TrimSpace(strings.ToLower(line)) == "y"
 }

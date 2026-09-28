@@ -69,3 +69,12 @@ func TestEdit(t *testing.T) {
 		t.Error("path outside project should fail")
 	}
 }
+
+func TestTimeoutTellsModel(t *testing.T) {
+	cfg := config.Defaults
+	cfg.Yes, cfg.TimeoutSec = true, 1
+	out, _ := bash(t, cfg, "sleep 5")
+	if !strings.Contains(out, "timed out after 1s") {
+		t.Errorf("model not told about timeout: %q", out)
+	}
+}

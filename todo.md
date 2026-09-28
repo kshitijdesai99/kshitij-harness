@@ -10,9 +10,11 @@ Rules: stdlib first, one file per job, comments say why, nothing extra. Design i
 - [x] 3. Repo map: files + Go symbols in the cached system prompt.
 - [x] 4. Codex: device-code login, refresh with lock, Responses streaming.
 - [x] 5. Sandbox: macOS `sandbox-exec` around `bash`; `-nosandbox` and `writable` to allow more.
+- [x] 6. Chat mode and resumable sessions (`-r`, `-s`).
 
 ## Later, if needed
 
+- `kh sessions` to list saved sessions with their first message
 - Linux sandbox (Landlock or bubblewrap)
 - Repo map symbols for non-Go files (tree-sitter or ctags)
 - Browser PKCE login for Codex (`localhost:1455`)

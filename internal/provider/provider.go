@@ -27,4 +27,7 @@ type Provider interface {
 	// streams the reply to stdout, and returns the next tool calls.
 	// No calls means the model is done.
 	Step(ctx context.Context, user string, results []Result) ([]Call, error)
+	// Save and Load the history, in the provider's own format, for resuming.
+	Save() ([]byte, error)
+	Load([]byte) error
 }

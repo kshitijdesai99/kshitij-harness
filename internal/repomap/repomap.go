@@ -18,7 +18,7 @@ func Build(dir string, maxBytes int) string {
 		return ""
 	}
 	var b strings.Builder
-	for _, f := range files(dir) {
+	for _, f := range files(dir, maxBytes) {
 		line := f
 		if strings.HasSuffix(f, ".go") {
 			if syms := goSymbols(filepath.Join(dir, f)); syms != "" {
@@ -35,7 +35,9 @@ func Build(dir string, maxBytes int) string {
 }
 
 // files prefers git: it is fast and already skips ignored files.
-func files(dir string) []string {
+// The walk fallback stops once the paths alone fill maxBytes, so a huge
+// non-repo dir (like ~/Documents) doesn't delay startup.
+func files(dir string, maxBytes int) []string {
 	// Tracked plus new, not-ignored files, so files made this session show up.
 	cmd := exec.Command("git", "ls-files", "--cached", "--others", "--exclude-standard")
 	cmd.Dir = dir
@@ -44,9 +46,13 @@ func files(dir string) []string {
 		return strings.Fields(string(out))
 	}
 	var list []string
+	size := 0
 	filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
+		}
+		if size > maxBytes {
+			return fs.SkipAll
 		}
 		name := d.Name()
 		if d.IsDir() && p != dir && (strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor") {
@@ -55,6 +61,7 @@ func files(dir string) []string {
 		if !d.IsDir() {
 			rel, _ := filepath.Rel(dir, p)
 			list = append(list, rel)
+			size += len(rel) + 1
 		}
 		return nil
 	})

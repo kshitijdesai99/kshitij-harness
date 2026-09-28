@@ -46,7 +46,7 @@ func NewCodex(c config.Config, ts []tools.Tool) *Codex {
 	return x
 }
 
-func (c *Codex) Step(ctx context.Context, user string, results []Result) ([]Call, error) {
+func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls []Call, err error) {
 	if user != "" {
 		c.input = append(c.input, map[string]any{
 			"type": "message", "role": "user",
@@ -56,6 +56,14 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) ([]Call
 	for _, r := range results {
 		c.input = append(c.input, map[string]any{"type": "function_call_output", "call_id": r.ID, "output": r.Output})
 	}
+	// On failure, drop this reply's partial items: a function_call with no
+	// output would make every later request in the session fail.
+	n := len(c.input)
+	defer func() {
+		if err != nil {
+			c.input = c.input[:n]
+		}
+	}()
 
 	body, _ := json.Marshal(map[string]any{
 		"model":               c.model,
@@ -94,7 +102,6 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) ([]Call
 		return nil, fmt.Errorf("codex: status %d: %s", resp.StatusCode, b)
 	}
 
-	var calls []Call
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(nil, 16<<20) // reasoning items can be large
 	for sc.Scan() {
@@ -140,4 +147,21 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) ([]Call
 	}
 	fmt.Println()
 	return calls, sc.Err()
+}
+
+type codexState struct {
+	Session string           `json:"session"`
+	Input   []map[string]any `json:"input"`
+}
+
+func (c *Codex) Save() ([]byte, error) { return json.Marshal(codexState{c.session, c.input}) }
+
+// Load restores history and the cache key, so a resumed chat can still hit the cache.
+func (c *Codex) Load(b []byte) error {
+	var s codexState
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	c.session, c.input = s.Session, s.Input
+	return nil
 }

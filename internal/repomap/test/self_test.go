@@ -1,6 +1,8 @@
 package test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -27,5 +29,19 @@ func TestSelf(t *testing.T) {
 	}
 	if repomap.Build("../../..", 0) != "" {
 		t.Error("map_cap 0 should turn the map off")
+	}
+}
+
+// Outside git the map walks the dir, and still stops at the cap.
+func TestWalkOutsideGit(t *testing.T) {
+	d := t.TempDir()
+	for _, n := range []string{"a.txt", "b.txt", "c.txt"} {
+		os.WriteFile(filepath.Join(d, n), nil, 0o644)
+	}
+	if m := repomap.Build(d, 1000); m != "a.txt\nb.txt\nc.txt\n" {
+		t.Errorf("got %q", m)
+	}
+	if m := repomap.Build(d, 8); strings.Count(m, ".txt") > 1 {
+		t.Errorf("walk ignored cap: %q", m)
 	}
 }

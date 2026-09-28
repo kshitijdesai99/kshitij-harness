@@ -4,6 +4,7 @@
 cmd/kh/main.go            loads config, applies flags, builds tool list
 internal/config/          defaults + ~/.kh/config.json
 internal/repomap/         files + top-level symbols for the system prompt
+internal/session/         save/load chats in ~/.kh/sessions
 internal/agent/loop.go    the loop
 internal/provider/        Provider interface, codex.go
 internal/tools/           Tool struct, bash.go, edit.go, test/
@@ -12,7 +13,7 @@ internal/auth/codex.go    ChatGPT device-code login + token refresh
 
 ## Config
 
-Built-in defaults, then `~/.kh/config.json` (only the fields it sets), then flags (`-model`, `-effort`, `-y`, `-nosandbox`). A missing file is fine.
+Built-in defaults, then `~/.kh/config.json` (only the fields it sets), then flags (`-model`, `-effort`, `-y`, `-nosandbox`; `-r` and `-s` pick a session). A missing file is fine.
 
 | Key | Default |
 |---|---|
@@ -33,10 +34,18 @@ OpenAI URLs, the client id, headers and login timings are constants in code, not
 
 `agent.Run` calls `Provider.Step(task)`, runs the returned tool calls in parallel (one goroutine each, results kept in order), and calls `Step(results)` again. It stops when a step returns no calls.
 
+## Chat and sessions
+
+`kh "task"` runs one turn; `kh` alone is a chat loop on the same provider, so history and the prompt cache carry over between messages. Each turn runs under `signal.NotifyContext`: Ctrl-C cancels the HTTP stream and kills running commands, then returns to the prompt. Ctrl-D quits.
+
+After every turn the provider's history is saved to `~/.kh/sessions/<id>.json` (0600). Ids are `YYYYMMDD-HHMMSS.mmm`, so the latest is the last file. `-r` loads the latest, `-s id` a specific one; both work for chat or a one-off task.
+
+If a step fails mid-reply, Codex drops that reply's partial items, so a `function_call` without its output is never saved or resent. The chat prompt and the y/n question share one stdin reader (`tools.In`) so neither swallows the other's input.
+
 ## Plugins
 
 - `tools.Tool` is a struct: name, description, JSON Schema params, `Run(ctx, input) (string, error)`. A new tool is one file plus one entry in the list in `main.go`.
-- `provider.Provider` is one method: `Step(ctx, user, results) ([]Call, error)`. Each provider owns its history in its own wire format, so the loop stays format-agnostic. It streams text to stdout.
+- `provider.Provider` is `Step(ctx, user, results) ([]Call, error)` plus `Save`/`Load` of its history. Each provider owns its history in its own wire format, so the loop stays format-agnostic. It streams text to stdout.
 
 ## Providers
 
@@ -58,16 +67,16 @@ Tokens live in `~/.kh/codex.json` (0600), separate from `~/.codex` because refre
 
 ## Tools
 
-**bash**: `/bin/bash --noprofile --norc -c` (starts in ~4 ms). Own process group, `timeout_sec` kills the whole group, stdin is `/dev/null`. Output capped to `output_cap` (first + last half). Failed commands return output + exit error as a normal result, so the model can react.
+**bash**: `/bin/bash --noprofile --norc -c` (starts in ~4 ms). Own process group, `timeout_sec` kills the whole group, stdin is `/dev/null`. Output capped to `output_cap` (first + last half). Failed commands return output + exit error as a normal result, so the model can react. A timeout adds "timed out after Ns, try a narrower command"; a Ctrl-C does not.
 Commands matching `safe` run without asking, piped together; an entry like `git diff` matches leading words. Always unsafe, whatever the config: `; & > < $ \`` or newline, `sed -i`, `find -exec|-execdir|-delete|-ok`. Prompts are serialised with a mutex. `-y` skips them.
 
-**Sandbox** (macOS, `sandbox: true`): every command runs under `sandbox-exec` with a profile that allows reads and network everywhere but writes only under the project, `writable` and `/dev`. Paths are resolved to real paths (`/tmp` is `/private/tmp`). Adds under 10 ms. A blocked write shows "Operation not permitted"; kh appends a note telling the model to ask the user to rerun with `-nosandbox` or add the dir to `writable`. Other OSes run without it.
+**Sandbox** (macOS, `sandbox: true`): every command runs under `sandbox-exec` with a profile that allows reads and network everywhere but writes only under the project, `writable` and `/dev`. Paths are resolved to real paths (`/tmp` is `/private/tmp`). Adds under 10 ms. A blocked write shows "Operation not permitted", the same error macOS privacy (TCC) gives for protected folders like Downloads, so kh appends a note naming both causes: `-nosandbox` / `writable` for writes, the terminal's Files & Folders permission for reads. Other OSes run without it.
 
 **edit**: `old` must appear exactly once, then replace. Empty `old` creates the file (`O_EXCL`, fails if it exists). Paths must resolve inside the project.
 
 ## Repo map
 
-Built once at start and appended to the system prompt, so it is part of the cached prefix. Files come from `git ls-files --cached --others --exclude-standard` (tracked + new, not ignored); if that is empty or fails, walk the dir skipping dot dirs, `node_modules`, `vendor`. `.go` files get their top-level types, vars, funcs and `Type.Method`s via `go/parser`; other files are listed by path. Stops at `map_cap` bytes, which also bounds the time spent (~65 ms for 20 KB of Go's own source tree).
+Built once at start and appended to the system prompt, so it is part of the cached prefix. Files come from `git ls-files --cached --others --exclude-standard` (tracked + new, not ignored); if that is empty or fails, walk the dir skipping dot dirs, `node_modules`, `vendor`, and stop once the paths fill `map_cap` (so `~/Documents` maps in ~25 ms). `.go` files get their top-level types, vars, funcs and `Type.Method`s via `go/parser`; other files are listed by path. Stops at `map_cap` bytes, which also bounds the time spent (~65 ms for 20 KB of Go's own source tree).
 
 ## Speed choices
 
