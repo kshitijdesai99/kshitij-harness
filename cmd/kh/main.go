@@ -38,6 +38,11 @@ func main() {
 		fmt.Println("Logged in.")
 		return
 	}
+	if strings.Join(args, " ") == "sessions" {
+		listSessions(cfg)
+		return
+	}
+
 	// Built once per run, so it stays a stable, cacheable part of the prompt.
 	if m := repomap.Build(".", cfg.MapCap); m != "" {
 		cfg.System += "\n\nRepo map (path: top-level symbols). Use it to go straight to the right file:\n" + m
@@ -53,6 +58,11 @@ func main() {
 		b, err := session.Load(*id)
 		exit(err)
 		exit(p.Load(b))
+		if len(args) == 0 { // chat: show where we left off
+			fmt.Printf("--- session %s ---\n%s", *id, grey)
+			p.Replay(os.Stdout)
+			fmt.Println(reset + "---")
+		}
 	} else {
 		*id = session.New()
 	}
@@ -87,6 +97,33 @@ func main() {
 				fmt.Fprintln(os.Stderr, "error:", err)
 			}
 		}
+	}
+}
+
+// Grey for replayed history, only when printing to a terminal.
+var grey, reset = func() (string, string) {
+	if fi, _ := os.Stdout.Stat(); fi.Mode()&os.ModeCharDevice != 0 {
+		return "\033[90m", "\033[0m"
+	}
+	return "", ""
+}()
+
+// listSessions prints the last 20 sessions with their first message.
+func listSessions(cfg config.Config) {
+	ids := session.List()
+	ids = ids[max(0, len(ids)-20):]
+	for _, id := range ids {
+		b, _ := session.Load(id)
+		p := provider.NewCodex(cfg, nil)
+		var buf strings.Builder
+		if p.Load(b) == nil {
+			p.Replay(&buf)
+		}
+		first, _, _ := strings.Cut(buf.String(), "\n")
+		if len(first) > 70 {
+			first = first[:70] + "..."
+		}
+		fmt.Printf("%s  %s\n", id, first)
 	}
 }
 

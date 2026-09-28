@@ -25,3 +25,12 @@ func TestSaveLoadLatest(t *testing.T) {
 		t.Errorf("load = %q", got)
 	}
 }
+
+func TestList(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	session.Save("b", nil)
+	session.Save("a", nil)
+	if got := session.List(); len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Errorf("list = %v, want [a b]", got)
+	}
+}

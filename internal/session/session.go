@@ -17,12 +17,22 @@ func dir() string { return filepath.Join(config.Dir(), "sessions") }
 // Milliseconds, so two runs in the same second never clash.
 func New() string { return time.Now().Format("20060102-150405.000") }
 
+// List returns saved ids, oldest first.
+func List() []string {
+	entries, _ := os.ReadDir(dir()) // sorted by name = by time
+	var ids []string
+	for _, e := range entries {
+		ids = append(ids, strings.TrimSuffix(e.Name(), ".json"))
+	}
+	return ids
+}
+
 func Latest() (string, error) {
-	entries, _ := os.ReadDir(dir()) // sorted by name
-	if len(entries) == 0 {
+	ids := List()
+	if len(ids) == 0 {
 		return "", fmt.Errorf("no saved sessions")
 	}
-	return strings.TrimSuffix(entries[len(entries)-1].Name(), ".json"), nil
+	return ids[len(ids)-1], nil
 }
 
 // Save is 0600: sessions contain your code and command output.

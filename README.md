@@ -13,7 +13,8 @@ go build -o kh ./cmd/kh
 
 ```bash
 ./kh                                    # chat: keep typing, Ctrl-C stops a task, Ctrl-D quits
-./kh -r                                 # continue the last session (chat or one-off)
+./kh -r                                 # continue the last session; shows the earlier chat first
+./kh sessions                           # list saved sessions with their first message
 ./kh -s 20260928-194501.123             # continue a specific one (ids in ~/.kh/sessions)
 ./kh "fix the failing test in foo_test.go"
 ./kh -y "run go test and fix errors"   # skip y/n prompts

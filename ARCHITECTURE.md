@@ -39,14 +39,14 @@ OpenAI URLs, the client id, headers and login timings are constants in code, not
 
 `kh "task"` runs one turn; `kh` alone is a chat loop on the same provider, so history and the prompt cache carry over between messages. Each turn runs under `signal.NotifyContext`: Ctrl-C cancels the HTTP stream and kills running commands, then returns to the prompt. Ctrl-D quits.
 
-After every turn the provider's history is saved to `~/.kh/sessions/<id>.json` (0600). Ids are `YYYYMMDD-HHMMSS.mmm`, so the latest is the last file. `-r` loads the latest, `-s id` a specific one; both work for chat or a one-off task.
+After every turn the provider's history is saved to `~/.kh/sessions/<id>.json` (0600). Ids are `YYYYMMDD-HHMMSS.mmm`, so the latest is the last file. `-r` loads the latest, `-s id` a specific one; both work for chat or a one-off task. Resuming into chat first prints the old conversation in grey via `Provider.Replay` (`> ` user lines, `$ cmd`, `edit path`, `search: q`, replies). `kh sessions` lists the last 20 ids with their first message.
 
 If a step fails mid-reply, Codex drops that reply's partial items, so a `function_call` without its output is never saved or resent. The chat prompt and the y/n question share one stdin reader (`tools.In`) so neither swallows the other's input.
 
 ## Plugins
 
 - `tools.Tool` is a struct: name, description, JSON Schema params, `Run(ctx, input) (string, error)`. A new tool is one file plus one entry in the list in `main.go`.
-- `provider.Provider` is `Step(ctx, user, results) ([]Call, error)` plus `Save`/`Load` of its history. Each provider owns its history in its own wire format, so the loop stays format-agnostic. It streams text to stdout.
+- `provider.Provider` is `Step(ctx, user, results) ([]Call, error)` plus `Save`/`Load`/`Replay` of its history. Each provider owns its history in its own wire format, so the loop stays format-agnostic. It streams text to stdout.
 
 ## Providers
 

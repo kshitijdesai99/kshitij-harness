@@ -174,3 +174,37 @@ func (c *Codex) Load(b []byte) error {
 	c.session, c.input = s.Session, s.Input
 	return nil
 }
+
+func (c *Codex) Replay(w io.Writer) {
+	for _, it := range c.input {
+		// Round-trip through JSON: loaded items are generic maps, so this
+		// is the shortest way to read their fields.
+		var m struct {
+			Type, Role, Arguments string
+			Content               []struct{ Text string }
+			Action                struct{ Query string }
+		}
+		b, _ := json.Marshal(it)
+		json.Unmarshal(b, &m)
+		switch m.Type {
+		case "message":
+			for _, part := range m.Content {
+				if m.Role == "user" {
+					fmt.Fprintln(w, ">", part.Text)
+				} else {
+					fmt.Fprintln(w, part.Text)
+				}
+			}
+		case "function_call":
+			var a struct{ Command, Path string }
+			json.Unmarshal([]byte(m.Arguments), &a)
+			if a.Command != "" {
+				fmt.Fprintln(w, "$", a.Command)
+			} else {
+				fmt.Fprintln(w, "edit", a.Path)
+			}
+		case "web_search_call":
+			fmt.Fprintln(w, "search:", m.Action.Query)
+		}
+	}
+}

@@ -14,7 +14,6 @@ Rules: stdlib first, one file per job, comments say why, nothing extra. Design i
 
 ## Later, if needed
 
-- `kh sessions` to list saved sessions with their first message
 - Linux sandbox (Landlock or bubblewrap)
 - Repo map symbols for non-Go files (tree-sitter or ctags)
 - Browser PKCE login for Codex (`localhost:1455`)

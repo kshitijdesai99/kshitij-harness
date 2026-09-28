@@ -5,6 +5,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"io"
 )
 
 // Call is a tool call the model asked for.
@@ -30,4 +31,7 @@ type Provider interface {
 	// Save and Load the history, in the provider's own format, for resuming.
 	Save() ([]byte, error)
 	Load([]byte) error
+	// Replay prints the history as it looked live: "> " for the user,
+	// "$ cmd" / "edit path" / "search: q" for actions, then replies.
+	Replay(w io.Writer)
 }
