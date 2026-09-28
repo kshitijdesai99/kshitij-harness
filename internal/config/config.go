@@ -14,6 +14,7 @@ type Config struct {
 	System     string   `json:"system"`
 	TimeoutSec int      `json:"timeout_sec"` // per bash command
 	OutputCap  int      `json:"output_cap"`  // bytes of command output sent to the model
+	MapCap     int      `json:"map_cap"`     // bytes of repo map in the system prompt; 0 = off
 	Safe       []string `json:"safe"`        // commands (or "cmd sub") that run without asking
 	Yes        bool     `json:"yes"`         // run every command without asking
 }
@@ -27,6 +28,7 @@ var Defaults = Config{
 		"Do the task, then stop.",
 	TimeoutSec: 120,
 	OutputCap:  20000,
+	MapCap:     20000,
 	Safe: []string{
 		"rg", "grep", "cat", "head", "tail", "ls", "wc", "sed", "find", "pwd", "file", "tree",
 		"git status", "git diff", "git log", "git show",

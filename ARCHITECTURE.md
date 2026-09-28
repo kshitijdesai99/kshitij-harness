@@ -3,6 +3,7 @@
 ```
 cmd/kh/main.go            loads config, applies flags, builds tool list
 internal/config/          defaults + ~/.kh/config.json
+internal/repomap/         files + top-level symbols for the system prompt
 internal/agent/loop.go    the loop
 internal/provider/        Provider interface, codex.go
 internal/tools/           Tool struct, bash.go, edit.go, test/
@@ -20,6 +21,7 @@ Built-in defaults, then `~/.kh/config.json` (only the fields it sets), then flag
 | `system` | short fixed prompt |
 | `timeout_sec` | `120` |
 | `output_cap` | `20000` |
+| `map_cap` | `20000` (0 = off) |
 | `safe` | `rg grep cat head tail ls wc sed find pwd file tree`, `git status/diff/log/show` |
 | `yes` | `false` |
 
@@ -59,6 +61,10 @@ Commands matching `safe` run without asking, piped together; an entry like `git 
 
 **edit**: `old` must appear exactly once, then replace. Empty `old` creates the file (`O_EXCL`, fails if it exists). Paths must resolve inside the project.
 
+## Repo map
+
+Built once at start and appended to the system prompt, so it is part of the cached prefix. Files come from `git ls-files --cached --others --exclude-standard` (tracked + new, not ignored); if that is empty or fails, walk the dir skipping dot dirs, `node_modules`, `vendor`. `.go` files get their top-level types, vars, funcs and `Type.Method`s via `go/parser`; other files are listed by path. Stops at `map_cap` bytes, which also bounds the time spent (~65 ms for 20 KB of Go's own source tree).
+
 ## Speed choices
 
 - Short, fixed system prompt: fewer tokens and a stable cache prefix.
@@ -66,8 +72,9 @@ Commands matching `safe` run without asking, piped together; an entry like `git 
 - Parallel tool execution; prompt tells the model to batch reads.
 - Find-and-replace edits instead of whole-file rewrites (fewer output tokens).
 - Output caps keep context small.
+- Repo map up front, so the model often opens the right file without searching.
 - Stdlib only. Single static binary.
 
 ## Not yet
 
-Repo map (phase 3), `sandbox-exec` (phase 5). Until phase 5, `bash` can touch anything the user can, so the y/n prompt is the only guard.
+`sandbox-exec` (phase 5). Until phase 5, `bash` can touch anything the user can, so the y/n prompt is the only guard.

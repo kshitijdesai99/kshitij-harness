@@ -22,7 +22,7 @@ go build -o kh ./cmd/kh
 Optional `~/.kh/config.json`; set only what you want to change:
 
 ```json
-{ "model": "gpt-6-luna", "effort": "medium", "timeout_sec": 120, "output_cap": 20000 }
+{ "model": "gpt-6-luna", "effort": "medium", "timeout_sec": 120, "output_cap": 20000, "map_cap": 20000 }
 ```
 
 Also `system`, `safe` and `yes`. Flags override the file.
