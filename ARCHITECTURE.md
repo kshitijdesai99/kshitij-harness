@@ -33,7 +33,7 @@ OpenAI URLs, the client id, headers and login timings are constants in code, not
 
 ## Loop
 
-`agent.Run` calls `Provider.Step(task)`, runs the returned tool calls in parallel (one goroutine each, results kept in order), and calls `Step(steer, results)` again, where `steer` is anything typed meanwhile. It stops when a step returns no calls.
+`agent.Run` calls `Provider.Step(task)`, runs the returned tool calls in parallel (one goroutine each, results kept in order), and calls `Step(steer, results)` again, where `steer` is anything typed while the commands ran. Each reply runs in a goroutine; if the user types a line mid-reply, `agent.Run` cancels it (the provider drops the partial reply), prints `(steered)` and calls `Step(line)` straight away. Commands are never cut off by steering. It stops when a step returns no calls.
 
 ## Chat and sessions
 
@@ -41,7 +41,7 @@ OpenAI URLs, the client id, headers and login timings are constants in code, not
 
 After every turn the provider's history is saved to `~/.kh/sessions/<folder>/<id>.json` (0600), where `<folder>` is the working dir with `/` as `-`. Ids are `YYYYMMDD-HHMMSS.mmm`, so the latest is the last file. `kh sessions`, `-r` (latest) and `-s id` only see the current folder's sessions; both work for chat or a one-off task. Resuming into chat first prints the old conversation in grey via `Provider.Replay` (`> ` user lines, `$ cmd`, `edit path`, `search: q`, replies). `kh sessions` lists this folder's last 20 ids with their first message.
 
-If a step fails mid-reply, Codex drops that reply's partial items, so a `function_call` without its output is never saved or resent. One background goroutine reads the terminal into `tools.Lines`; whoever waits gets the next line: a y/n question, the chat prompt, or `agent.Run`, which drains it without blocking between steps and sends it with the next tool results. So typing while a task runs steers it; if the model is on its final answer, the line becomes the next turn. A y/n question only takes y/yes or n/no/empty; any other line is kept for the model (`tools.Held`) and the question repeats, so typed-ahead steering never answers it by accident.
+If a step fails mid-reply, Codex drops that reply's partial items, so a `function_call` without its output is never saved or resent. One background goroutine reads the terminal into `tools.Lines`; whoever waits gets the next line: a y/n question, the chat prompt, or `agent.Run` (see Loop). So typing while a task runs steers it at once, even mid-answer. A y/n question only takes y/yes or n/no/empty; any other line is kept for the model (`tools.Held`) and the question repeats, so typed-ahead steering never answers it by accident.
 
 ## Plugins
 
@@ -57,7 +57,7 @@ If a step fails mid-reply, Codex drops that reply's partial items, so a `functio
 - `web_search: true` adds `{"type": "web_search"}`, a server-side tool: OpenAI runs the search and returns a `web_search_call` item (printed as `search: <query>`), so there is nothing for kh to execute.
 - `prompt_cache_key` = `kh_` + sha256(model, instructions, tools), so every session with the same prefix shares one warm cache (a random per-run key made each new chat start cold).
 - Instructions = rules (from today's config) + repo map. Sessions save the map and reuse it on resume, since a rebuilt map would change the prompt and miss the cache for the whole history. Rules are not frozen: editing them costs one cache miss, then old sessions follow the new rules.
-- Per turn, kh prints in grey: `(ttft 1.2s, total 8.4s, 12.4k in, 11.8k cached 95%, 310 out, 250 thinking)`. TTFT is user message to the model's first output of any kind (thinking, text or a tool call; `-` if none), so tool runs and y/n waits are not counted; tokens are summed from each step's `response.completed` usage; "thinking" is the hidden reasoning part of "out".
+- Per turn, kh prints in grey: `(ttft 1.2s, total 8.4s, 12.4k in, 11.8k cached 95%, 310 out, 250 thinking, context 86k/272k 32%)`. TTFT is user message to the model's first output of any kind (thinking, text or a tool call; `-` if none), so tool runs and y/n waits are not counted; tokens are summed from each step's `response.completed` usage; "thinking" is the hidden reasoning part of "out". "context" is the last step's in + out (what the model holds now) against the model's `context_window` from `GET chatgpt.com/backend-api/codex/models`, looked up once per model (2 s timeout; limit omitted if unknown).
 - Headers: `Authorization`, `ChatGPT-Account-ID` (from JWT), `originator: kh`, `session_id`.
 
 ## Auth (Codex)

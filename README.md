@@ -33,7 +33,7 @@ Optional `~/.kh/config.json`; set only what you want to change:
 
 Also `web_search` (on by default), `system`, `safe`, `yes`, `sandbox` and `writable` (extra dirs bash may write to). Flags override the file.
 
-Type while a task runs to steer it; your line reaches the model after its next command. In chat, `/model gpt-5.5` and `/effort high` switch mid-session (from the next message); `/model` alone shows both.
+Type while a task runs to steer it: a reply in progress is cut off and restarted with your line; a running command finishes first. In chat, `/model gpt-5.5` and `/effort high` switch mid-session (from the next message); `/model` alone shows both.
 
 Read-only commands (`rg`, `cat`, `ls`, `git diff`, ...) run without asking. Everything else asks y/n unless `-y`. On macOS, bash can only write inside the project (plus temp and cache dirs) unless `-nosandbox`.
 

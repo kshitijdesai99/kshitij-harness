@@ -22,9 +22,12 @@ import (
 
 // OpenAI protocol values, not config.
 const (
-	codexURL   = "https://chatgpt.com/backend-api/codex/responses"
-	originator = "kh" // OpenAI asks third-party harnesses to name themselves
-	userAgent  = "kh/0.1"
+	codexURL = "https://chatgpt.com/backend-api/codex/responses"
+	// Model catalog with each model's context_window. A high client_version
+	// avoids being served an older, gated list.
+	codexModelsURL = "https://chatgpt.com/backend-api/codex/models?client_version=99.0.0"
+	originator     = "kh" // OpenAI asks third-party harnesses to name themselves
+	userAgent      = "kh/0.1"
 )
 
 type Codex struct {
@@ -37,6 +40,7 @@ type Codex struct {
 	session string
 	stats   Stats
 	start   time.Time // when the current turn's user message was sent
+	window  int       // context limit of c.model: 0 = not looked up, -1 = unknown
 }
 
 func NewCodex(c config.Config, repoMap string, ts []tools.Tool) *Codex {
@@ -98,12 +102,9 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 		return nil, err
 	}
 	req, _ := http.NewRequestWithContext(ctx, "POST", codexURL, bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+access)
-	req.Header.Set("ChatGPT-Account-ID", account)
+	setHeaders(req, access, account)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("originator", originator)
-	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("session_id", c.session)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -173,6 +174,7 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 			c.stats.Cached += u.Details.Cached
 			c.stats.Out += u.Out
 			c.stats.Think += u.OutDetails.Think
+			c.stats.Context = u.In + u.Out // what the next step starts from
 		case "response.failed":
 			if ev.Response.Error != nil {
 				return nil, fmt.Errorf("codex: %s", ev.Response.Error.Message)
@@ -204,8 +206,8 @@ func (c *Codex) cacheKey() string {
 }
 
 func (c *Codex) Use(model, effort string) (string, string) {
-	if model != "" {
-		c.model = model
+	if model != "" && model != c.model {
+		c.model, c.window = model, 0
 	}
 	if effort != "" {
 		c.effort = effort
@@ -214,9 +216,54 @@ func (c *Codex) Use(model, effort string) (string, string) {
 }
 
 func (c *Codex) Stats() Stats {
+	if c.window == 0 { // look up once per model, even if it fails
+		c.window = c.fetchWindow()
+		if c.window == 0 {
+			c.window = -1
+		}
+	}
 	s := c.stats
+	s.Window = max(c.window, 0)
 	c.stats = Stats{}
 	return s
+}
+
+// fetchWindow looks up c.model's context limit in the Codex catalog. Short
+// timeout, 0 on any failure: the meter just shows "used" without a limit.
+func (c *Codex) fetchWindow() int {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	access, account, err := auth.Token(ctx)
+	if err != nil {
+		return 0
+	}
+	req, _ := http.NewRequestWithContext(ctx, "GET", codexModelsURL, nil)
+	setHeaders(req, access, account)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	var cat struct {
+		Models []struct {
+			Slug   string `json:"slug"`
+			Window int    `json:"context_window"`
+		} `json:"models"`
+	}
+	json.NewDecoder(resp.Body).Decode(&cat)
+	for _, m := range cat.Models {
+		if m.Slug == c.model {
+			return m.Window
+		}
+	}
+	return 0
+}
+
+func setHeaders(req *http.Request, access, account string) {
+	req.Header.Set("Authorization", "Bearer "+access)
+	req.Header.Set("ChatGPT-Account-ID", account) // without it the backend 401s or lists no models
+	req.Header.Set("originator", originator)
+	req.Header.Set("User-Agent", userAgent)
 }
 
 type codexState struct {

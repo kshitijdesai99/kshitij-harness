@@ -78,8 +78,8 @@ func main() {
 			err = nil
 		}
 		if s := p.Stats(); s.In > 0 {
-			fmt.Fprintf(os.Stderr, "%s(ttft %s, total %s, %s in, %s cached %d%%, %s out, %s thinking)%s\n", grey,
-				secs(s.TTFT), secs(time.Since(start)), k(s.In), k(s.Cached), s.Cached*100/s.In, k(s.Out), k(s.Think), reset)
+			fmt.Fprintf(os.Stderr, "%s(ttft %s, total %s, %s in, %s cached %d%%, %s out, %s thinking, %s)%s\n", grey,
+				secs(s.TTFT), secs(time.Since(start)), k(s.In), k(s.Cached), s.Cached*100/s.In, k(s.Out), k(s.Think), contextUsed(s), reset)
 		}
 		if b, e := p.Save(); e == nil {
 			session.Save(*id, b)
@@ -131,6 +131,14 @@ func k(n int) string {
 		return fmt.Sprint(n)
 	}
 	return fmt.Sprintf("%.1fk", float64(n)/1000)
+}
+
+// contextUsed reads "context 86k/272k 32%", or "context 86k" if the limit is unknown.
+func contextUsed(s provider.Stats) string {
+	if s.Window == 0 {
+		return "context " + k(s.Context)
+	}
+	return fmt.Sprintf("context %s/%s %d%%", k(s.Context), k(s.Window), s.Context*100/s.Window)
 }
 
 func secs(d time.Duration) string {

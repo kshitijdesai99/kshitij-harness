@@ -47,5 +47,7 @@ type Provider interface {
 type Stats struct {
 	In, Cached, Out int
 	Think           int           // part of Out spent thinking, not shown
+	Context         int           // conversation size after the last step
+	Window          int           // model's context limit; 0 if unknown
 	TTFT            time.Duration // user message to the model's first output; 0 if none
 }

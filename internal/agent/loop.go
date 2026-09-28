@@ -3,6 +3,8 @@ package agent
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"strings"
 	"sync"
 
@@ -10,15 +12,61 @@ import (
 	"kh/internal/tools"
 )
 
-// Run does one task. Lines arriving on steer while it works are sent with the
-// next tool results, so the user can redirect it without stopping it.
+// Run does one task, and lets the user steer it by typing a line on steer:
+//   - while the model replies, the reply is cut off and restarted with the line;
+//   - while commands run, the line is sent with their results (cutting a
+//     command off halfway could leave things broken).
 func Run(ctx context.Context, p provider.Provider, ts []tools.Tool, task string, steer <-chan string) error {
-	calls, err := p.Step(ctx, task, nil)
-	for err == nil && len(calls) > 0 {
-		results := runAll(ctx, ts, calls)
-		calls, err = p.Step(ctx, queued(tools.Held(), steer), results)
+	user, results := task, []provider.Result(nil)
+	for {
+		calls, line, err := step(ctx, p, user, results, steer)
+		if err != nil {
+			return err
+		}
+		if line != "" { // steered: the cut-off reply was dropped, go again with the line
+			user, results = line, nil
+			continue
+		}
+		if len(calls) == 0 {
+			return nil
+		}
+		results = runAll(ctx, ts, calls)
+		user = queued(tools.Held(), steer)
 	}
-	return err
+}
+
+// step runs one model reply, but gives up on it as soon as the user types a
+// line, and returns that line instead.
+func step(ctx context.Context, p provider.Provider, user string, results []provider.Result, steer <-chan string) ([]provider.Call, string, error) {
+	sctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	type reply struct {
+		calls []provider.Call
+		err   error
+	}
+	done := make(chan reply, 1)
+	go func() {
+		calls, err := p.Step(sctx, user, results)
+		done <- reply{calls, err}
+	}()
+	for {
+		select {
+		case r := <-done:
+			return r.calls, "", r.err
+		case line, ok := <-steer:
+			if !ok { // Ctrl-D: stop listening, let the reply finish
+				steer = nil
+				continue
+			}
+			if line == "" {
+				continue
+			}
+			cancel()
+			<-done // the provider drops its partial reply on cancel
+			fmt.Fprintln(os.Stderr, "\n(steered)")
+			return nil, line, nil
+		}
+	}
 }
 
 // queued takes whatever was typed so far, without waiting.
