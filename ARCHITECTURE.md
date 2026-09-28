@@ -57,7 +57,7 @@ If a step fails mid-reply, Codex drops that reply's partial items, so a `functio
 - `web_search: true` adds `{"type": "web_search"}`, a server-side tool: OpenAI runs the search and returns a `web_search_call` item (printed as `search: <query>`), so there is nothing for kh to execute.
 - `prompt_cache_key` = `kh_` + sha256(model, instructions, tools), so every session with the same prefix shares one warm cache (a random per-run key made each new chat start cold).
 - Instructions = rules (from today's config) + repo map. Sessions save the map and reuse it on resume, since a rebuilt map would change the prompt and miss the cache for the whole history. Rules are not frozen: editing them costs one cache miss, then old sessions follow the new rules.
-- Per turn, kh prints in grey: `(ttft 1.2s, total 8.4s, 12.4k in, 11.8k cached 95%, 310 out)`. TTFT is user message to first streamed text (`-` if none); tokens are summed from each step's `response.completed` usage.
+- Per turn, kh prints in grey: `(ttft 1.2s, total 8.4s, 12.4k in, 11.8k cached 95%, 310 out, 250 thinking)`. TTFT is user message to first streamed text (`-` if none); tokens are summed from each step's `response.completed` usage; "thinking" is the hidden reasoning part of "out".
 - Headers: `Authorization`, `ChatGPT-Account-ID` (from JWT), `originator: kh`, `session_id`.
 
 ## Auth (Codex)
@@ -80,7 +80,7 @@ Commands matching `safe` run without asking, joined by `| ; && ||`; an entry lik
 
 ## Repo map
 
-Built once at start and appended to the system prompt, so it is part of the cached prefix. Files come from `git ls-files --cached --others --exclude-standard` (tracked + new, not ignored); if that is empty or fails, walk the dir skipping dot dirs, `node_modules`, `vendor`, and stop once the paths fill `map_cap` (so `~/Documents` maps in ~25 ms). `.go` files get their top-level types, vars, funcs and `Type.Method`s via `go/parser`; other files are listed by path. Stops at `map_cap` bytes, which also bounds the time spent (~65 ms for 20 KB of Go's own source tree).
+Built once at start and appended to the system prompt, so it is part of the cached prefix. Files come from `git ls-files --cached --others --exclude-standard` (tracked + new, not ignored). Outside a git project there is no map: in a folder like `~/Documents` it would be thousands of random paths the model pays to read on every turn. `.go` files get their top-level types, vars, funcs and `Type.Method`s via `go/parser`; other files are listed by path. Stops at `map_cap` bytes.
 
 ## Speed choices
 

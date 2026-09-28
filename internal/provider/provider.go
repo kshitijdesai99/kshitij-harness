@@ -42,5 +42,6 @@ type Provider interface {
 // Stats for one turn (one user message and all the steps it took).
 type Stats struct {
 	In, Cached, Out int
+	Think           int           // part of Out spent thinking, not shown
 	TTFT            time.Duration // user message to first streamed text; 0 if none
 }

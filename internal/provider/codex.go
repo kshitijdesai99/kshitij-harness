@@ -131,6 +131,9 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 					Details struct {
 						Cached int `json:"cached_tokens"`
 					} `json:"input_tokens_details"`
+					OutDetails struct {
+						Think int `json:"reasoning_tokens"`
+					} `json:"output_tokens_details"`
 				} `json:"usage"`
 			} `json:"response"`
 			Message string `json:"message"`
@@ -163,6 +166,7 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 			c.stats.In += u.In
 			c.stats.Cached += u.Details.Cached
 			c.stats.Out += u.Out
+			c.stats.Think += u.OutDetails.Think
 		case "response.failed":
 			if ev.Response.Error != nil {
 				return nil, fmt.Errorf("codex: %s", ev.Response.Error.Message)

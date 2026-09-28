@@ -32,16 +32,11 @@ func TestSelf(t *testing.T) {
 	}
 }
 
-// Outside git the map walks the dir, and still stops at the cap.
-func TestWalkOutsideGit(t *testing.T) {
+// Outside a git project there is no map.
+func TestNoMapOutsideGit(t *testing.T) {
 	d := t.TempDir()
-	for _, n := range []string{"a.txt", "b.txt", "c.txt"} {
-		os.WriteFile(filepath.Join(d, n), nil, 0o644)
-	}
-	if m := repomap.Build(d, 1000); m != "a.txt\nb.txt\nc.txt\n" {
+	os.WriteFile(filepath.Join(d, "a.go"), []byte("package a\nfunc A() {}\n"), 0o644)
+	if m := repomap.Build(d, 1000); m != "" {
 		t.Errorf("got %q", m)
-	}
-	if m := repomap.Build(d, 8); strings.Count(m, ".txt") > 1 {
-		t.Errorf("walk ignored cap: %q", m)
 	}
 }

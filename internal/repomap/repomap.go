@@ -6,7 +6,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -18,7 +17,7 @@ func Build(dir string, maxBytes int) string {
 		return ""
 	}
 	var b strings.Builder
-	for _, f := range files(dir, maxBytes) {
+	for _, f := range files(dir) {
 		line := f
 		if strings.HasSuffix(f, ".go") {
 			if syms := goSymbols(filepath.Join(dir, f)); syms != "" {
@@ -34,38 +33,14 @@ func Build(dir string, maxBytes int) string {
 	return b.String()
 }
 
-// files prefers git: it is fast and already skips ignored files.
-// The walk fallback stops once the paths alone fill maxBytes, so a huge
-// non-repo dir (like ~/Documents) doesn't delay startup.
-func files(dir string, maxBytes int) []string {
-	// Tracked plus new, not-ignored files, so files made this session show up.
+// files lists a git project's tracked and new, not-ignored files (so files
+// made this session show up). Outside git there is no map: in a folder like
+// ~/Documents it would be thousands of random paths the model pays to read.
+func files(dir string) []string {
 	cmd := exec.Command("git", "ls-files", "--cached", "--others", "--exclude-standard")
 	cmd.Dir = dir
-	// Empty output means dir is ignored by a parent repo; walk it instead.
-	if out, err := cmd.Output(); err == nil && len(out) > 0 {
-		return strings.Fields(string(out))
-	}
-	var list []string
-	size := 0
-	filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if size > maxBytes {
-			return fs.SkipAll
-		}
-		name := d.Name()
-		if d.IsDir() && p != dir && (strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor") {
-			return filepath.SkipDir
-		}
-		if !d.IsDir() {
-			rel, _ := filepath.Rel(dir, p)
-			list = append(list, rel)
-			size += len(rel) + 1
-		}
-		return nil
-	})
-	return list
+	out, _ := cmd.Output() // not a repo, or ignored by a parent repo: empty
+	return strings.Fields(string(out))
 }
 
 // goSymbols returns top-level types, vars, funcs and methods (as Type.Method).

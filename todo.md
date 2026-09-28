@@ -16,6 +16,7 @@ Rules: stdlib first, one file per job, comments say why, nothing extra. Design i
 
 - Linux sandbox (Landlock or bubblewrap)
 - Repo map symbols for non-Go files (tree-sitter or ctags)
+- Repo map for non-git projects (walk with a cap), if ever needed
 - Browser PKCE login for Codex (`localhost:1455`)
 - `x-openai-internal-codex-residency` header (residency-locked workspaces)
 - Start tools while the reply is still streaming

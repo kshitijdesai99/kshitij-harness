@@ -78,8 +78,8 @@ func main() {
 			err = nil
 		}
 		if s := p.Stats(); s.In > 0 {
-			fmt.Fprintf(os.Stderr, "%s(ttft %s, total %s, %s in, %s cached %d%%, %s out)%s\n", grey,
-				secs(s.TTFT), secs(time.Since(start)), k(s.In), k(s.Cached), s.Cached*100/s.In, k(s.Out), reset)
+			fmt.Fprintf(os.Stderr, "%s(ttft %s, total %s, %s in, %s cached %d%%, %s out, %s thinking)%s\n", grey,
+				secs(s.TTFT), secs(time.Since(start)), k(s.In), k(s.Cached), s.Cached*100/s.In, k(s.Out), k(s.Think), reset)
 		}
 		if b, e := p.Save(); e == nil {
 			session.Save(*id, b)
