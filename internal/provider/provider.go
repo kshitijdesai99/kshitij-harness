@@ -37,6 +37,9 @@ type Provider interface {
 	Replay(w io.Writer)
 	// Stats returns what this turn cost, then resets for the next turn.
 	Stats() Stats
+	// Use switches model and/or effort ("" keeps the current one), mid-session,
+	// and returns both.
+	Use(model, effort string) (string, string)
 }
 
 // Stats for one turn (one user message and all the steps it took).

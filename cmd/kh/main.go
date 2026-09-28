@@ -93,7 +93,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "(session %s: kh -r to continue)\n", *id)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "kh chat, session %s. Ctrl-C stops a task, Ctrl-D quits.\n", *id)
+	fmt.Fprintf(os.Stderr, "kh chat, session %s (%s, %s). Ctrl-C stops a task, Ctrl-D quits, /help for commands.\n", *id, cfg.Model, cfg.Effort)
 	if task != "" {
 		fmt.Println(">", task)
 		if err := turn(task); err != nil {
@@ -107,7 +107,9 @@ func main() {
 			fmt.Println()
 			return
 		}
-		if line = strings.TrimSpace(line); line != "" {
+		if line = strings.TrimSpace(line); strings.HasPrefix(line, "/") {
+			command(p, line)
+		} else if line != "" {
 			if err := turn(line); err != nil {
 				fmt.Fprintln(os.Stderr, "error:", err)
 			}
@@ -136,6 +138,22 @@ func secs(d time.Duration) string {
 		return "-" // no text this turn
 	}
 	return fmt.Sprintf("%.1fs", d.Seconds())
+}
+
+// command handles chat slash commands. Switches apply from the next message.
+func command(p provider.Provider, line string) {
+	cmd, arg, _ := strings.Cut(line, " ")
+	var model, effort string
+	switch cmd {
+	case "/model":
+		model, effort = p.Use(strings.TrimSpace(arg), "")
+	case "/effort":
+		model, effort = p.Use("", strings.TrimSpace(arg))
+	default:
+		fmt.Println("/model [id]   show or switch the model\n/effort [low|medium|high]   show or switch thinking effort")
+		return
+	}
+	fmt.Printf("%s(model %s, effort %s)%s\n", grey, model, effort, reset)
 }
 
 // listSessions prints the last 20 sessions with their first message.

@@ -200,6 +200,16 @@ func (c *Codex) cacheKey() string {
 	return "kh_" + hex.EncodeToString(h[:12])
 }
 
+func (c *Codex) Use(model, effort string) (string, string) {
+	if model != "" {
+		c.model = model
+	}
+	if effort != "" {
+		c.effort = effort
+	}
+	return c.model, c.effort
+}
+
 func (c *Codex) Stats() Stats {
 	s := c.stats
 	c.stats = Stats{}

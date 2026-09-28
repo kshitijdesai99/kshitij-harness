@@ -37,7 +37,7 @@ OpenAI URLs, the client id, headers and login timings are constants in code, not
 
 ## Chat and sessions
 
-`kh "task"` runs one turn; `kh` alone (or `kh -i "task"`, which starts with that task) is a chat loop on the same provider, so history and the prompt cache carry over between messages. Each turn runs under `signal.NotifyContext`: Ctrl-C cancels the HTTP stream and kills running commands, prints `(stopped)`, then returns to the prompt. Ctrl-D quits.
+`kh "task"` runs one turn; `kh` alone (or `kh -i "task"`, which starts with that task) is a chat loop on the same provider, so history and the prompt cache carry over between messages. Each turn runs under `signal.NotifyContext`: Ctrl-C cancels the HTTP stream and kills running commands, prints `(stopped)`, then returns to the prompt. Ctrl-D quits. `/model [id]` and `/effort [level]` call `Provider.Use` to switch from the next message; history is kept. A new model misses the cache once (it is part of the cache key); a new effort does not. Resuming uses config/flags, not the last switch.
 
 After every turn the provider's history is saved to `~/.kh/sessions/<id>.json` (0600). Ids are `YYYYMMDD-HHMMSS.mmm`, so the latest is the last file. `-r` loads the latest, `-s id` a specific one; both work for chat or a one-off task. Resuming into chat first prints the old conversation in grey via `Provider.Replay` (`> ` user lines, `$ cmd`, `edit path`, `search: q`, replies). `kh sessions` lists the last 20 ids with their first message.
 
@@ -46,7 +46,7 @@ If a step fails mid-reply, Codex drops that reply's partial items, so a `functio
 ## Plugins
 
 - `tools.Tool` is a struct: name, description, JSON Schema params, `Run(ctx, input) (string, error)`. A new tool is one file plus one entry in the list in `main.go`.
-- `provider.Provider` is `Step(ctx, user, results) ([]Call, error)` plus `Save`/`Load`/`Replay` of its history and `Stats` (tokens + TTFT for the turn). Each provider owns its history in its own wire format, so the loop stays format-agnostic. It streams text to stdout.
+- `provider.Provider` is `Step(ctx, user, results) ([]Call, error)` plus `Save`/`Load`/`Replay` of its history `Stats` (tokens + TTFT for the turn) and `Use` (switch model/effort). Each provider owns its history in its own wire format, so the loop stays format-agnostic. It streams text to stdout.
 
 ## Providers
 

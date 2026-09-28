@@ -68,3 +68,14 @@ func TestLoadKeepsSavedMap(t *testing.T) {
 		t.Errorf("resumed with the new map: %s", got)
 	}
 }
+
+func TestUseSwitchesModelAndEffort(t *testing.T) {
+	p := provider.NewCodex(config.Defaults, "", nil)
+	if m, e := p.Use("", ""); m != config.Defaults.Model || e != config.Defaults.Effort {
+		t.Errorf("show = %s %s", m, e)
+	}
+	p.Use("gpt-5.5", "")
+	if m, e := p.Use("", "high"); m != "gpt-5.5" || e != "high" {
+		t.Errorf("after switch = %s %s", m, e)
+	}
+}
