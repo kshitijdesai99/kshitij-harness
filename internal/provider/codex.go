@@ -57,15 +57,18 @@ func NewCodex(c config.Config, repoMap string, ts []tools.Tool) *Codex {
 }
 
 func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls []Call, err error) {
+	if results == nil {
+		c.start = time.Now() // a new turn, not a step inside one
+	}
+	// Outputs must directly follow their calls; a steering message goes after.
+	for _, r := range results {
+		c.input = append(c.input, map[string]any{"type": "function_call_output", "call_id": r.ID, "output": r.Output})
+	}
 	if user != "" {
-		c.start = time.Now()
 		c.input = append(c.input, map[string]any{
 			"type": "message", "role": "user",
 			"content": []map[string]any{{"type": "input_text", "text": user}},
 		})
-	}
-	for _, r := range results {
-		c.input = append(c.input, map[string]any{"type": "function_call_output", "call_id": r.ID, "output": r.Output})
 	}
 	// On failure, drop this reply's partial items: a function_call with no
 	// output would make every later request in the session fail.

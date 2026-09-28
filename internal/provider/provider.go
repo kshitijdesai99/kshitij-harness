@@ -25,8 +25,9 @@ type Result struct {
 
 // Provider is one plugin per model backend.
 type Provider interface {
-	// Step sends user text (first turn) or tool results (later turns),
-	// streams the reply to stdout, and returns the next tool calls.
+	// Step sends user text and/or tool results (results first, then text:
+	// text with results is the user steering mid-task), streams the reply
+	// to stdout, and returns the next tool calls.
 	// No calls means the model is done.
 	Step(ctx context.Context, user string, results []Result) ([]Call, error)
 	// Save and Load the history, in the provider's own format, for resuming.

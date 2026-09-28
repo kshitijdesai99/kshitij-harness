@@ -6,11 +6,27 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 )
 
-// In is the one reader for the terminal. The chat prompt and the y/n question
-// must share it, or one would swallow lines buffered by the other.
-var In = bufio.NewReader(os.Stdin)
+// Lines is every line typed at the terminal, from one background reader.
+// Whoever is waiting gets the next line: a y/n question, the chat prompt, or
+// agent.Run between steps (to steer a running task). Closed on Ctrl-D.
+var Lines = make(chan string, 16)
+
+func init() {
+	go func() {
+		r := bufio.NewReader(os.Stdin)
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				close(Lines)
+				return
+			}
+			Lines <- strings.TrimSpace(line)
+		}
+	}()
+}
 
 // Tool is one plugin. Add a tool = one file + one line in the list in main.
 type Tool struct {

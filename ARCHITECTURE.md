@@ -33,7 +33,7 @@ OpenAI URLs, the client id, headers and login timings are constants in code, not
 
 ## Loop
 
-`agent.Run` calls `Provider.Step(task)`, runs the returned tool calls in parallel (one goroutine each, results kept in order), and calls `Step(results)` again. It stops when a step returns no calls.
+`agent.Run` calls `Provider.Step(task)`, runs the returned tool calls in parallel (one goroutine each, results kept in order), and calls `Step(steer, results)` again, where `steer` is anything typed meanwhile. It stops when a step returns no calls.
 
 ## Chat and sessions
 
@@ -41,7 +41,7 @@ OpenAI URLs, the client id, headers and login timings are constants in code, not
 
 After every turn the provider's history is saved to `~/.kh/sessions/<folder>/<id>.json` (0600), where `<folder>` is the working dir with `/` as `-`. Ids are `YYYYMMDD-HHMMSS.mmm`, so the latest is the last file. `kh sessions`, `-r` (latest) and `-s id` only see the current folder's sessions; both work for chat or a one-off task. Resuming into chat first prints the old conversation in grey via `Provider.Replay` (`> ` user lines, `$ cmd`, `edit path`, `search: q`, replies). `kh sessions` lists this folder's last 20 ids with their first message.
 
-If a step fails mid-reply, Codex drops that reply's partial items, so a `function_call` without its output is never saved or resent. The chat prompt and the y/n question share one stdin reader (`tools.In`) so neither swallows the other's input.
+If a step fails mid-reply, Codex drops that reply's partial items, so a `function_call` without its output is never saved or resent. One background goroutine reads the terminal into `tools.Lines`; whoever waits gets the next line: a y/n question, the chat prompt, or `agent.Run`, which drains it without blocking between steps and sends it with the next tool results. So typing while a task runs steers it; if the model is on its final answer, the line becomes the next turn. A y/n question only takes y/yes or n/no/empty; any other line is kept for the model (`tools.Held`) and the question repeats, so typed-ahead steering never answers it by accident.
 
 ## Plugins
 

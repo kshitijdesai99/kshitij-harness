@@ -143,7 +143,27 @@ func show(c string, ok bool) bool {
 	if ok {
 		return true
 	}
-	fmt.Fprint(os.Stderr, "  run it? [y/N] ")
-	line, _ := In.ReadString('\n')
-	return strings.TrimSpace(strings.ToLower(line)) == "y"
+	for {
+		fmt.Fprint(os.Stderr, "  run it? [y/N] ")
+		switch line := <-Lines; strings.ToLower(line) { // "" once closed = no
+		case "y", "yes":
+			return true
+		case "", "n", "no":
+			return false
+		default: // typed to steer, not to answer: keep it for the model
+			held = append(held, line)
+			fmt.Fprintln(os.Stderr, "  (noted for the model)")
+		}
+	}
+}
+
+var held []string // steering lines typed while a y/n question was open
+
+// Held returns and clears steering lines caught by a y/n question.
+func Held() []string {
+	termMu.Lock()
+	defer termMu.Unlock()
+	h := held
+	held = nil
+	return h
 }

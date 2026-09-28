@@ -72,7 +72,7 @@ func main() {
 		tctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 		defer stop()
 		start := time.Now()
-		err := agent.Run(tctx, p, ts, msg)
+		err := agent.Run(tctx, p, ts, msg, tools.Lines)
 		if tctx.Err() == context.Canceled { // Ctrl-C: expected, not an error
 			fmt.Fprintln(os.Stderr, "\n(stopped)")
 			err = nil
@@ -93,7 +93,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "(session %s: kh -r to continue)\n", *id)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "kh chat, session %s (%s, %s). Ctrl-C stops a task, Ctrl-D quits, /help for commands.\n", *id, cfg.Model, cfg.Effort)
+	fmt.Fprintf(os.Stderr, "kh chat, session %s (%s, %s). Type while it works to steer. Ctrl-C stops a task, Ctrl-D quits, /help for commands.\n", *id, cfg.Model, cfg.Effort)
 	if task != "" {
 		fmt.Println(">", task)
 		if err := turn(task); err != nil {
@@ -102,12 +102,12 @@ func main() {
 	}
 	for {
 		fmt.Print("> ")
-		line, err := tools.In.ReadString('\n')
-		if err != nil { // Ctrl-D
+		line, ok := <-tools.Lines
+		if !ok { // Ctrl-D
 			fmt.Println()
 			return
 		}
-		if line = strings.TrimSpace(line); strings.HasPrefix(line, "/") {
+		if strings.HasPrefix(line, "/") {
 			command(p, line)
 		} else if line != "" {
 			if err := turn(line); err != nil {
