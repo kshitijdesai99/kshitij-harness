@@ -57,6 +57,7 @@ Working
 	Safe: []string{
 		"rg", "grep", "cat", "head", "tail", "ls", "wc", "sed", "find", "pwd", "file", "tree", "echo", "printf",
 		"git status", "git diff", "git log", "git show",
+		"kh peek", "kh agents",
 	},
 	Sandbox: true,
 	// Temp dirs and tool caches, so builds and tests still work.

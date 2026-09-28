@@ -46,6 +46,7 @@ func Bash(c config.Config) Tool {
 			if json.Unmarshal(input, &in) != nil || in.Command == "" {
 				return "", fmt.Errorf("need a command")
 			}
+			StartInput()
 			if !show(in.Command, c.Auto || isSafe(in.Command, c.Safe)) {
 				return "", fmt.Errorf("user said no")
 			}

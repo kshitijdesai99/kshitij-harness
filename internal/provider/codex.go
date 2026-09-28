@@ -55,6 +55,12 @@ func NewCodex(c config.Config, repoMap string, ts []tools.Tool) *Codex {
 			"parameters": map[string]any{"type": "object", "properties": t.Params, "required": t.Required},
 		})
 	}
+	if os.Getenv("TMUX") != "" {
+		x.rules += "\n\nSub-agents\n- Agents share this folder. Split independent work across files; avoid two agents editing the same file.\n- Use bash: kh spawn tests \"fix the failing tests\" to start an agent; kh send kh:main \"done: 3 tests fixed\" to message one; kh peek kh:tests to read its last screen lines; kh agents to see busy/waiting agents.\n- Spawn only when parallel work helps. When done, send a concise result to your parent."
+		if parent := os.Getenv("KH_PARENT"); parent != "" {
+			x.rules += "\n- Your parent is " + parent + ". Report results to it with kh send before finishing."
+		}
+	}
 	if c.WebSearch {
 		// Server-side tool: OpenAI runs the search, we never see a call to execute.
 		x.tools = append(x.tools, map[string]any{"type": "web_search"})

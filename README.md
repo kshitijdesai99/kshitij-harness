@@ -23,6 +23,19 @@ go build -o kh ./cmd/kh
 ./kh -nosandbox "update ~/.zshrc"      # allow writes outside the project
 ```
 
+## Tmux agents
+
+Interactive `kh` starts or attaches to a tmux session named `kh` (its first window is `kh:main`). Inside tmux it runs normally. Install tmux first; one-shot tasks and piped input don't require tmux.
+
+```bash
+kh spawn tests "fix the failing tests"  # new agent/window, same working folder
+kh send kh:main "done: 3 tests fixed" # type a line into another agent's chat
+kh peek kh:tests                  # read recent screen lines
+kh agents                        # list windows and busy/waiting state
+```
+
+A spawned agent stays in chat after its task, knows its parent's address, and is instructed to report back with `kh send`. Agents share files: give them independent files to edit. `kh peek` and `kh agents` are read-only and auto-approved; `spawn` and `send` ask unless `--auto` is on. Run `kh --auto` to pass auto-approval to agents you spawn.
+
 ## Config
 
 Optional `~/.kh/config.json`; set only what you want to change:

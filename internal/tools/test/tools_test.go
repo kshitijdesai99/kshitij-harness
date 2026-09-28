@@ -36,6 +36,11 @@ func TestSafeList(t *testing.T) {
 		"ls && git status":              true,
 		"cat a.go & rm a.go":            false,
 		"ls || rm a.go":                 false,
+		"kh peek kh:tests":              true,
+		"kh agents":                     true,
+		"kh send kh:main hello":         false,
+		"kh spawn tests task":           false,
+		"kh peek kh:tests; rm x":        false,
 	} {
 		_, err := bash(t, config.Defaults, c)
 		if asked := err != nil && err.Error() == "user said no"; asked == safe {

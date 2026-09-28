@@ -33,8 +33,27 @@ func main() {
 	stay := flag.Bool("i", false, "stay in chat after the task")
 	flag.Parse()
 	cfg.Sandbox = cfg.Sandbox && !*noSandbox
+	if cfg.Auto {
+		os.Setenv("KH_AUTO", "1") // carry --auto into bash-invoked kh subcommands
+	} else if os.Getenv("KH_AUTO") == "1" {
+		cfg.Auto = true
+	}
 	args := flag.Args()
 	ctx := context.Background()
+	if len(args) > 0 {
+		switch args[0] {
+		case "spawn", "send", "peek", "agents":
+			exit(agentCommand(args, cfg.Auto))
+			return
+		}
+	}
+	if (len(args) == 0 || *stay) && strings.Join(args, " ") != "sessions" && strings.Join(args, " ") != "login codex" && os.Getenv("TMUX") == "" {
+		exit(attachChat(os.Args[1:]))
+		// attachChat returns immediately for redirected input (no terminal).
+		if fi, _ := os.Stdin.Stat(); fi != nil && fi.Mode()&os.ModeCharDevice != 0 {
+			return
+		}
+	}
 
 	if strings.Join(args, " ") == "login codex" {
 		exit(auth.Login(ctx))
@@ -46,6 +65,7 @@ func main() {
 		return
 	}
 
+	tools.StartInput()
 	ts := []tools.Tool{tools.Bash(cfg), tools.Edit}
 	// Built once per session, so it stays a stable, cacheable part of the prompt.
 	p := provider.NewCodex(cfg, repomap.Build(".", cfg.MapCap), ts)
@@ -71,6 +91,8 @@ func main() {
 	// turn means a closed terminal loses at most the current one.
 	seen := fromFile // a -model/-effort flag holds until the file itself changes
 	turn := func(msg string) error {
+		setAgentState("busy")
+		defer setAgentState("waiting")
 		// Follow /model or /effort switches made in any session since the last turn.
 		if now, err := config.Load(); err == nil {
 			if now.Model != seen.Model {
@@ -99,6 +121,7 @@ func main() {
 		return err
 	}
 
+	setAgentState("waiting")
 	task := strings.Join(args, " ")
 	if task != "" && !*stay {
 		exit(turn(task))

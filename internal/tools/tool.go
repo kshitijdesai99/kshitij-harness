@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
+	"sync"
 )
 
 // Lines is every line typed at the terminal, from one background reader.
@@ -14,18 +15,24 @@ import (
 // agent.Run between steps (to steer a running task). Closed on Ctrl-D.
 var Lines = make(chan string, 16)
 
-func init() {
-	go func() {
-		r := bufio.NewReader(os.Stdin)
-		for {
-			line, err := r.ReadString('\n')
-			if err != nil {
-				close(Lines)
-				return
+var inputOnce sync.Once
+
+// StartInput starts reading only after tmux attach has finished in the launcher;
+// otherwise the reader could steal keystrokes from the tmux client.
+func StartInput() {
+	inputOnce.Do(func() {
+		go func() {
+			r := bufio.NewReader(os.Stdin)
+			for {
+				line, err := r.ReadString('\n')
+				if err != nil {
+					close(Lines)
+					return
+				}
+				Lines <- strings.TrimSpace(line)
 			}
-			Lines <- strings.TrimSpace(line)
-		}
-	}()
+		}()
+	})
 }
 
 // Tool is one plugin. Add a tool = one file + one line in the list in main.
