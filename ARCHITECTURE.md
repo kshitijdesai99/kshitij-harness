@@ -57,7 +57,7 @@ If a step fails mid-reply, Codex drops that reply's partial items, so a `functio
 - `web_search: true` adds `{"type": "web_search"}`, a server-side tool: OpenAI runs the search and returns a `web_search_call` item (printed as `search: <query>`), so there is nothing for kh to execute.
 - `prompt_cache_key` = `kh_` + sha256(model, instructions, tools), so every session with the same prefix shares one warm cache (a random per-run key made each new chat start cold).
 - Instructions = rules (from today's config) + repo map. Sessions save the map and reuse it on resume, since a rebuilt map would change the prompt and miss the cache for the whole history. Rules are not frozen: editing them costs one cache miss, then old sessions follow the new rules.
-- Per turn, kh prints in grey: `(ttft 1.2s, total 8.4s, 12.4k in, 11.8k cached 95%, 310 out, 250 thinking)`. TTFT is user message to first streamed text (`-` if none); tokens are summed from each step's `response.completed` usage; "thinking" is the hidden reasoning part of "out".
+- Per turn, kh prints in grey: `(ttft 1.2s, total 8.4s, 12.4k in, 11.8k cached 95%, 310 out, 250 thinking)`. TTFT is user message to the model's first output of any kind (thinking, text or a tool call; `-` if none), so tool runs and y/n waits are not counted; tokens are summed from each step's `response.completed` usage; "thinking" is the hidden reasoning part of "out".
 - Headers: `Authorization`, `ChatGPT-Account-ID` (from JWT), `originator: kh`, `session_id`.
 
 ## Auth (Codex)

@@ -142,10 +142,13 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 			continue
 		}
 		switch ev.Type {
-		case "response.output_text.delta":
+		case "response.output_item.added":
+			// First output of any kind (thinking, text or a tool call). Timing
+			// only text would count tool runs and y/n waits as model latency.
 			if c.stats.TTFT == 0 {
 				c.stats.TTFT = time.Since(c.start)
 			}
+		case "response.output_text.delta":
 			fmt.Print(ev.Delta)
 		case "response.output_item.done":
 			// Item ids point at server storage we turned off; replaying them 404s.

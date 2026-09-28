@@ -43,5 +43,5 @@ type Provider interface {
 type Stats struct {
 	In, Cached, Out int
 	Think           int           // part of Out spent thinking, not shown
-	TTFT            time.Duration // user message to first streamed text; 0 if none
+	TTFT            time.Duration // user message to the model's first output; 0 if none
 }
