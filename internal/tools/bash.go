@@ -38,7 +38,7 @@ func Bash(c config.Config) Tool {
 	argv = argv[:len(argv):len(argv)]
 	return Tool{
 		Name:        "bash",
-		Description: "Run a shell command in the project dir. Use rg to search; read many files in one call (cat a b, sed -n 1,80p f). Output is capped.",
+		Description: "Run any shell command on the user's machine, with network and system access. Starts in the current dir. Use rg to search; read many files in one call (cat a b, sed -n 1,80p f). Output is capped.",
 		Params:      map[string]any{"command": map[string]any{"type": "string"}},
 		Required:    []string{"command"},
 		Run: func(ctx context.Context, input json.RawMessage) (string, error) {
@@ -46,7 +46,7 @@ func Bash(c config.Config) Tool {
 			if json.Unmarshal(input, &in) != nil || in.Command == "" {
 				return "", fmt.Errorf("need a command")
 			}
-			if !show(in.Command, c.Yes || isSafe(in.Command, c.Safe)) {
+			if !show(in.Command, c.Auto || isSafe(in.Command, c.Safe)) {
 				return "", fmt.Errorf("user said no")
 			}
 			out, err := run(ctx, append(argv, in.Command), timeout, c.OutputCap)

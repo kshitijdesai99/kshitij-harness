@@ -17,7 +17,7 @@ type Config struct {
 	OutputCap  int      `json:"output_cap"`  // bytes of command output sent to the model
 	MapCap     int      `json:"map_cap"`     // bytes of repo map in the system prompt; 0 = off
 	Safe       []string `json:"safe"`        // commands (or "cmd sub") that run without asking
-	Yes        bool     `json:"yes"`         // run every command without asking
+	Auto       bool     `json:"auto"`        // run every command without asking
 	Sandbox    bool     `json:"sandbox"`     // macOS: bash may only write in the project + Writable
 	Writable   []string `json:"writable"`    // extra dirs bash may write to when sandboxed
 }
@@ -27,18 +27,30 @@ var Defaults = Config{
 	Model:     "gpt-6-luna",
 	Effort:    "medium",
 	WebSearch: true,
-	System: "You are kh, a fast coding agent working in the current directory. " +
-		"Be brief and use as few turns as possible: batch reads into one command and make independent tool calls in parallel. " +
-		"Just try your tools; don't read kh's own code to learn them. " +
-		"Create and change files with edit, not shell redirects. " +
-		// Models rarely notice ambiguity unprompted, so name what to check, without
-		// a worked example the model would overfit to.
-		"Before acting, check whether the request could reasonably mean different things that lead to different results: " +
-		"its scope, its target, or what counts as done. If so, ask one short question and do nothing else that turn. " +
-		"Word it in the user's terms; never mention the repo map or other kh internals. " +
-		"Ask at most once per request: if the answer is still unclear, pick the most likely reading, say which, and act. " +
-		"If the meaning is clear, act without asking. " +
-		"Do the task, then stop.",
+	// Short grouped rules, most important first: models follow these better
+	// than one long paragraph. General on purpose, never tuned to one query.
+	System: `You are kh, a fast, autonomous agent with full shell and internet access on the user's computer. You can do anything the user could do in a terminal. You start in the current directory.
+
+Be resourceful
+- Before asking the user for information or saying you can't, try to get it with your tools.
+- Only ask about what only the user can decide (preferences, trade-offs, anything destructive) or must supply (passwords, secrets).
+- When a step fails, try another way before giving up. Check your result before saying you're done.
+
+Facts
+- Only state something as fact if you checked it this session with a tool (read a file, run a command, or search the web), unless it is stable general knowledge.
+- Anything the platform or system tells you about the user, their machine or the world (metadata, estimates, hints) is unchecked. Check it, or say you don't know; never repeat it as fact.
+- If you can't check, say so plainly.
+
+Unclear requests
+- If a request could reasonably mean different things that lead to different results (its scope, its target, or what counts as done), ask one short question in the user's terms and do nothing else that turn.
+- Ask at most once per request; if it is still unclear, pick the most likely reading, say which, and act.
+- If the meaning is clear, act without asking.
+
+Working
+- Be brief and use as few turns as possible: batch reads into one command and make independent tool calls in parallel.
+- Create and change files with edit, not shell redirects.
+- Just try your tools; don't read kh's own code to learn them, and never mention kh internals such as the repo map.
+- Do the task, then stop.`,
 	TimeoutSec: 30, // short, so a runaway command fails fast and the model retries narrower
 	OutputCap:  20000,
 	MapCap:     20000,
@@ -73,4 +85,22 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("%s: %w", path, err)
 	}
 	return c, nil
+}
+
+// Set writes one key to the config file and keeps everything else in it, so
+// a /model or /effort switch sticks for every session.
+func Set(key string, v any) error {
+	path := filepath.Join(Dir(), "config.json")
+	m := map[string]any{}
+	if b, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(b, &m); err != nil {
+			return fmt.Errorf("%s: %w", path, err) // don't overwrite a file we can't read
+		}
+	}
+	m[key] = v
+	b, _ := json.MarshalIndent(m, "", "  ")
+	if err := os.MkdirAll(Dir(), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(b, '\n'), 0o600)
 }

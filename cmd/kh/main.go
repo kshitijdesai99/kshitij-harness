@@ -22,10 +22,11 @@ import (
 func main() {
 	cfg, err := config.Load()
 	exit(err)
+	fromFile := cfg // before flags, to spot later /model or /effort switches
 	// Flags override the config file, which overrides the defaults.
 	flag.StringVar(&cfg.Model, "model", cfg.Model, "model id")
 	flag.StringVar(&cfg.Effort, "effort", cfg.Effort, "reasoning effort: low, medium, high")
-	flag.BoolVar(&cfg.Yes, "y", cfg.Yes, "run every command without asking")
+	flag.BoolVar(&cfg.Auto, "auto", cfg.Auto, "run every command without asking")
 	noSandbox := flag.Bool("nosandbox", false, "let bash write outside the project")
 	resume := flag.Bool("r", false, "resume the latest session")
 	id := flag.String("s", "", "resume a session by id (files in ~/.kh/sessions)")
@@ -68,7 +69,18 @@ func main() {
 
 	// One user message. Ctrl-C cancels just this turn; saving after every
 	// turn means a closed terminal loses at most the current one.
+	seen := fromFile // a -model/-effort flag holds until the file itself changes
 	turn := func(msg string) error {
+		// Follow /model or /effort switches made in any session since the last turn.
+		if now, err := config.Load(); err == nil {
+			if now.Model != seen.Model {
+				p.Use(now.Model, "")
+			}
+			if now.Effort != seen.Effort {
+				p.Use("", now.Effort)
+			}
+			seen.Model, seen.Effort = now.Model, now.Effort
+		}
 		tctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 		defer stop()
 		start := time.Now()
@@ -153,12 +165,21 @@ func command(p provider.Provider, line string) {
 	cmd, arg, _ := strings.Cut(line, " ")
 	var model, effort string
 	switch cmd {
-	case "/model":
-		model, effort = p.Use(strings.TrimSpace(arg), "")
-	case "/effort":
-		model, effort = p.Use("", strings.TrimSpace(arg))
+	case "/model", "/effort":
+		if arg = strings.TrimSpace(arg); arg != "" {
+			// Saved to config, so every session (including open ones) follows.
+			if err := config.Set(cmd[1:], arg); err != nil {
+				fmt.Println("error:", err)
+				return
+			}
+		}
+		if cmd == "/model" {
+			model, effort = p.Use(arg, "")
+		} else {
+			model, effort = p.Use("", arg)
+		}
 	default:
-		fmt.Println("/model [id]   show or switch the model\n/effort [low|medium|high]   show or switch thinking effort")
+		fmt.Println("/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions")
 		return
 	}
 	fmt.Printf("%s(model %s, effort %s)%s\n", grey, model, effort, reset)

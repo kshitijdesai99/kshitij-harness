@@ -13,7 +13,7 @@ internal/auth/codex.go    ChatGPT device-code login + token refresh
 
 ## Config
 
-Built-in defaults, then `~/.kh/config.json` (only the fields it sets), then flags (`-model`, `-effort`, `-y`, `-nosandbox`; `-r` and `-s` pick a session). A missing file is fine.
+Built-in defaults, then `~/.kh/config.json` (only the fields it sets), then flags (`-model`, `-effort`, `--auto`, `-nosandbox`; `-r` and `-s` pick a session). A missing file is fine.
 
 | Key | Default |
 |---|---|
@@ -25,7 +25,7 @@ Built-in defaults, then `~/.kh/config.json` (only the fields it sets), then flag
 | `output_cap` | `20000` |
 | `map_cap` | `20000` (0 = off) |
 | `safe` | `rg grep cat head tail ls wc sed find pwd file tree echo printf`, `git status/diff/log/show` |
-| `yes` | `false` |
+| `auto` | `false` |
 | `sandbox` | `true` |
 | `writable` | `/tmp`, `/private/var/folders`, `~/Library/Caches`, `~/.cache`, `~/go` |
 
@@ -37,7 +37,7 @@ OpenAI URLs, the client id, headers and login timings are constants in code, not
 
 ## Chat and sessions
 
-`kh "task"` runs one turn; `kh` alone (or `kh -i "task"`, which starts with that task) is a chat loop on the same provider, so history and the prompt cache carry over between messages. Each turn runs under `signal.NotifyContext`: Ctrl-C cancels the HTTP stream and kills running commands, prints `(stopped)`, then returns to the prompt. Ctrl-D quits. `/model [id]` and `/effort [level]` call `Provider.Use` to switch from the next message; history is kept. A new model misses the cache once (it is part of the cache key); a new effort does not. Resuming uses config/flags, not the last switch.
+`kh "task"` runs one turn; `kh` alone (or `kh -i "task"`, which starts with that task) is a chat loop on the same provider, so history and the prompt cache carry over between messages. Each turn runs under `signal.NotifyContext`: Ctrl-C cancels the HTTP stream and kills running commands, prints `(stopped)`, then returns to the prompt. Ctrl-D quits. `/model [id]` and `/effort [level]` save the value to `~/.kh/config.json` (`config.Set`, which keeps the rest of the file) and call `Provider.Use`, so the switch applies from the next message, history kept. Before each turn every chat re-reads the config and follows any switch made elsewhere, so all open and future sessions agree. A `-model`/`-effort` flag holds for its run until the file itself changes. A new model misses the cache once (it is part of the cache key); a new effort does not.
 
 After every turn the provider's history is saved to `~/.kh/sessions/<folder>/<id>.json` (0600), where `<folder>` is the working dir with `/` as `-`. Ids are `YYYYMMDD-HHMMSS.mmm`, so the latest is the last file. `kh sessions`, `-r` (latest) and `-s id` only see the current folder's sessions; both work for chat or a one-off task. Resuming into chat first prints the old conversation in grey via `Provider.Replay` (`> ` user lines, `$ cmd`, `edit path`, `search: q`, replies). `kh sessions` lists this folder's last 20 ids with their first message.
 
@@ -59,6 +59,7 @@ If a step fails mid-reply, Codex drops that reply's partial items, so a `functio
 - Instructions = rules (from today's config) + repo map. Sessions save the map and reuse it on resume, since a rebuilt map would change the prompt and miss the cache for the whole history. Rules are not frozen: editing them costs one cache miss, then old sessions follow the new rules.
 - Per turn, kh prints in grey: `(ttft 1.2s, total 8.4s, 12.4k in, 11.8k cached 95%, 310 out, 250 thinking, context 86k/272k 32%)`. TTFT is user message to the model's first output of any kind (thinking, text or a tool call; `-` if none), so tool runs and y/n waits are not counted; tokens are summed from each step's `response.completed` usage; "thinking" is the hidden reasoning part of "out". "context" is the last step's in + out (what the model holds now) against the model's `context_window` from `GET chatgpt.com/backend-api/codex/models`, looked up once per model (2 s timeout; limit omitted if unknown).
 - Headers: `Authorization`, `ChatGPT-Account-ID` (from JWT), `originator: kh`, `session_id`.
+- If the connection drops before any reply (e.g. an HTTP/2 stream reset), the request is retried every 500 ms for up to a minute, with one `(connection dropped, retrying...)` note. Ctrl-C stops it. HTTP errors like 429 are not retried.
 
 ## Auth (Codex)
 
@@ -72,7 +73,7 @@ Tokens live in `~/.kh/codex.json` (0600), separate from `~/.codex` because refre
 ## Tools
 
 **bash**: `/bin/bash --noprofile --norc -c` (starts in ~4 ms). Own process group, `timeout_sec` kills the whole group, stdin is `/dev/null`. Output capped to `output_cap` (first + last half). Failed commands return output + exit error as a normal result, so the model can react. A timeout adds "timed out after Ns, try a narrower command"; a Ctrl-C does not.
-Commands matching `safe` run without asking, joined by `| ; && ||`; an entry like `git diff` matches leading words. Always unsafe, whatever the config: `& > < $ \`` or newline, `sed -i`, `find -exec|-execdir|-delete|-ok`. One mutex covers printing `$ cmd` and the y/n question, so each question sits under its own command and parallel calls never print over it. `-y` skips them.
+Commands matching `safe` run without asking, joined by `| ; && ||`; an entry like `git diff` matches leading words. Always unsafe, whatever the config: `& > < $ \`` or newline, `sed -i`, `find -exec|-execdir|-delete|-ok`. One mutex covers printing `$ cmd` and the y/n question, so each question sits under its own command and parallel calls never print over it. `--auto` (or `"auto": true`) skips them.
 
 **Sandbox** (macOS, `sandbox: true`): every command runs under `sandbox-exec` with a profile that allows reads and network everywhere but writes only under the project, `writable` and `/dev`. Paths are resolved to real paths (`/tmp` is `/private/tmp`). Adds under 10 ms. A blocked write shows "Operation not permitted", the same error macOS privacy (TCC) gives for protected folders like Downloads, so kh appends a note naming both causes: `-nosandbox` / `writable` for writes, the terminal's Files & Folders permission for reads. Other OSes run without it.
 

@@ -18,7 +18,7 @@ go build -o kh ./cmd/kh
 ./kh -s 20260928-194501.123             # continue a specific one (ids in ~/.kh/sessions)
 ./kh "fix the failing test in foo_test.go"
 ./kh -i "fix the failing test"          # do the task, then stay in chat
-./kh -y "run go test and fix errors"   # skip y/n prompts
+./kh --auto "run go test and fix errors"  # skip y/n prompts
 ./kh -model gpt-5.5 -effort high "hi"
 ./kh -nosandbox "update ~/.zshrc"      # allow writes outside the project
 ```
@@ -31,10 +31,10 @@ Optional `~/.kh/config.json`; set only what you want to change:
 { "model": "gpt-6-luna", "effort": "medium", "timeout_sec": 30, "output_cap": 20000, "map_cap": 20000 }
 ```
 
-Also `web_search` (on by default), `system`, `safe`, `yes`, `sandbox` and `writable` (extra dirs bash may write to). Flags override the file.
+Also `web_search` (on by default), `system`, `safe`, `auto`, `sandbox` and `writable` (extra dirs bash may write to). Flags override the file.
 
-Type while a task runs to steer it: a reply in progress is cut off and restarted with your line; a running command finishes first. In chat, `/model gpt-5.5` and `/effort high` switch mid-session (from the next message); `/model` alone shows both.
+Type while a task runs to steer it: a reply in progress is cut off and restarted with your line; a running command finishes first. In chat, `/model gpt-5.5` and `/effort high` switch from the next message and are saved to `~/.kh/config.json`, so every session (open ones too) follows; `/model` alone shows both.
 
-Read-only commands (`rg`, `cat`, `ls`, `git diff`, ...) run without asking. Everything else asks y/n unless `-y`. On macOS, bash can only write inside the project (plus temp and cache dirs) unless `-nosandbox`.
+Read-only commands (`rg`, `cat`, `ls`, `git diff`, ...) run without asking. Everything else asks y/n unless `--auto`. On macOS, bash can only write inside the project (plus temp and cache dirs) unless `-nosandbox`.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [todo.md](todo.md) for what's next.

@@ -46,7 +46,7 @@ func TestSafeList(t *testing.T) {
 
 func TestOutputCap(t *testing.T) {
 	cfg := config.Defaults
-	cfg.Yes = true
+	cfg.Auto = true
 	out, _ := bash(t, cfg, "yes | head -c 50000")
 	if len(out) > cfg.OutputCap+100 || !strings.Contains(out, "[cut]") {
 		t.Errorf("output not capped: %d bytes", len(out))
@@ -76,7 +76,7 @@ func TestEdit(t *testing.T) {
 
 func TestTimeoutTellsModel(t *testing.T) {
 	cfg := config.Defaults
-	cfg.Yes, cfg.TimeoutSec = true, 1
+	cfg.Auto, cfg.TimeoutSec = true, 1
 	out, _ := bash(t, cfg, "sleep 5")
 	if !strings.Contains(out, "timed out after 1s") {
 		t.Errorf("model not told about timeout: %q", out)

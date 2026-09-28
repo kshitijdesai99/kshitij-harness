@@ -28,6 +28,8 @@ const (
 	codexModelsURL = "https://chatgpt.com/backend-api/codex/models?client_version=99.0.0"
 	originator     = "kh" // OpenAI asks third-party harnesses to name themselves
 	userAgent      = "kh/0.1"
+	retryEvery     = 500 * time.Millisecond // when the connection drops
+	retryFor       = time.Minute            // then give up; Ctrl-C stops sooner
 )
 
 type Codex struct {
@@ -101,12 +103,28 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 	if err != nil {
 		return nil, err
 	}
-	req, _ := http.NewRequestWithContext(ctx, "POST", codexURL, bytes.NewReader(body))
-	setHeaders(req, access, account)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("session_id", c.session)
-	resp, err := http.DefaultClient.Do(req)
+	var resp *http.Response
+	giveUp := time.Now().Add(retryFor)
+	for try := 0; ; try++ {
+		req, _ := http.NewRequestWithContext(ctx, "POST", codexURL, bytes.NewReader(body))
+		setHeaders(req, access, account)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("session_id", c.session)
+		resp, err = http.DefaultClient.Do(req)
+		// A dropped connection (e.g. an HTTP/2 stream reset) before any reply
+		// is usually gone on retry. Nothing was streamed, so retrying is safe.
+		if err == nil || ctx.Err() != nil || time.Now().After(giveUp) {
+			break
+		}
+		if try == 0 {
+			fmt.Fprintln(os.Stderr, "(connection dropped, retrying...)")
+		}
+		select {
+		case <-time.After(retryEvery):
+		case <-ctx.Done():
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

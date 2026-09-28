@@ -20,7 +20,7 @@ func TestSandbox(t *testing.T) {
 	defer os.Remove(probe)
 
 	cfg := config.Defaults
-	cfg.Yes = true
+	cfg.Auto = true
 	out, _ := bash(t, cfg, "touch inside && touch "+probe)
 	if _, err := os.Stat("inside"); err != nil {
 		t.Error("write inside the project was blocked")
