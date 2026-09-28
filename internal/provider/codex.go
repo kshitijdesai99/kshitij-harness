@@ -30,7 +30,8 @@ const (
 type Codex struct {
 	model   string
 	effort  string
-	system  string
+	rules   string // always today's config, so rule changes reach old sessions
+	repoMap string // frozen per session: it changes often and would miss the cache
 	tools   []map[string]any
 	input   []map[string]any // full history; the server stores nothing (store: false)
 	session string
@@ -38,10 +39,10 @@ type Codex struct {
 	start   time.Time // when the current turn's user message was sent
 }
 
-func NewCodex(c config.Config, ts []tools.Tool) *Codex {
+func NewCodex(c config.Config, repoMap string, ts []tools.Tool) *Codex {
 	id := make([]byte, 16)
 	rand.Read(id)
-	x := &Codex{model: c.Model, effort: c.Effort, system: c.System, session: hex.EncodeToString(id)}
+	x := &Codex{model: c.Model, effort: c.Effort, rules: c.System, repoMap: repoMap, session: hex.EncodeToString(id)}
 	for _, t := range ts {
 		x.tools = append(x.tools, map[string]any{
 			"type": "function", "name": t.Name, "description": t.Description,
@@ -77,7 +78,7 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 
 	body, _ := json.Marshal(map[string]any{
 		"model":               c.model,
-		"instructions":        c.system,
+		"instructions":        c.instructions(),
 		"input":               c.input,
 		"tools":               c.tools,
 		"tool_choice":         "auto",
@@ -177,10 +178,17 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 	return calls, sc.Err()
 }
 
+func (c *Codex) instructions() string {
+	if c.repoMap == "" {
+		return c.rules
+	}
+	return c.rules + "\n\nRepo map (path: top-level symbols). Use it to go straight to the right file:\n" + c.repoMap
+}
+
 // cacheKey is a hash of everything before the history. Same prompt and tools
 // = same key, so every session in a repo shares one warm cache.
 func (c *Codex) cacheKey() string {
-	b, _ := json.Marshal([]any{c.model, c.system, c.tools})
+	b, _ := json.Marshal([]any{c.model, c.instructions(), c.tools})
 	h := sha256.Sum256(b)
 	return "kh_" + hex.EncodeToString(h[:12])
 }
@@ -193,24 +201,25 @@ func (c *Codex) Stats() Stats {
 
 type codexState struct {
 	Session string           `json:"session"`
-	System  string           `json:"system"`
+	Map     string           `json:"map"`
 	Input   []map[string]any `json:"input"`
 }
 
 func (c *Codex) Save() ([]byte, error) {
-	return json.Marshal(codexState{c.session, c.system, c.input})
+	return json.Marshal(codexState{c.session, c.repoMap, c.input})
 }
 
-// Load restores the exact system prompt too: a rebuilt repo map would
-// change the prompt's first bytes and miss the cache for the whole history.
+// Load restores the session's repo map, so the prompt stays byte-identical
+// and cached; rules still come from today's config (one cache miss after
+// you change them).
 func (c *Codex) Load(b []byte) error {
 	var s codexState
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
 	c.session, c.input = s.Session, s.Input
-	if s.System != "" {
-		c.system = s.System
+	if s.Map != "" {
+		c.repoMap = s.Map
 	}
 	return nil
 }

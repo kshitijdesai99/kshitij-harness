@@ -17,6 +17,7 @@ go build -o kh ./cmd/kh
 ./kh sessions                           # list saved sessions with their first message
 ./kh -s 20260928-194501.123             # continue a specific one (ids in ~/.kh/sessions)
 ./kh "fix the failing test in foo_test.go"
+./kh -i "fix the failing test"          # do the task, then stay in chat
 ./kh -y "run go test and fix errors"   # skip y/n prompts
 ./kh -model gpt-5.5 -effort high "hi"
 ./kh -nosandbox "update ~/.zshrc"      # allow writes outside the project

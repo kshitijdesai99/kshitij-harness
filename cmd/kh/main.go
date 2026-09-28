@@ -29,6 +29,7 @@ func main() {
 	noSandbox := flag.Bool("nosandbox", false, "let bash write outside the project")
 	resume := flag.Bool("r", false, "resume the latest session")
 	id := flag.String("s", "", "resume a session by id (files in ~/.kh/sessions)")
+	stay := flag.Bool("i", false, "stay in chat after the task")
 	flag.Parse()
 	cfg.Sandbox = cfg.Sandbox && !*noSandbox
 	args := flag.Args()
@@ -44,12 +45,9 @@ func main() {
 		return
 	}
 
-	// Built once per run, so it stays a stable, cacheable part of the prompt.
-	if m := repomap.Build(".", cfg.MapCap); m != "" {
-		cfg.System += "\n\nRepo map (path: top-level symbols). Use it to go straight to the right file:\n" + m
-	}
 	ts := []tools.Tool{tools.Bash(cfg), tools.Edit}
-	p := provider.NewCodex(cfg, ts)
+	// Built once per session, so it stays a stable, cacheable part of the prompt.
+	p := provider.NewCodex(cfg, repomap.Build(".", cfg.MapCap), ts)
 
 	if *resume {
 		*id, err = session.Latest()
@@ -59,7 +57,7 @@ func main() {
 		b, err := session.Load(*id)
 		exit(err)
 		exit(p.Load(b))
-		if len(args) == 0 { // chat: show where we left off
+		if len(args) == 0 || *stay { // chat: show where we left off
 			fmt.Printf("--- session %s ---\n%s", *id, grey)
 			p.Replay(os.Stdout)
 			fmt.Println(reset + "---")
@@ -89,12 +87,19 @@ func main() {
 		return err
 	}
 
-	if len(args) > 0 {
-		exit(turn(strings.Join(args, " ")))
+	task := strings.Join(args, " ")
+	if task != "" && !*stay {
+		exit(turn(task))
 		fmt.Fprintf(os.Stderr, "(session %s: kh -r to continue)\n", *id)
 		return
 	}
 	fmt.Fprintf(os.Stderr, "kh chat, session %s. Ctrl-C stops a task, Ctrl-D quits.\n", *id)
+	if task != "" {
+		fmt.Println(">", task)
+		if err := turn(task); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+		}
+	}
 	for {
 		fmt.Print("> ")
 		line, err := tools.In.ReadString('\n')
@@ -139,7 +144,7 @@ func listSessions(cfg config.Config) {
 	ids = ids[max(0, len(ids)-20):]
 	for _, id := range ids {
 		b, _ := session.Load(id)
-		p := provider.NewCodex(cfg, nil)
+		p := provider.NewCodex(cfg, "", nil)
 		var buf strings.Builder
 		if p.Load(b) == nil {
 			p.Replay(&buf)

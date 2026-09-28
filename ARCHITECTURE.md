@@ -37,7 +37,7 @@ OpenAI URLs, the client id, headers and login timings are constants in code, not
 
 ## Chat and sessions
 
-`kh "task"` runs one turn; `kh` alone is a chat loop on the same provider, so history and the prompt cache carry over between messages. Each turn runs under `signal.NotifyContext`: Ctrl-C cancels the HTTP stream and kills running commands, prints `(stopped)`, then returns to the prompt. Ctrl-D quits.
+`kh "task"` runs one turn; `kh` alone (or `kh -i "task"`, which starts with that task) is a chat loop on the same provider, so history and the prompt cache carry over between messages. Each turn runs under `signal.NotifyContext`: Ctrl-C cancels the HTTP stream and kills running commands, prints `(stopped)`, then returns to the prompt. Ctrl-D quits.
 
 After every turn the provider's history is saved to `~/.kh/sessions/<id>.json` (0600). Ids are `YYYYMMDD-HHMMSS.mmm`, so the latest is the last file. `-r` loads the latest, `-s id` a specific one; both work for chat or a one-off task. Resuming into chat first prints the old conversation in grey via `Provider.Replay` (`> ` user lines, `$ cmd`, `edit path`, `search: q`, replies). `kh sessions` lists the last 20 ids with their first message.
 
@@ -56,7 +56,7 @@ If a step fails mid-reply, Codex drops that reply's partial items, so a `functio
 - `reasoning.effort` from config.
 - `web_search: true` adds `{"type": "web_search"}`, a server-side tool: OpenAI runs the search and returns a `web_search_call` item (printed as `search: <query>`), so there is nothing for kh to execute.
 - `prompt_cache_key` = `kh_` + sha256(model, instructions, tools), so every session with the same prefix shares one warm cache (a random per-run key made each new chat start cold).
-- Sessions save the exact instructions and reuse them on resume: a rebuilt repo map would change the first bytes and miss the cache for the whole history.
+- Instructions = rules (from today's config) + repo map. Sessions save the map and reuse it on resume, since a rebuilt map would change the prompt and miss the cache for the whole history. Rules are not frozen: editing them costs one cache miss, then old sessions follow the new rules.
 - Per turn, kh prints in grey: `(ttft 1.2s, total 8.4s, 12.4k in, 11.8k cached 95%, 310 out)`. TTFT is user message to first streamed text (`-` if none); tokens are summed from each step's `response.completed` usage.
 - Headers: `Authorization`, `ChatGPT-Account-ID` (from JWT), `originator: kh`, `session_id`.
 

@@ -13,7 +13,7 @@ import (
 // A failed step (here: not logged in) must leave history resumable.
 func TestSaveLoadAfterFailedStep(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	p := provider.NewCodex(config.Defaults, nil)
+	p := provider.NewCodex(config.Defaults, "", nil)
 	if _, err := p.Step(context.Background(), "hi", nil); err == nil {
 		t.Fatal("want not-logged-in error")
 	}
@@ -22,7 +22,7 @@ func TestSaveLoadAfterFailedStep(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	q := provider.NewCodex(config.Defaults, nil)
+	q := provider.NewCodex(config.Defaults, "", nil)
 	if err := q.Load(b); err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestReplay(t *testing.T) {
 		{"type":"web_search_call","action":{"type":"search","query":"go 1.27"}},
 		{"type":"message","role":"assistant","content":[{"type":"output_text","text":"There are 3."}]}
 	]}`
-	p := provider.NewCodex(config.Defaults, nil)
+	p := provider.NewCodex(config.Defaults, "", nil)
 	if err := p.Load([]byte(state)); err != nil {
 		t.Fatal(err)
 	}
@@ -59,14 +59,12 @@ func TestReplay(t *testing.T) {
 	}
 }
 
-// Resuming keeps the saved prompt, so a changed repo map can't break the cache.
-func TestLoadKeepsSavedPrompt(t *testing.T) {
-	old, now := config.Defaults, config.Defaults
-	old.System, now.System = "prompt A", "prompt B"
-	b, _ := provider.NewCodex(old, nil).Save()
-	p := provider.NewCodex(now, nil)
+// Resuming keeps the session's repo map, so a changed repo can't break the cache.
+func TestLoadKeepsSavedMap(t *testing.T) {
+	b, _ := provider.NewCodex(config.Defaults, "old map", nil).Save()
+	p := provider.NewCodex(config.Defaults, "new map", nil)
 	p.Load(b)
-	if got, _ := p.Save(); !strings.Contains(string(got), `"system":"prompt A"`) {
-		t.Errorf("resumed with the new prompt: %s", got)
+	if got, _ := p.Save(); !strings.Contains(string(got), `"map":"old map"`) {
+		t.Errorf("resumed with the new map: %s", got)
 	}
 }
