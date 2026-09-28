@@ -1,4 +1,4 @@
-// Package session saves chats in ~/.kh/sessions so they can be resumed.
+// Package session saves chats in ~/.kh/sessions/<folder> so they can be resumed.
 package session
 
 import (
@@ -11,7 +11,15 @@ import (
 	"kh/internal/config"
 )
 
-func dir() string { return filepath.Join(config.Dir(), "sessions") }
+// dir is per working folder, so listing and -r only see this folder's chats.
+// The path becomes a readable name: /Users/me/app -> -Users-me-app.
+func dir() string {
+	wd, _ := os.Getwd()
+	if r, err := filepath.EvalSymlinks(wd); err == nil {
+		wd = r
+	}
+	return filepath.Join(config.Dir(), "sessions", strings.ReplaceAll(wd, string(filepath.Separator), "-"))
+}
 
 // New returns an id that sorts by time, so the latest is simply the last file.
 // Milliseconds, so two runs in the same second never clash.
