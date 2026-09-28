@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -26,6 +29,13 @@ var askMu sync.Mutex // parallel calls must not ask at the same time
 // Bash runs one command per call.
 func Bash(c config.Config) Tool {
 	timeout := time.Duration(c.TimeoutSec) * time.Second
+	// No profile/rc: starts in milliseconds instead of loading your shell setup.
+	argv := []string{"/bin/bash", "--noprofile", "--norc", "-c"}
+	if c.Sandbox && runtime.GOOS == "darwin" {
+		argv = append(sandbox(append([]string{"."}, c.Writable...)), argv...)
+	}
+	// Cap = len, so parallel calls appending their command each get a new array.
+	argv = argv[:len(argv):len(argv)]
 	return Tool{
 		Name:        "bash",
 		Description: "Run a shell command in the project dir. Use rg to search; read many files in one call (cat a b, sed -n 1,80p f). Output is capped.",
@@ -40,16 +50,19 @@ func Bash(c config.Config) Tool {
 			if !c.Yes && !isSafe(in.Command, c.Safe) && !ask() {
 				return "", fmt.Errorf("user said no")
 			}
-			return run(ctx, in.Command, timeout, c.OutputCap)
+			out, err := run(ctx, append(argv, in.Command), timeout, c.OutputCap)
+			if c.Sandbox && strings.Contains(out, "Operation not permitted") {
+				out += "\n(kh sandbox blocks writes outside the project. Tell the user to rerun with -nosandbox or add the dir to writable in ~/.kh/config.json.)"
+			}
+			return out, err
 		},
 	}
 }
 
-func run(ctx context.Context, command string, timeout time.Duration, outputCap int) (string, error) {
+func run(ctx context.Context, argv []string, timeout time.Duration, outputCap int) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	// No profile/rc: starts in milliseconds instead of loading your shell setup.
-	cmd := exec.CommandContext(ctx, "/bin/bash", "--noprofile", "--norc", "-c", command)
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	// Own process group, so a timeout kills everything the command started.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
@@ -64,6 +77,24 @@ func run(ctx context.Context, command string, timeout time.Duration, outputCap i
 		s += "\n" + err.Error()
 	}
 	return s, nil // a failing command is information for the model, not a tool error
+}
+
+// sandbox returns a sandbox-exec prefix that allows reads and network everywhere
+// but writes only under dirs (and /dev, for /dev/null and the tty).
+func sandbox(dirs []string) []string {
+	home, _ := os.UserHomeDir()
+	p := `(version 1)(allow default)(deny file-write*)(allow file-write* (subpath "/dev")`
+	for _, d := range dirs {
+		if strings.HasPrefix(d, "~/") {
+			d = filepath.Join(home, d[2:])
+		}
+		d, _ = filepath.Abs(d)
+		if r, err := filepath.EvalSymlinks(d); err == nil {
+			d = r // the sandbox matches real paths, e.g. /tmp is /private/tmp
+		}
+		p += " (subpath " + strconv.Quote(d) + ")"
+	}
+	return []string{"/usr/bin/sandbox-exec", "-p", p + ")"}
 }
 
 // isSafe allows pipes between safe commands; anything that can write or chain does not pass.

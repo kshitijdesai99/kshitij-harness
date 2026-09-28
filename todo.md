@@ -9,10 +9,11 @@ Rules: stdlib first, one file per job, comments say why, nothing extra. Design i
 - [x] 2. Tools: `bash`, `edit`, parallel calls, `-y`.
 - [x] 3. Repo map: files + Go symbols in the cached system prompt.
 - [x] 4. Codex: device-code login, refresh with lock, Responses streaming.
-- [ ] 5. Sandbox: macOS `sandbox-exec` around `bash`. Done when `rm ~/test` is blocked.
+- [x] 5. Sandbox: macOS `sandbox-exec` around `bash`; `-nosandbox` and `writable` to allow more.
 
 ## Later, if needed
 
+- Linux sandbox (Landlock or bubblewrap)
 - Repo map symbols for non-Go files (tree-sitter or ctags)
 - Browser PKCE login for Codex (`localhost:1455`)
 - `x-openai-internal-codex-residency` header (residency-locked workspaces)

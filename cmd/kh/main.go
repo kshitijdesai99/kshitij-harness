@@ -23,7 +23,9 @@ func main() {
 	flag.StringVar(&cfg.Model, "model", cfg.Model, "model id")
 	flag.StringVar(&cfg.Effort, "effort", cfg.Effort, "reasoning effort: low, medium, high")
 	flag.BoolVar(&cfg.Yes, "y", cfg.Yes, "run every command without asking")
+	noSandbox := flag.Bool("nosandbox", false, "let bash write outside the project")
 	flag.Parse()
+	cfg.Sandbox = cfg.Sandbox && !*noSandbox
 	args := flag.Args()
 	ctx := context.Background()
 
@@ -33,7 +35,7 @@ func main() {
 		return
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, `usage: kh [-model id] [-effort e] [-y] "your task"  |  kh login codex`)
+		fmt.Fprintln(os.Stderr, `usage: kh [-model id] [-effort e] [-y] [-nosandbox] "your task"  |  kh login codex`)
 		os.Exit(1)
 	}
 

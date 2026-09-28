@@ -12,7 +12,7 @@ internal/auth/codex.go    ChatGPT device-code login + token refresh
 
 ## Config
 
-Built-in defaults, then `~/.kh/config.json` (only the fields it sets), then flags (`-model`, `-effort`, `-y`). A missing file is fine.
+Built-in defaults, then `~/.kh/config.json` (only the fields it sets), then flags (`-model`, `-effort`, `-y`, `-nosandbox`). A missing file is fine.
 
 | Key | Default |
 |---|---|
@@ -24,6 +24,8 @@ Built-in defaults, then `~/.kh/config.json` (only the fields it sets), then flag
 | `map_cap` | `20000` (0 = off) |
 | `safe` | `rg grep cat head tail ls wc sed find pwd file tree`, `git status/diff/log/show` |
 | `yes` | `false` |
+| `sandbox` | `true` |
+| `writable` | `/tmp`, `/private/var/folders`, `~/Library/Caches`, `~/.cache`, `~/go` |
 
 OpenAI URLs, the client id, headers and login timings are constants in code, not config, because changing them breaks the protocol.
 
@@ -59,6 +61,8 @@ Tokens live in `~/.kh/codex.json` (0600), separate from `~/.codex` because refre
 **bash**: `/bin/bash --noprofile --norc -c` (starts in ~4 ms). Own process group, `timeout_sec` kills the whole group, stdin is `/dev/null`. Output capped to `output_cap` (first + last half). Failed commands return output + exit error as a normal result, so the model can react.
 Commands matching `safe` run without asking, piped together; an entry like `git diff` matches leading words. Always unsafe, whatever the config: `; & > < $ \`` or newline, `sed -i`, `find -exec|-execdir|-delete|-ok`. Prompts are serialised with a mutex. `-y` skips them.
 
+**Sandbox** (macOS, `sandbox: true`): every command runs under `sandbox-exec` with a profile that allows reads and network everywhere but writes only under the project, `writable` and `/dev`. Paths are resolved to real paths (`/tmp` is `/private/tmp`). Adds under 10 ms. A blocked write shows "Operation not permitted"; kh appends a note telling the model to ask the user to rerun with `-nosandbox` or add the dir to `writable`. Other OSes run without it.
+
 **edit**: `old` must appear exactly once, then replace. Empty `old` creates the file (`O_EXCL`, fails if it exists). Paths must resolve inside the project.
 
 ## Repo map
@@ -74,7 +78,3 @@ Built once at start and appended to the system prompt, so it is part of the cach
 - Output caps keep context small.
 - Repo map up front, so the model often opens the right file without searching.
 - Stdlib only. Single static binary.
-
-## Not yet
-
-`sandbox-exec` (phase 5). Until phase 5, `bash` can touch anything the user can, so the y/n prompt is the only guard.

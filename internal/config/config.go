@@ -17,6 +17,8 @@ type Config struct {
 	MapCap     int      `json:"map_cap"`     // bytes of repo map in the system prompt; 0 = off
 	Safe       []string `json:"safe"`        // commands (or "cmd sub") that run without asking
 	Yes        bool     `json:"yes"`         // run every command without asking
+	Sandbox    bool     `json:"sandbox"`     // macOS: bash may only write in the project + Writable
+	Writable   []string `json:"writable"`    // extra dirs bash may write to when sandboxed
 }
 
 // Short and fixed on purpose: short = fast, fixed = cacheable.
@@ -25,6 +27,7 @@ var Defaults = Config{
 	Effort: "medium",
 	System: "You are kh, a fast coding agent working in the current directory. " +
 		"Be brief. Use as few turns as possible: batch reads into one command and make independent tool calls in parallel. " +
+		"Act directly; don't inspect kh's own code to learn how your tools work, just try them. " +
 		"Do the task, then stop.",
 	TimeoutSec: 120,
 	OutputCap:  20000,
@@ -33,6 +36,9 @@ var Defaults = Config{
 		"rg", "grep", "cat", "head", "tail", "ls", "wc", "sed", "find", "pwd", "file", "tree",
 		"git status", "git diff", "git log", "git show",
 	},
+	Sandbox: true,
+	// Temp dirs and tool caches, so builds and tests still work.
+	Writable: []string{"/tmp", "/private/var/folders", "~/Library/Caches", "~/.cache", "~/go"},
 }
 
 // Dir is where kh keeps its config and login.
