@@ -29,7 +29,7 @@ Optional `~/.kh/config.json`; set only what you want to change:
 { "model": "gpt-6-luna", "effort": "medium", "timeout_sec": 120, "output_cap": 20000, "map_cap": 20000 }
 ```
 
-Also `system`, `safe`, `yes`, `sandbox` and `writable` (extra dirs bash may write to). Flags override the file.
+Also `web_search` (on by default), `system`, `safe`, `yes`, `sandbox` and `writable` (extra dirs bash may write to). Flags override the file.
 
 Read-only commands (`rg`, `cat`, `ls`, `git diff`, ...) run without asking. Everything else asks y/n unless `-y`. On macOS, bash can only write inside the project (plus temp and cache dirs) unless `-nosandbox`.
 

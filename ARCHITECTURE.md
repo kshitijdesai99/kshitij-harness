@@ -19,6 +19,7 @@ Built-in defaults, then `~/.kh/config.json` (only the fields it sets), then flag
 |---|---|
 | `model` | `gpt-6-luna` |
 | `effort` | `medium` |
+| `web_search` | `true` |
 | `system` | short fixed prompt |
 | `timeout_sec` | `120` |
 | `output_cap` | `20000` |
@@ -53,6 +54,7 @@ If a step fails mid-reply, Codex drops that reply's partial items, so a `functio
 - `store: false`, so the full `input` history is resent each turn. Items come from `response.output_item.done` and are replayed with `id` removed (stored ids 404).
 - `include: reasoning.encrypted_content` keeps reasoning across turns without server storage.
 - `reasoning.effort` from config.
+- `web_search: true` adds `{"type": "web_search"}`, a server-side tool: OpenAI runs the search and returns a `web_search_call` item (printed as `search: <query>`), so there is nothing for kh to execute.
 - `prompt_cache_key` = per-run session id, so turns hit the same cache.
 - Headers: `Authorization`, `ChatGPT-Account-ID` (from JWT), `originator: kh`, `session_id`.
 

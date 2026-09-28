@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	"kh/internal/auth"
@@ -42,6 +43,10 @@ func NewCodex(c config.Config, ts []tools.Tool) *Codex {
 			"type": "function", "name": t.Name, "description": t.Description,
 			"parameters": map[string]any{"type": "object", "properties": t.Params, "required": t.Required},
 		})
+	}
+	if c.WebSearch {
+		// Server-side tool: OpenAI runs the search, we never see a call to execute.
+		x.tools = append(x.tools, map[string]any{"type": "web_search"})
 	}
 	return x
 }
@@ -128,6 +133,10 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 			// Item ids point at server storage we turned off; replaying them 404s.
 			delete(ev.Item, "id")
 			c.input = append(c.input, ev.Item)
+			if ev.Item["type"] == "web_search_call" {
+				action, _ := ev.Item["action"].(map[string]any)
+				fmt.Fprintln(os.Stderr, "search:", action["query"])
+			}
 			if ev.Item["type"] == "function_call" {
 				id, _ := ev.Item["call_id"].(string)
 				name, _ := ev.Item["name"].(string)

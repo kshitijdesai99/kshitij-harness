@@ -10,7 +10,8 @@ import (
 
 type Config struct {
 	Model      string   `json:"model"`
-	Effort     string   `json:"effort"` // reasoning: low, medium, high
+	Effort     string   `json:"effort"`     // reasoning: low, medium, high
+	WebSearch  bool     `json:"web_search"` // Codex's built-in search, run on OpenAI's side
 	System     string   `json:"system"`
 	TimeoutSec int      `json:"timeout_sec"` // per bash command
 	OutputCap  int      `json:"output_cap"`  // bytes of command output sent to the model
@@ -23,8 +24,9 @@ type Config struct {
 
 // Short and fixed on purpose: short = fast, fixed = cacheable.
 var Defaults = Config{
-	Model:  "gpt-6-luna",
-	Effort: "medium",
+	Model:     "gpt-6-luna",
+	Effort:    "medium",
+	WebSearch: true,
 	System: "You are kh, a fast coding agent working in the current directory. " +
 		"Be brief. Use as few turns as possible: batch reads into one command and make independent tool calls in parallel. " +
 		"Act directly; don't inspect kh's own code to learn how your tools work, just try them. " +
