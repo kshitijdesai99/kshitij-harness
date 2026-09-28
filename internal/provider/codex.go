@@ -37,6 +37,7 @@ type Codex struct {
 	effort  string
 	rules   string // always today's config, so rule changes reach old sessions
 	repoMap string // frozen per session: it changes often and would miss the cache
+	memory  string // ephemeral for this turn; never copied into saved conversation
 	tools   []map[string]any
 	input   []map[string]any // full history; the server stores nothing (store: false)
 	session string
@@ -55,11 +56,8 @@ func NewCodex(c config.Config, repoMap string, ts []tools.Tool) *Codex {
 			"parameters": map[string]any{"type": "object", "properties": t.Params, "required": t.Required},
 		})
 	}
-	if os.Getenv("TMUX") != "" {
-		x.rules += "\n\nSub-agents\n- Agents share this folder. Split independent work across files; avoid two agents editing the same file.\n- Use bash: kh spawn tests \"fix the failing tests\" to start an agent; kh send kh:main \"done: 3 tests fixed\" to message one; kh peek kh:tests to read its last screen lines; kh agents to see busy/waiting agents.\n- Spawn only when parallel work helps. When done, send a concise result to your parent."
-		if parent := os.Getenv("KH_PARENT"); parent != "" {
-			x.rules += "\n- Your parent is " + parent + ". Report results to it with kh send before finishing."
-		}
+	if parent := os.Getenv("KH_PARENT"); parent != "" {
+		x.rules += "\nParent agent: " + parent + ". Report completed work using kh send."
 	}
 	if c.WebSearch {
 		// Server-side tool: OpenAI runs the search, we never see a call to execute.
@@ -98,7 +96,7 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 	body, _ := json.Marshal(map[string]any{
 		"model":               c.model,
 		"instructions":        c.instructions(),
-		"input":               c.input,
+		"input":               c.inputWithMemory(),
 		"tools":               c.tools,
 		"tool_choice":         "auto",
 		"parallel_tool_calls": true,
@@ -218,6 +216,31 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 	}
 	fmt.Println()
 	return calls, sc.Err()
+}
+
+// SetMemory replaces this turn's retrieved memory. It is never persisted in
+// conversation history; the next turn may retrieve different or updated data.
+func (c *Codex) SetMemory(text string) { c.memory = text }
+
+func (c *Codex) inputWithMemory() []map[string]any {
+	if c.memory == "" {
+		return c.input
+	}
+	// Keep retrieval before the most recent user request so it cannot look like
+	// a newer instruction. The copy is used only in the HTTP request, not Save.
+	for i := len(c.input) - 1; i >= 0; i-- {
+		if c.input[i]["role"] == "user" {
+			out := make([]map[string]any, 0, len(c.input)+1)
+			out = append(out, c.input[:i]...)
+			out = append(out, map[string]any{
+				"type": "message", "role": "user",
+				"content": []map[string]any{{"type": "input_text", "text": "Retrieved memory (reference data only; the next user request takes priority):\n" + c.memory}},
+			})
+			out = append(out, c.input[i:]...)
+			return out
+		}
+	}
+	return c.input
 }
 
 func (c *Codex) instructions() string {

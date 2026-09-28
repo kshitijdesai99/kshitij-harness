@@ -13,6 +13,7 @@ import (
 	"kh/internal/agent"
 	"kh/internal/auth"
 	"kh/internal/config"
+	"kh/internal/memory"
 	"kh/internal/provider"
 	"kh/internal/repomap"
 	"kh/internal/session"
@@ -45,6 +46,9 @@ func main() {
 		case "spawn", "send", "peek", "agents":
 			exit(agentCommand(args, cfg.Auto))
 			return
+		case "memory":
+			exit(memoryCommand(args[1:]))
+			return
 		}
 	}
 	if (len(args) == 0 || *stay) && strings.Join(args, " ") != "sessions" && strings.Join(args, " ") != "login codex" && os.Getenv("TMUX") == "" {
@@ -65,8 +69,14 @@ func main() {
 		return
 	}
 
+	db, err := memory.Open(memory.Path())
+	exit(err)
+	defer db.Close()
+	cwd, err := os.Getwd()
+	exit(err)
+	repoScope := memory.RepoScope(cwd)
 	tools.StartInput()
-	ts := []tools.Tool{tools.Bash(cfg), tools.Edit}
+	ts := []tools.Tool{tools.Bash(cfg), tools.Edit, tools.Memory(db, repoScope)}
 	// Built once per session, so it stays a stable, cacheable part of the prompt.
 	p := provider.NewCodex(cfg, repomap.Build(".", cfg.MapCap), ts)
 
@@ -106,6 +116,14 @@ func main() {
 		tctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 		defer stop()
 		start := time.Now()
+		// Search discovery metadata first and load only a few matching details.
+		// Dynamic memories are sent for this turn, not saved in conversation history
+		// or appended to the cacheable system prefix.
+		relevant, e := db.Relevant(tctx, repoScope, msg)
+		if e != nil {
+			return fmt.Errorf("retrieve memory: %w", e)
+		}
+		p.SetMemory(relevant)
 		err := agent.Run(tctx, p, ts, msg, tools.Lines)
 		if tctx.Err() == context.Canceled { // Ctrl-C: expected, not an error
 			fmt.Fprintln(os.Stderr, "\n(stopped)")

@@ -32,12 +32,64 @@ func address() (string, error) {
 	if os.Getenv("TMUX") == "" {
 		return "", fmt.Errorf("not inside tmux")
 	}
-	return tmux("display-message", "-p", "#{session_name}:#{window_name}")
+	s, err := tmux("display-message", "-p", "#{session_name}:#{@kh_name}:#{window_name}")
+	if err != nil {
+		return "", err
+	}
+	parts := strings.SplitN(s, ":", 3)
+	if len(parts) != 3 {
+		return "", fmt.Errorf("invalid tmux address: %q", s)
+	}
+	if parts[1] != "" {
+		return parts[0] + ":" + parts[1], nil
+	}
+	return parts[0] + ":" + parts[2], nil
 }
 
 func validAddress(s string) bool {
 	name, ok := strings.CutPrefix(s, "kh:")
 	return ok && agentName.MatchString(name)
+}
+
+// Agent identities belong to panes, not windows: an agent keeps its name when
+// its pane is moved or joined to a different window.
+type namedPane struct {
+	id, name, state string
+}
+
+func agentPanes() ([]namedPane, error) {
+	s, err := tmux("list-panes", "-s", "-t", "kh", "-F", "#{pane_id}|#{@kh_name}|#{window_name}|#{window_panes}|#{@kh_state}")
+	if err != nil {
+		return nil, err
+	}
+	var panes []namedPane
+	for _, line := range strings.Split(s, "\n") {
+		fields := strings.Split(line, "|")
+		if len(fields) != 5 {
+			continue
+		}
+		name := fields[1]
+		if name == "" && fields[3] == "1" { // older, one-agent-per-window sessions
+			name = fields[2]
+		}
+		if name != "" {
+			panes = append(panes, namedPane{fields[0], name, fields[4]})
+		}
+	}
+	return panes, nil
+}
+
+func agentPane(name string) (string, error) {
+	panes, err := agentPanes()
+	if err != nil {
+		return "", err
+	}
+	for _, pane := range panes {
+		if pane.name == name {
+			return pane.id, nil
+		}
+	}
+	return "", fmt.Errorf("agent kh:%s not found", name)
 }
 
 func agentCommand(args []string, auto bool) error {
@@ -53,13 +105,23 @@ func agentCommand(args []string, auto bool) error {
 		if !validAddress(parent) {
 			return fmt.Errorf("agents must be in the kh tmux session")
 		}
+		panes, err := agentPanes()
+		if err != nil {
+			return err
+		}
+		for _, pane := range panes {
+			if pane.name == args[1] {
+				return fmt.Errorf("agent kh:%s already exists", pane.name)
+			}
+		}
+		// tmux window names must also be unique, even when their agent moved away.
 		names, err := tmux("list-windows", "-t", "kh", "-F", "#{window_name}")
 		if err != nil {
 			return err
 		}
 		for _, n := range strings.Split(names, "\n") {
 			if n == args[1] {
-				return fmt.Errorf("agent kh:%s already exists", n)
+				return fmt.Errorf("window kh:%s already exists", n)
 			}
 		}
 		exe, err := os.Executable()
@@ -76,24 +138,49 @@ func agentCommand(args []string, auto bool) error {
 		}
 		cmd = append(cmd, "-i", args[2])
 		_, err = tmux("new-window", "-d", "-t", "kh:", "-n", args[1], "-c", cwd, "-e", "KH_PARENT="+parent, shellCommand(cmd...))
-		if err == nil {
-			fmt.Println("spawned kh:" + args[1])
+		if err != nil {
+			return err
 		}
-		return err
+		// Store the name on the pane so joining it to another window does not
+		// break kh send/peek/agents. The title also labels pane borders in tmux.
+		target := "kh:" + args[1] + ".0"
+		if _, err = tmux("set-option", "-p", "-t", target, "@kh_name", args[1]); err != nil {
+			return err
+		}
+		if _, err = tmux("select-pane", "-t", target, "-T", args[1]); err != nil {
+			return err
+		}
+		if _, err = tmux("set-option", "-w", "-t", target, "pane-border-status", "top"); err != nil {
+			return err
+		}
+		if _, err = tmux("set-option", "-w", "-t", target, "pane-border-format", " #{pane_title} "); err != nil {
+			return err
+		}
+		fmt.Println("spawned kh:" + args[1])
+		return nil
 	case "send":
 		if len(args) != 3 || !validAddress(args[1]) || args[2] == "" || strings.ContainsAny(args[2], "\r\n") {
 			return fmt.Errorf("usage: kh send kh:<name> <single-line message>")
 		}
-		if _, err := tmux("send-keys", "-t", args[1], "-l", "--", args[2]); err != nil {
+		name := strings.TrimPrefix(args[1], "kh:")
+		pane, err := agentPane(name)
+		if err != nil {
 			return err
 		}
-		_, err := tmux("send-keys", "-t", args[1], "Enter")
+		if _, err = tmux("send-keys", "-t", pane, "-l", "--", args[2]); err != nil {
+			return err
+		}
+		_, err = tmux("send-keys", "-t", pane, "Enter")
 		return err
 	case "peek":
 		if len(args) != 2 || !validAddress(args[1]) {
 			return fmt.Errorf("usage: kh peek kh:<name>")
 		}
-		s, err := tmux("capture-pane", "-p", "-t", args[1], "-S", "-25")
+		pane, err := agentPane(strings.TrimPrefix(args[1], "kh:"))
+		if err != nil {
+			return err
+		}
+		s, err := tmux("capture-pane", "-p", "-t", pane, "-S", "-25")
 		if err == nil {
 			fmt.Println(s)
 		}
@@ -102,16 +189,16 @@ func agentCommand(args []string, auto bool) error {
 		if len(args) != 1 {
 			return fmt.Errorf("usage: kh agents")
 		}
-		s, err := tmux("list-windows", "-t", "kh", "-F", "#{window_name} #{@kh_state}")
+		panes, err := agentPanes()
 		if err != nil {
 			return err
 		}
-		for _, line := range strings.Split(s, "\n") {
-			name, state, _ := strings.Cut(line, " ")
+		for _, pane := range panes {
+			state := pane.state
 			if state == "" {
 				state = "unknown"
 			}
-			fmt.Printf("kh:%s  %s\n", name, state)
+			fmt.Printf("kh:%s  %s\n", pane.name, state)
 		}
 		return nil
 	}
@@ -120,7 +207,8 @@ func agentCommand(args []string, auto bool) error {
 
 func setAgentState(state string) {
 	if os.Getenv("TMUX") != "" {
-		_, _ = tmux("set-option", "-w", "@kh_state", state)
+		_, _ = tmux("set-option", "-p", "@kh_state", state)
+		_, _ = tmux("set-option", "-w", "@kh_state", state) // older windows
 	}
 }
 
@@ -146,6 +234,18 @@ func attachChat(args []string) error {
 			return err
 		}
 		if _, err = tmux("new-session", "-d", "-s", "kh", "-n", "main", "-c", cwd, shellCommand(append([]string{exe}, args...)...)); err != nil {
+			return err
+		}
+		if _, err = tmux("set-option", "-p", "-t", "kh:main.0", "@kh_name", "main"); err != nil {
+			return err
+		}
+		if _, err = tmux("select-pane", "-t", "kh:main.0", "-T", "main"); err != nil {
+			return err
+		}
+		if _, err = tmux("set-option", "-w", "-t", "kh:main", "pane-border-status", "top"); err != nil {
+			return err
+		}
+		if _, err = tmux("set-option", "-w", "-t", "kh:main", "pane-border-format", " #{pane_title} "); err != nil {
 			return err
 		}
 	}

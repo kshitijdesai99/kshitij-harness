@@ -21,9 +21,11 @@ func TestTmuxAgents(t *testing.T) {
 		t.Fatalf("build: %s: %v", b, err)
 	}
 	name := fmt.Sprintf("kh_test_%d", os.Getpid())
+	home := t.TempDir() // spawned kh must not write to the user's real ~/.kh
 	runTmux := func(args ...string) string {
 		t.Helper()
 		cmd := exec.Command("tmux", append([]string{"-L", name}, args...)...)
+		cmd.Env = append(os.Environ(), "HOME="+home)
 		b, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("tmux %v: %s: %v", args, b, err)
@@ -36,7 +38,7 @@ func TestTmuxAgents(t *testing.T) {
 	kh := func(args ...string) (string, error) {
 		t.Helper()
 		cmd := exec.Command(binary, args...)
-		cmd.Env = append(os.Environ(), "TMUX="+socket+",1,0")
+		cmd.Env = append(os.Environ(), "TMUX="+socket+",1,0", "HOME="+home)
 		b, err := cmd.CombinedOutput()
 		return string(b), err
 	}
@@ -63,5 +65,23 @@ func TestTmuxAgents(t *testing.T) {
 	}
 	if s, err := kh("send", "kh:main", "bad\nmessage"); err == nil {
 		t.Fatalf("accepted multiline: %q", s)
+	}
+	// A named pane stays addressable after it is joined into another window.
+	runTmux("set-option", "-p", "-t", "kh:main.0", "@kh_name", "main")
+	runTmux("join-pane", "-h", "-s", "kh:docs.0", "-t", "kh:main.0")
+	if name := runTmux("display-message", "-p", "-t", "kh:main.1", "#{@kh_name}"); name != "docs" {
+		t.Fatalf("pane lost name after join: %q", name)
+	}
+	if s, err := kh("agents"); err != nil || !strings.Contains(s, "kh:docs") || !strings.Contains(s, "kh:main") {
+		t.Fatalf("agents after join: %q %v", s, err)
+	}
+	if s, err := kh("send", "kh:docs", "direct to joined pane"); err != nil {
+		t.Fatalf("send after join: %q %v", s, err)
+	}
+	if s, err := kh("peek", "kh:docs"); err != nil || !strings.Contains(s, "direct to joined pane") {
+		t.Fatalf("peek after join: %q %v", s, err)
+	}
+	if s, err := kh("spawn", "docs", "duplicate after join"); err == nil {
+		t.Fatalf("accepted duplicate after join: %q", s)
 	}
 }
