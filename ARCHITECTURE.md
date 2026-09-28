@@ -1,12 +1,29 @@
 # Architecture
 
 ```
-cmd/kh/main.go            flags, picks provider, builds tool list
-internal/agent/loop.go    the loop + system prompt
+cmd/kh/main.go            loads config, applies flags, builds tool list
+internal/config/          defaults + ~/.kh/config.json
+internal/agent/loop.go    the loop
 internal/provider/        Provider interface, codex.go
-internal/tools/           Tool struct, bash.go, edit.go
+internal/tools/           Tool struct, bash.go, edit.go, test/
 internal/auth/codex.go    ChatGPT device-code login + token refresh
 ```
+
+## Config
+
+Built-in defaults, then `~/.kh/config.json` (only the fields it sets), then flags (`-model`, `-effort`, `-y`). A missing file is fine.
+
+| Key | Default |
+|---|---|
+| `model` | `gpt-6-luna` |
+| `effort` | `medium` |
+| `system` | short fixed prompt |
+| `timeout_sec` | `120` |
+| `output_cap` | `20000` |
+| `safe` | `rg grep cat head tail ls wc sed find pwd file tree`, `git status/diff/log/show` |
+| `yes` | `false` |
+
+OpenAI URLs, the client id, headers and login timings are constants in code, not config, because changing them breaks the protocol.
 
 ## Loop
 
@@ -22,6 +39,7 @@ internal/auth/codex.go    ChatGPT device-code login + token refresh
 **Codex** (`codex.go`): raw HTTP + SSE to `chatgpt.com/backend-api/codex/responses`.
 - `store: false`, so the full `input` history is resent each turn. Items come from `response.output_item.done` and are replayed with `id` removed (stored ids 404).
 - `include: reasoning.encrypted_content` keeps reasoning across turns without server storage.
+- `reasoning.effort` from config.
 - `prompt_cache_key` = per-run session id, so turns hit the same cache.
 - Headers: `Authorization`, `ChatGPT-Account-ID` (from JWT), `originator: kh`, `session_id`.
 
@@ -36,8 +54,8 @@ Tokens live in `~/.kh/codex.json` (0600), separate from `~/.codex` because refre
 
 ## Tools
 
-**bash**: `/bin/bash --noprofile --norc -c` (starts in ~4 ms). Own process group, 2 min timeout kills the whole group, stdin is `/dev/null`. Output capped to first + last 10 KB. Failed commands return output + exit error as a normal result, so the model can react.
-Safe list runs without asking: `rg grep cat head tail ls wc sed find pwd file tree` and `git status|diff|log|show`, piped together. Rejected as unsafe: `; & > < $ \`` or newline, `sed -i`, `find -exec|-delete|-ok`. Prompts are serialised with a mutex. `-y` skips them.
+**bash**: `/bin/bash --noprofile --norc -c` (starts in ~4 ms). Own process group, `timeout_sec` kills the whole group, stdin is `/dev/null`. Output capped to `output_cap` (first + last half). Failed commands return output + exit error as a normal result, so the model can react.
+Commands matching `safe` run without asking, piped together; an entry like `git diff` matches leading words. Always unsafe, whatever the config: `; & > < $ \`` or newline, `sed -i`, `find -exec|-execdir|-delete|-ok`. Prompts are serialised with a mutex. `-y` skips them.
 
 **edit**: `old` must appear exactly once, then replace. Empty `old` creates the file (`O_EXCL`, fails if it exists). Paths must resolve inside the project.
 

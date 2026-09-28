@@ -11,18 +11,21 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"kh/internal/config"
 )
 
-// Read-only commands that run without asking.
-var safe = map[string]bool{
-	"rg": true, "grep": true, "cat": true, "head": true, "tail": true, "ls": true,
-	"wc": true, "sed": true, "find": true, "pwd": true, "file": true, "tree": true, "git": true,
+// Flags that make an otherwise read-only command write. Not configurable on purpose.
+var writeFlags = map[string][]string{
+	"sed":  {"-i"},
+	"find": {"-exec", "-execdir", "-delete", "-ok"},
 }
 
 var askMu sync.Mutex // parallel calls must not ask at the same time
 
-// Bash runs one command per call. yes skips the y/n prompt.
-func Bash(yes bool) Tool {
+// Bash runs one command per call.
+func Bash(c config.Config) Tool {
+	timeout := time.Duration(c.TimeoutSec) * time.Second
 	return Tool{
 		Name:        "bash",
 		Description: "Run a shell command in the project dir. Use rg to search; read many files in one call (cat a b, sed -n 1,80p f). Output is capped.",
@@ -34,16 +37,16 @@ func Bash(yes bool) Tool {
 				return "", fmt.Errorf("need a command")
 			}
 			fmt.Fprintln(os.Stderr, "$", in.Command)
-			if !yes && !isSafe(in.Command) && !ask(in.Command) {
+			if !c.Yes && !isSafe(in.Command, c.Safe) && !ask() {
 				return "", fmt.Errorf("user said no")
 			}
-			return run(ctx, in.Command)
+			return run(ctx, in.Command, timeout, c.OutputCap)
 		},
 	}
 }
 
-func run(ctx context.Context, command string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+func run(ctx context.Context, command string, timeout time.Duration, outputCap int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	// No profile/rc: starts in milliseconds instead of loading your shell setup.
 	cmd := exec.CommandContext(ctx, "/bin/bash", "--noprofile", "--norc", "-c", command)
@@ -54,8 +57,8 @@ func run(ctx context.Context, command string) (string, error) {
 	out, err := cmd.CombinedOutput()
 
 	s := string(out)
-	if len(s) > 20000 { // keep head and tail: errors are usually at the end
-		s = s[:10000] + "\n...[cut]...\n" + s[len(s)-10000:]
+	if half := outputCap / 2; len(s) > outputCap { // keep head and tail: errors are usually at the end
+		s = s[:half] + "\n...[cut]...\n" + s[len(s)-half:]
 	}
 	if err != nil {
 		s += "\n" + err.Error()
@@ -64,26 +67,18 @@ func run(ctx context.Context, command string) (string, error) {
 }
 
 // isSafe allows pipes between safe commands; anything that can write or chain does not pass.
-func isSafe(c string) bool {
+// A safe entry like "git diff" matches the leading words of a command.
+func isSafe(c string, safe []string) bool {
 	if strings.ContainsAny(c, ";&><`$\n") {
 		return false
 	}
 	for _, part := range strings.Split(c, "|") {
 		f := strings.Fields(part)
-		if len(f) == 0 || !safe[f[0]] {
+		if len(f) == 0 || !matchesAny(f, safe) {
 			return false
 		}
-		switch f[0] {
-		case "sed":
-			if strings.Contains(part, "-i") {
-				return false
-			}
-		case "find":
-			if strings.Contains(part, "-exec") || strings.Contains(part, "-delete") || strings.Contains(part, "-ok") {
-				return false
-			}
-		case "git":
-			if len(f) < 2 || !map[string]bool{"status": true, "diff": true, "log": true, "show": true}[f[1]] {
+		for _, flag := range writeFlags[f[0]] {
+			if strings.Contains(part, flag) {
 				return false
 			}
 		}
@@ -91,7 +86,17 @@ func isSafe(c string) bool {
 	return true
 }
 
-func ask(c string) bool {
+func matchesAny(f, safe []string) bool {
+	for _, s := range safe {
+		want := strings.Fields(s)
+		if len(want) > 0 && len(f) >= len(want) && strings.Join(f[:len(want)], " ") == strings.Join(want, " ") {
+			return true
+		}
+	}
+	return false
+}
+
+func ask() bool {
 	askMu.Lock()
 	defer askMu.Unlock()
 	fmt.Fprint(os.Stderr, "  run it? [y/N] ")

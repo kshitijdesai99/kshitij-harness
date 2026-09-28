@@ -9,11 +9,6 @@ import (
 	"kh/internal/tools"
 )
 
-// System is kept short and fixed: short = fast, fixed = cacheable.
-const System = "You are kh, a fast coding agent working in the current directory. " +
-	"Be brief. Use as few turns as possible: batch reads into one command and make independent tool calls in parallel. " +
-	"Do the task, then stop."
-
 func Run(ctx context.Context, p provider.Provider, ts []tools.Tool, task string) error {
 	calls, err := p.Step(ctx, task, nil)
 	for err == nil && len(calls) > 0 {

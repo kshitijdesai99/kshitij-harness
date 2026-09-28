@@ -14,11 +14,17 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"kh/internal/config"
 )
 
+// OpenAI protocol values: changing these breaks login, so they are not config.
 const (
-	issuer   = "https://auth.openai.com"
-	clientID = "app_EMoamEEZ73f0CkXaXp7hrann" // public Codex CLI client
+	issuer       = "https://auth.openai.com"
+	clientID     = "app_EMoamEEZ73f0CkXaXp7hrann" // public Codex CLI client
+	pollEvery    = 5 * time.Second
+	loginTimeout = 15 * time.Minute
+	refreshEarly = 2 * time.Minute // refresh before the token expires, not after
 )
 
 type tokens struct {
@@ -28,10 +34,7 @@ type tokens struct {
 
 // Our own file, not ~/.codex: refresh tokens are single-use, so sharing
 // one with the Codex CLI would log one of us out.
-func tokenPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".kh", "codex.json")
-}
+func tokenPath() string { return filepath.Join(config.Dir(), "codex.json") }
 
 // Login runs the device-code flow: show a code, wait for the user, save tokens.
 func Login(ctx context.Context) error {
@@ -48,11 +51,11 @@ func Login(ctx context.Context) error {
 		Code     string `json:"authorization_code"`
 		Verifier string `json:"code_verifier"`
 	}
-	for deadline := time.Now().Add(15 * time.Minute); got.Code == ""; {
+	for deadline := time.Now().Add(loginTimeout); got.Code == ""; {
 		if time.Now().After(deadline) {
 			return fmt.Errorf("login timed out")
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(pollEvery)
 		err := post(ctx, issuer+"/api/accounts/deviceauth/token", map[string]string{"device_auth_id": dc.ID, "user_code": dc.Code}, &got)
 		if err != nil && !strings.Contains(err.Error(), "status 403") && !strings.Contains(err.Error(), "status 404") {
 			return err // 403/404 just mean "not signed in yet"
@@ -80,9 +83,9 @@ func Token(ctx context.Context) (access, account string, err error) {
 		if json.NewDecoder(f).Decode(&t) != nil || t.Refresh == "" {
 			return fmt.Errorf("not logged in: run `kh login codex`")
 		}
-		// Refresh 2 min early. We read inside the lock, so if another kh
+		// We read inside the lock, so if another kh
 		// already refreshed we see its new tokens and never reuse a spent one.
-		if exp, _ := claims(t.Access)["exp"].(float64); time.Until(time.Unix(int64(exp), 0)) < 2*time.Minute {
+		if exp, _ := claims(t.Access)["exp"].(float64); time.Until(time.Unix(int64(exp), 0)) < refreshEarly {
 			var n tokens
 			err := post(ctx, issuer+"/oauth/token", url.Values{
 				"grant_type":    {"refresh_token"},

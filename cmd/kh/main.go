@@ -10,13 +10,18 @@ import (
 
 	"kh/internal/agent"
 	"kh/internal/auth"
+	"kh/internal/config"
 	"kh/internal/provider"
 	"kh/internal/tools"
 )
 
 func main() {
-	model := flag.String("model", "gpt-5.5", "model id")
-	yes := flag.Bool("y", false, "run every command without asking")
+	cfg, err := config.Load()
+	exit(err)
+	// Flags override the config file, which overrides the defaults.
+	flag.StringVar(&cfg.Model, "model", cfg.Model, "model id")
+	flag.StringVar(&cfg.Effort, "effort", cfg.Effort, "reasoning effort: low, medium, high")
+	flag.BoolVar(&cfg.Yes, "y", cfg.Yes, "run every command without asking")
 	flag.Parse()
 	args := flag.Args()
 	ctx := context.Background()
@@ -27,12 +32,12 @@ func main() {
 		return
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, `usage: kh [-model id] [-y] "your task"  |  kh login codex`)
+		fmt.Fprintln(os.Stderr, `usage: kh [-model id] [-effort e] [-y] "your task"  |  kh login codex`)
 		os.Exit(1)
 	}
 
-	ts := []tools.Tool{tools.Bash(*yes), tools.Edit}
-	p := provider.NewCodex(*model, agent.System, ts)
+	ts := []tools.Tool{tools.Bash(cfg), tools.Edit}
+	p := provider.NewCodex(cfg, ts)
 	exit(agent.Run(ctx, p, ts, strings.Join(args, " ")))
 }
 

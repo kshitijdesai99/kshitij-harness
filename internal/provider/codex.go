@@ -13,30 +13,37 @@ import (
 	"strings"
 
 	"kh/internal/auth"
+	"kh/internal/config"
 	"kh/internal/tools"
 )
 
-const codexURL = "https://chatgpt.com/backend-api/codex/responses"
+// OpenAI protocol values, not config.
+const (
+	codexURL   = "https://chatgpt.com/backend-api/codex/responses"
+	originator = "kh" // OpenAI asks third-party harnesses to name themselves
+	userAgent  = "kh/0.1"
+)
 
 type Codex struct {
 	model   string
+	effort  string
 	system  string
 	tools   []map[string]any
 	input   []map[string]any // full history; the server stores nothing (store: false)
 	session string
 }
 
-func NewCodex(model, system string, ts []tools.Tool) *Codex {
+func NewCodex(c config.Config, ts []tools.Tool) *Codex {
 	id := make([]byte, 16)
 	rand.Read(id)
-	c := &Codex{model: model, system: system, session: hex.EncodeToString(id)}
+	x := &Codex{model: c.Model, effort: c.Effort, system: c.System, session: hex.EncodeToString(id)}
 	for _, t := range ts {
-		c.tools = append(c.tools, map[string]any{
+		x.tools = append(x.tools, map[string]any{
 			"type": "function", "name": t.Name, "description": t.Description,
 			"parameters": map[string]any{"type": "object", "properties": t.Params, "required": t.Required},
 		})
 	}
-	return c
+	return x
 }
 
 func (c *Codex) Step(ctx context.Context, user string, results []Result) ([]Call, error) {
@@ -57,6 +64,7 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) ([]Call
 		"tools":               c.tools,
 		"tool_choice":         "auto",
 		"parallel_tool_calls": true,
+		"reasoning":           map[string]string{"effort": c.effort},
 		"store":               false,
 		"stream":              true,
 		// Lets us replay reasoning next turn without the server storing it.
@@ -73,9 +81,8 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) ([]Call
 	req.Header.Set("ChatGPT-Account-ID", account)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
-	// OpenAI asks third-party harnesses to name themselves.
-	req.Header.Set("originator", "kh")
-	req.Header.Set("User-Agent", "kh/0.1")
+	req.Header.Set("originator", originator)
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("session_id", c.session)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
