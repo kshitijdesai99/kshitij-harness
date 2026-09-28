@@ -30,12 +30,13 @@ var Defaults = Config{
 	System: "You are kh, a fast coding agent working in the current directory. " +
 		"Be brief. Use as few turns as possible: batch reads into one command and make independent tool calls in parallel. " +
 		"Act directly; don't inspect kh's own code to learn how your tools work, just try them. " +
+		"If the request is unclear and a wrong guess would waste time or change the wrong thing, ask one short question instead of acting. Otherwise, act. " +
 		"Do the task, then stop.",
-	TimeoutSec: 120,
+	TimeoutSec: 30, // short, so a runaway command fails fast and the model retries narrower
 	OutputCap:  20000,
 	MapCap:     20000,
 	Safe: []string{
-		"rg", "grep", "cat", "head", "tail", "ls", "wc", "sed", "find", "pwd", "file", "tree",
+		"rg", "grep", "cat", "head", "tail", "ls", "wc", "sed", "find", "pwd", "file", "tree", "echo", "printf",
 		"git status", "git diff", "git log", "git show",
 	},
 	Sandbox: true,

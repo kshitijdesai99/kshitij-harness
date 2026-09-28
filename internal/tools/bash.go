@@ -23,7 +23,8 @@ var writeFlags = map[string][]string{
 	"find": {"-exec", "-execdir", "-delete", "-ok"},
 }
 
-var askMu sync.Mutex // parallel calls must not ask at the same time
+// termMu keeps parallel calls from printing over a pending y/n question.
+var termMu sync.Mutex
 
 // Bash runs one command per call.
 func Bash(c config.Config) Tool {
@@ -45,8 +46,7 @@ func Bash(c config.Config) Tool {
 			if json.Unmarshal(input, &in) != nil || in.Command == "" {
 				return "", fmt.Errorf("need a command")
 			}
-			fmt.Fprintln(os.Stderr, "$", in.Command)
-			if !c.Yes && !isSafe(in.Command, c.Safe) && !ask() {
+			if !show(in.Command, c.Yes || isSafe(in.Command, c.Safe)) {
 				return "", fmt.Errorf("user said no")
 			}
 			out, err := run(ctx, append(argv, in.Command), timeout, c.OutputCap)
@@ -102,10 +102,12 @@ func sandbox(dirs []string) []string {
 	return []string{"/usr/bin/sandbox-exec", "-p", p + ")"}
 }
 
-// isSafe allows pipes between safe commands; anything that can write or chain does not pass.
-// A safe entry like "git diff" matches the leading words of a command.
+// isSafe allows safe commands joined by | ; && ||. Redirects, backgrounding (&),
+// substitution ($, `) and newlines never pass. A safe entry like "git diff"
+// matches the leading words of a command.
 func isSafe(c string, safe []string) bool {
-	if strings.ContainsAny(c, ";&><`$\n") {
+	c = strings.NewReplacer("&&", "|", "||", "|", ";", "|").Replace(c)
+	if strings.ContainsAny(c, "&><`$\n") {
 		return false
 	}
 	for _, part := range strings.Split(c, "|") {
@@ -132,9 +134,15 @@ func matchesAny(f, safe []string) bool {
 	return false
 }
 
-func ask() bool {
-	askMu.Lock()
-	defer askMu.Unlock()
+// show prints the command and, unless it is ok to run, asks the user.
+// The question sits right under its own command.
+func show(c string, ok bool) bool {
+	termMu.Lock()
+	defer termMu.Unlock()
+	fmt.Fprintln(os.Stderr, "$", c)
+	if ok {
+		return true
+	}
 	fmt.Fprint(os.Stderr, "  run it? [y/N] ")
 	line, _ := In.ReadString('\n')
 	return strings.TrimSpace(strings.ToLower(line)) == "y"

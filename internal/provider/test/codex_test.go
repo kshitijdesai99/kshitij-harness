@@ -58,3 +58,15 @@ func TestReplay(t *testing.T) {
 		t.Errorf("got:\n%s\nwant:\n%s", b.String(), want)
 	}
 }
+
+// Resuming keeps the saved prompt, so a changed repo map can't break the cache.
+func TestLoadKeepsSavedPrompt(t *testing.T) {
+	old, now := config.Defaults, config.Defaults
+	old.System, now.System = "prompt A", "prompt B"
+	b, _ := provider.NewCodex(old, nil).Save()
+	p := provider.NewCodex(now, nil)
+	p.Load(b)
+	if got, _ := p.Save(); !strings.Contains(string(got), `"system":"prompt A"`) {
+		t.Errorf("resumed with the new prompt: %s", got)
+	}
+}

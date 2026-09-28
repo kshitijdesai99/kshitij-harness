@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"time"
 )
 
 // Call is a tool call the model asked for.
@@ -34,4 +35,12 @@ type Provider interface {
 	// Replay prints the history as it looked live: "> " for the user,
 	// "$ cmd" / "edit path" / "search: q" for actions, then replies.
 	Replay(w io.Writer)
+	// Stats returns what this turn cost, then resets for the next turn.
+	Stats() Stats
+}
+
+// Stats for one turn (one user message and all the steps it took).
+type Stats struct {
+	In, Cached, Out int
+	TTFT            time.Duration // user message to first streamed text; 0 if none
 }

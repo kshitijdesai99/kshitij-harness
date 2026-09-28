@@ -21,10 +21,10 @@ Built-in defaults, then `~/.kh/config.json` (only the fields it sets), then flag
 | `effort` | `medium` |
 | `web_search` | `true` |
 | `system` | short fixed prompt |
-| `timeout_sec` | `120` |
+| `timeout_sec` | `30` |
 | `output_cap` | `20000` |
 | `map_cap` | `20000` (0 = off) |
-| `safe` | `rg grep cat head tail ls wc sed find pwd file tree`, `git status/diff/log/show` |
+| `safe` | `rg grep cat head tail ls wc sed find pwd file tree echo printf`, `git status/diff/log/show` |
 | `yes` | `false` |
 | `sandbox` | `true` |
 | `writable` | `/tmp`, `/private/var/folders`, `~/Library/Caches`, `~/.cache`, `~/go` |
@@ -37,7 +37,7 @@ OpenAI URLs, the client id, headers and login timings are constants in code, not
 
 ## Chat and sessions
 
-`kh "task"` runs one turn; `kh` alone is a chat loop on the same provider, so history and the prompt cache carry over between messages. Each turn runs under `signal.NotifyContext`: Ctrl-C cancels the HTTP stream and kills running commands, then returns to the prompt. Ctrl-D quits.
+`kh "task"` runs one turn; `kh` alone is a chat loop on the same provider, so history and the prompt cache carry over between messages. Each turn runs under `signal.NotifyContext`: Ctrl-C cancels the HTTP stream and kills running commands, prints `(stopped)`, then returns to the prompt. Ctrl-D quits.
 
 After every turn the provider's history is saved to `~/.kh/sessions/<id>.json` (0600). Ids are `YYYYMMDD-HHMMSS.mmm`, so the latest is the last file. `-r` loads the latest, `-s id` a specific one; both work for chat or a one-off task. Resuming into chat first prints the old conversation in grey via `Provider.Replay` (`> ` user lines, `$ cmd`, `edit path`, `search: q`, replies). `kh sessions` lists the last 20 ids with their first message.
 
@@ -46,7 +46,7 @@ If a step fails mid-reply, Codex drops that reply's partial items, so a `functio
 ## Plugins
 
 - `tools.Tool` is a struct: name, description, JSON Schema params, `Run(ctx, input) (string, error)`. A new tool is one file plus one entry in the list in `main.go`.
-- `provider.Provider` is `Step(ctx, user, results) ([]Call, error)` plus `Save`/`Load`/`Replay` of its history. Each provider owns its history in its own wire format, so the loop stays format-agnostic. It streams text to stdout.
+- `provider.Provider` is `Step(ctx, user, results) ([]Call, error)` plus `Save`/`Load`/`Replay` of its history and `Stats` (tokens + TTFT for the turn). Each provider owns its history in its own wire format, so the loop stays format-agnostic. It streams text to stdout.
 
 ## Providers
 
@@ -55,7 +55,9 @@ If a step fails mid-reply, Codex drops that reply's partial items, so a `functio
 - `include: reasoning.encrypted_content` keeps reasoning across turns without server storage.
 - `reasoning.effort` from config.
 - `web_search: true` adds `{"type": "web_search"}`, a server-side tool: OpenAI runs the search and returns a `web_search_call` item (printed as `search: <query>`), so there is nothing for kh to execute.
-- `prompt_cache_key` = per-run session id, so turns hit the same cache.
+- `prompt_cache_key` = `kh_` + sha256(model, instructions, tools), so every session with the same prefix shares one warm cache (a random per-run key made each new chat start cold).
+- Sessions save the exact instructions and reuse them on resume: a rebuilt repo map would change the first bytes and miss the cache for the whole history.
+- Per turn, kh prints in grey: `(ttft 1.2s, total 8.4s, 12.4k in, 11.8k cached 95%, 310 out)`. TTFT is user message to first streamed text (`-` if none); tokens are summed from each step's `response.completed` usage.
 - Headers: `Authorization`, `ChatGPT-Account-ID` (from JWT), `originator: kh`, `session_id`.
 
 ## Auth (Codex)
@@ -70,7 +72,7 @@ Tokens live in `~/.kh/codex.json` (0600), separate from `~/.codex` because refre
 ## Tools
 
 **bash**: `/bin/bash --noprofile --norc -c` (starts in ~4 ms). Own process group, `timeout_sec` kills the whole group, stdin is `/dev/null`. Output capped to `output_cap` (first + last half). Failed commands return output + exit error as a normal result, so the model can react. A timeout adds "timed out after Ns, try a narrower command"; a Ctrl-C does not.
-Commands matching `safe` run without asking, piped together; an entry like `git diff` matches leading words. Always unsafe, whatever the config: `; & > < $ \`` or newline, `sed -i`, `find -exec|-execdir|-delete|-ok`. Prompts are serialised with a mutex. `-y` skips them.
+Commands matching `safe` run without asking, joined by `| ; && ||`; an entry like `git diff` matches leading words. Always unsafe, whatever the config: `& > < $ \`` or newline, `sed -i`, `find -exec|-execdir|-delete|-ok`. One mutex covers printing `$ cmd` and the y/n question, so each question sits under its own command and parallel calls never print over it. `-y` skips them.
 
 **Sandbox** (macOS, `sandbox: true`): every command runs under `sandbox-exec` with a profile that allows reads and network everywhere but writes only under the project, `writable` and `/dev`. Paths are resolved to real paths (`/tmp` is `/private/tmp`). Adds under 10 ms. A blocked write shows "Operation not permitted", the same error macOS privacy (TCC) gives for protected folders like Downloads, so kh appends a note naming both causes: `-nosandbox` / `writable` for writes, the terminal's Files & Folders permission for reads. Other OSes run without it.
 

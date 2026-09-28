@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"kh/internal/auth"
 	"kh/internal/config"
@@ -32,6 +34,8 @@ type Codex struct {
 	tools   []map[string]any
 	input   []map[string]any // full history; the server stores nothing (store: false)
 	session string
+	stats   Stats
+	start   time.Time // when the current turn's user message was sent
 }
 
 func NewCodex(c config.Config, ts []tools.Tool) *Codex {
@@ -53,6 +57,7 @@ func NewCodex(c config.Config, ts []tools.Tool) *Codex {
 
 func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls []Call, err error) {
 	if user != "" {
+		c.start = time.Now()
 		c.input = append(c.input, map[string]any{
 			"type": "message", "role": "user",
 			"content": []map[string]any{{"type": "input_text", "text": user}},
@@ -81,9 +86,8 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 		"store":               false,
 		"stream":              true,
 		// Lets us replay reasoning next turn without the server storing it.
-		"include": []string{"reasoning.encrypted_content"},
-		// Same key every turn so the server reuses its prompt cache.
-		"prompt_cache_key": c.session,
+		"include":          []string{"reasoning.encrypted_content"},
+		"prompt_cache_key": c.cacheKey(),
 	})
 	access, account, err := auth.Token(ctx)
 	if err != nil {
@@ -120,6 +124,13 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 			Item     map[string]any `json:"item"`
 			Response struct {
 				Error *struct{ Message string } `json:"error"`
+				Usage struct {
+					In      int `json:"input_tokens"`
+					Out     int `json:"output_tokens"`
+					Details struct {
+						Cached int `json:"cached_tokens"`
+					} `json:"input_tokens_details"`
+				} `json:"usage"`
 			} `json:"response"`
 			Message string `json:"message"`
 		}
@@ -128,6 +139,9 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 		}
 		switch ev.Type {
 		case "response.output_text.delta":
+			if c.stats.TTFT == 0 {
+				c.stats.TTFT = time.Since(c.start)
+			}
 			fmt.Print(ev.Delta)
 		case "response.output_item.done":
 			// Item ids point at server storage we turned off; replaying them 404s.
@@ -143,6 +157,11 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 				args, _ := ev.Item["arguments"].(string)
 				calls = append(calls, Call{ID: id, Name: name, Input: json.RawMessage(args)})
 			}
+		case "response.completed":
+			u := ev.Response.Usage
+			c.stats.In += u.In
+			c.stats.Cached += u.Details.Cached
+			c.stats.Out += u.Out
 		case "response.failed":
 			if ev.Response.Error != nil {
 				return nil, fmt.Errorf("codex: %s", ev.Response.Error.Message)
@@ -158,20 +177,41 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 	return calls, sc.Err()
 }
 
+// cacheKey is a hash of everything before the history. Same prompt and tools
+// = same key, so every session in a repo shares one warm cache.
+func (c *Codex) cacheKey() string {
+	b, _ := json.Marshal([]any{c.model, c.system, c.tools})
+	h := sha256.Sum256(b)
+	return "kh_" + hex.EncodeToString(h[:12])
+}
+
+func (c *Codex) Stats() Stats {
+	s := c.stats
+	c.stats = Stats{}
+	return s
+}
+
 type codexState struct {
 	Session string           `json:"session"`
+	System  string           `json:"system"`
 	Input   []map[string]any `json:"input"`
 }
 
-func (c *Codex) Save() ([]byte, error) { return json.Marshal(codexState{c.session, c.input}) }
+func (c *Codex) Save() ([]byte, error) {
+	return json.Marshal(codexState{c.session, c.system, c.input})
+}
 
-// Load restores history and the cache key, so a resumed chat can still hit the cache.
+// Load restores the exact system prompt too: a rebuilt repo map would
+// change the prompt's first bytes and miss the cache for the whole history.
 func (c *Codex) Load(b []byte) error {
 	var s codexState
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
 	c.session, c.input = s.Session, s.Input
+	if s.System != "" {
+		c.system = s.System
+	}
 	return nil
 }
 

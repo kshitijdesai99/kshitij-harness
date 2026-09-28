@@ -24,14 +24,18 @@ func TestSafeList(t *testing.T) {
 	os.Chdir(t.TempDir())
 	os.WriteFile("a.go", []byte("x\n"), 0o644)
 	for c, safe := range map[string]bool{
-		"cat a.go | head":    true,
-		"sed -n 1,20p a.go":  true,
-		"sed -i s/a/b/ a.go": false,
-		"cat a.go > b":       false,
-		"ls; rm -rf x":       false,
-		"find . -delete":     false,
-		"git push":           false,
-		"rm a.go":            false,
+		"cat a.go | head":               true,
+		"sed -n 1,20p a.go":             true,
+		"sed -i s/a/b/ a.go":            false,
+		"cat a.go > b":                  false,
+		"ls; rm -rf x":                  false,
+		"find . -delete":                false,
+		"git push":                      false,
+		"rm a.go":                       false,
+		"cat a.go; echo --; wc -l a.go": true,
+		"ls && git status":              true,
+		"cat a.go & rm a.go":            false,
+		"ls || rm a.go":                 false,
 	} {
 		_, err := bash(t, config.Defaults, c)
 		if asked := err != nil && err.Error() == "user said no"; asked == safe {

@@ -13,7 +13,7 @@ import (
 func TestSelf(t *testing.T) {
 	m := repomap.Build("../../..", 20000)
 	for _, want := range []string{
-		"internal/tools/bash.go: writeFlags askMu Bash",
+		"internal/tools/bash.go: ", "isSafe",
 		"internal/tools/edit.go: Edit",
 		"internal/repomap/test/self_test.go: TestSelf", // untracked files are listed
 		"internal/provider/codex.go:",

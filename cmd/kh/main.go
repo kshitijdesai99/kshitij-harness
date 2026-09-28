@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"time"
 
 	"kh/internal/agent"
 	"kh/internal/auth"
@@ -72,7 +73,16 @@ func main() {
 	turn := func(msg string) error {
 		tctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 		defer stop()
+		start := time.Now()
 		err := agent.Run(tctx, p, ts, msg)
+		if tctx.Err() == context.Canceled { // Ctrl-C: expected, not an error
+			fmt.Fprintln(os.Stderr, "\n(stopped)")
+			err = nil
+		}
+		if s := p.Stats(); s.In > 0 {
+			fmt.Fprintf(os.Stderr, "%s(ttft %s, total %s, %s in, %s cached %d%%, %s out)%s\n", grey,
+				secs(s.TTFT), secs(time.Since(start)), k(s.In), k(s.Cached), s.Cached*100/s.In, k(s.Out), reset)
+		}
 		if b, e := p.Save(); e == nil {
 			session.Save(*id, b)
 		}
@@ -107,6 +117,21 @@ var grey, reset = func() (string, string) {
 	}
 	return "", ""
 }()
+
+// k formats a token count: 950, 12.4k.
+func k(n int) string {
+	if n < 1000 {
+		return fmt.Sprint(n)
+	}
+	return fmt.Sprintf("%.1fk", float64(n)/1000)
+}
+
+func secs(d time.Duration) string {
+	if d == 0 {
+		return "-" // no text this turn
+	}
+	return fmt.Sprintf("%.1fs", d.Seconds())
+}
 
 // listSessions prints the last 20 sessions with their first message.
 func listSessions(cfg config.Config) {
