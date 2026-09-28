@@ -160,7 +160,9 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 			c.input = append(c.input, ev.Item)
 			if ev.Item["type"] == "web_search_call" {
 				action, _ := ev.Item["action"].(map[string]any)
-				fmt.Fprintln(os.Stderr, "search:", action["query"])
+				if s := webAction(action); s != "" {
+					fmt.Fprintln(os.Stderr, s)
+				}
 			}
 			if ev.Item["type"] == "function_call" {
 				id, _ := ev.Item["call_id"].(string)
@@ -298,7 +300,7 @@ func (c *Codex) Replay(w io.Writer) {
 		var m struct {
 			Type, Role, Arguments string
 			Content               []struct{ Text string }
-			Action                struct{ Query string }
+			Action                map[string]any
 		}
 		b, _ := json.Marshal(it)
 		json.Unmarshal(b, &m)
@@ -320,7 +322,24 @@ func (c *Codex) Replay(w io.Writer) {
 				fmt.Fprintln(w, "edit", a.Path)
 			}
 		case "web_search_call":
-			fmt.Fprintln(w, "search:", m.Action.Query)
+			if s := webAction(m.Action); s != "" {
+				fmt.Fprintln(w, s)
+			}
 		}
 	}
+}
+
+// webAction describes one web search step: a search, opening a page, or
+// finding text on a page. "" if there is nothing useful to show.
+func webAction(a map[string]any) string {
+	str := func(k string) string { s, _ := a[k].(string); return s }
+	switch {
+	case str("type") == "search" && str("query") != "":
+		return "search: " + str("query")
+	case str("type") == "open_page" && str("url") != "":
+		return "open: " + str("url")
+	case str("type") == "find" && str("pattern") != "":
+		return "find: " + str("pattern") + " in " + str("url")
+	}
+	return ""
 }

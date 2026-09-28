@@ -45,6 +45,9 @@ func TestReplay(t *testing.T) {
 		{"type":"function_call_output","call_id":"1","output":"3"},
 		{"type":"function_call","call_id":"2","name":"edit","arguments":"{\"path\":\"a.go\",\"old\":\"\",\"new\":\"x\"}"},
 		{"type":"web_search_call","action":{"type":"search","query":"go 1.27"}},
+		{"type":"web_search_call","action":{"type":"open_page","url":"https://go.dev"}},
+		{"type":"web_search_call","action":{"type":"find","pattern":"release","url":"https://go.dev"}},
+		{"type":"web_search_call","action":{"type":"open_page"}},
 		{"type":"message","role":"assistant","content":[{"type":"output_text","text":"There are 3."}]}
 	]}`
 	p := provider.NewCodex(config.Defaults, "", nil)
@@ -53,7 +56,7 @@ func TestReplay(t *testing.T) {
 	}
 	var b strings.Builder
 	p.Replay(&b)
-	want := "> count files\n$ ls | wc -l\nedit a.go\nsearch: go 1.27\nThere are 3.\n"
+	want := "> count files\n$ ls | wc -l\nedit a.go\nsearch: go 1.27\nopen: https://go.dev\nfind: release in https://go.dev\nThere are 3.\n"
 	if b.String() != want {
 		t.Errorf("got:\n%s\nwant:\n%s", b.String(), want)
 	}
