@@ -34,6 +34,8 @@ var Defaults = Config{
 		// a worked example the model would overfit to.
 		"Before acting, check whether the request could reasonably mean different things that lead to different results: " +
 		"its scope, its target, or what counts as done. If so, ask one short question and do nothing else that turn. " +
+		"Word it in the user's terms; never mention the repo map or other kh internals. " +
+		"Ask at most once per request: if the answer is still unclear, pick the most likely reading, say which, and act. " +
 		"If the meaning is clear, act without asking. " +
 		"Do the task, then stop.",
 	TimeoutSec: 30, // short, so a runaway command fails fast and the model retries narrower
