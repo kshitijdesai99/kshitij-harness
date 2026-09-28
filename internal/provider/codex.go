@@ -58,6 +58,10 @@ func NewCodex(c config.Config, repoMap string, ts []tools.Tool) *Codex {
 	if c.WebSearch {
 		// Server-side tool: OpenAI runs the search, we never see a call to execute.
 		x.tools = append(x.tools, map[string]any{"type": "web_search"})
+		// Without this the model scrapes pages with curl: slower, often
+		// blocked, and every call needs a y/n.
+		x.rules += "\n\nWeb\n- For anything on the web, use the built-in web search: it can search, open pages and find text on them. " +
+			"Use curl only for APIs or raw data that search can't reach."
 	}
 	return x
 }
