@@ -25,7 +25,7 @@ var snapshotID = regexp.MustCompile(`^[a-f0-9]{32}$`)
 // Snapshot reads the clipboard at the time Ctrl-V is pressed, not when Enter
 // is pressed. It stores the validated image in a private file until consumed.
 func Snapshot() (string, error) {
-	_, url, err := Read("")
+	url, err := Read("")
 	if err != nil {
 		return "", err
 	}
@@ -104,11 +104,11 @@ func snapshotDir() (string, error) {
 }
 
 // Read reads a raster image from a file, or from the macOS clipboard if path is empty.
-func Read(path string) (string, string, error) {
+func Read(path string) (string, error) {
 	var data []byte
 	if path == "" {
 		if runtime.GOOS != "darwin" {
-			return "", "", fmt.Errorf("clipboard images require macOS; use /image path/to/image.png")
+			return "", fmt.Errorf("clipboard images require macOS; use /image path/to/image.png")
 		}
 		// AppKit reads raster formats exposed by the pasteboard, including
 		// images that have to be converted from TIFF to PNG.
@@ -128,38 +128,38 @@ else {
 `).Output()
 		if err != nil {
 			if failure, ok := err.(*exec.ExitError); ok {
-				return "", "", fmt.Errorf("%s; copy an image or use /image path/to/image.png", strings.TrimSpace(string(failure.Stderr)))
+				return "", fmt.Errorf("%s; copy an image or use /image path/to/image.png", strings.TrimSpace(string(failure.Stderr)))
 			}
-			return "", "", fmt.Errorf("read macOS clipboard: %w", err)
+			return "", fmt.Errorf("read macOS clipboard: %w", err)
 		}
 		var errDecode error
 		data, errDecode = base64.StdEncoding.DecodeString(strings.TrimSpace(string(out)))
 		if errDecode != nil {
-			return "", "", fmt.Errorf("decode clipboard image: %w", errDecode)
+			return "", fmt.Errorf("decode clipboard image: %w", errDecode)
 		}
 	} else {
 		var err error
 		data, err = os.ReadFile(path)
 		if err != nil {
-			return "", "", err
+			return "", err
 		}
 	}
 	return Encode(data)
 }
 
-// Encode validates a supported image and returns its media type and base64 data URL.
-func Encode(data []byte) (string, string, error) {
+// Encode validates a supported image and returns its base64 data URL.
+func Encode(data []byte) (string, error) {
 	if len(data) == 0 || len(data) > MaxBytes {
-		return "", "", fmt.Errorf("image must be between 1 byte and %d MB", MaxBytes>>20)
+		return "", fmt.Errorf("image must be between 1 byte and %d MB", MaxBytes>>20)
 	}
 	mime := http.DetectContentType(data)
 	switch mime {
 	case "image/png", "image/jpeg", "image/webp", "image/gif":
 	default:
-		return "", "", fmt.Errorf("unsupported image type %s (use PNG, JPEG, WebP or GIF)", mime)
+		return "", fmt.Errorf("unsupported image type %s (use PNG, JPEG, WebP or GIF)", mime)
 	}
 	if mime == "image/png" && !bytes.HasPrefix(data, []byte("\x89PNG\r\n\x1a\n")) {
-		return "", "", fmt.Errorf("invalid PNG header")
+		return "", fmt.Errorf("invalid PNG header")
 	}
-	return mime, "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data), nil
+	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data), nil
 }

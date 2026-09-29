@@ -175,7 +175,7 @@ func main() {
 		}
 		if line == "/image" || strings.HasPrefix(line, "/image ") {
 			path := strings.TrimSpace(strings.TrimPrefix(line, "/image"))
-			_, url, err := image.Read(path)
+			url, err := image.Read(path)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "image:", err)
 				continue
