@@ -38,6 +38,7 @@ type Codex struct {
 	rules   string // always today's config, so rule changes reach old sessions
 	repoMap string // frozen per session: it changes often and would miss the cache
 	memory  string // ephemeral for this turn; never copied into saved conversation
+	image   string // data URL attached to the next user message; retained if the request fails
 	tools   []map[string]any
 	input   []map[string]any // full history; the server stores nothing (store: false)
 	session string
@@ -79,9 +80,12 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 		c.input = append(c.input, map[string]any{"type": "function_call_output", "call_id": r.ID, "output": r.Output})
 	}
 	if user != "" {
+		content := []map[string]any{{"type": "input_text", "text": user}}
+		if c.image != "" {
+			content = append(content, map[string]any{"type": "input_image", "image_url": c.image})
+		}
 		c.input = append(c.input, map[string]any{
-			"type": "message", "role": "user",
-			"content": []map[string]any{{"type": "input_text", "text": user}},
+			"type": "message", "role": "user", "content": content,
 		})
 	}
 	// On failure, drop this reply's partial items: a function_call with no
@@ -90,6 +94,8 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 	defer func() {
 		if err != nil {
 			c.input = c.input[:n]
+		} else if user != "" {
+			c.image = ""
 		}
 	}()
 
@@ -217,6 +223,10 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 	fmt.Println()
 	return calls, sc.Err()
 }
+
+// AttachImage stages a data URL for the next user message. The current session
+// saves the image with that message so resuming preserves its context.
+func (c *Codex) AttachImage(dataURL string) { c.image = dataURL }
 
 // SetMemory replaces this turn's retrieved memory. It is never persisted in
 // conversation history; the next turn may retrieve different or updated data.
@@ -350,7 +360,7 @@ func (c *Codex) Replay(w io.Writer) {
 		// is the shortest way to read their fields.
 		var m struct {
 			Type, Role, Arguments string
-			Content               []struct{ Text string }
+			Content               []struct{ Type, Text string }
 			Action                map[string]any
 		}
 		b, _ := json.Marshal(it)
@@ -358,7 +368,9 @@ func (c *Codex) Replay(w io.Writer) {
 		switch m.Type {
 		case "message":
 			for _, part := range m.Content {
-				if m.Role == "user" {
+				if part.Type == "input_image" {
+					fmt.Fprintln(w, "[image attached]")
+				} else if m.Role == "user" {
 					fmt.Fprintln(w, ">", part.Text)
 				} else {
 					fmt.Fprintln(w, part.Text)

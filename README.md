@@ -23,6 +23,10 @@ go build -o kh ./cmd/kh
 ./kh -nosandbox "update ~/.zshrc"      # allow writes outside the project
 ```
 
+## Images
+
+In an interactive tmux chat on macOS, copy an image and press **Ctrl-V** in a `kh` pane (in any tmux session, including split panes). kh reads and validates the clipboard **at Ctrl-V**, then inserts a short visible placeholder; add any text and press Enter to send the captured image. If the clipboard contains only text, kh shows a pasteboard-type diagnostic immediately and leaves your input unchanged. The captured image is held in a private temporary cache file until sent; an unsent image may leave a cache file behind. The server-wide tmux key binding checks the active pane and passes Ctrl-V through unchanged in non-`kh` panes; an existing user Ctrl-V binding is never replaced. If your terminal does not forward Ctrl-V or you already bind it in tmux, type `/image` to attach the current clipboard image, then type your message. The clipboard reader uses Swift/AppKit. You can also type `/image path/to/image.png` on any platform to attach a PNG, JPEG, WebP, or GIF file (maximum 10 MB). One image can be attached per message. Images are included in saved sessions; reopening a session displays `[image attached]` instead of printing image data.
+
 ## Tmux agents
 
 Interactive `kh` starts or attaches to a tmux session named `kh` (its first window is `kh:main`). Inside tmux it runs normally. Install tmux first; one-shot tasks and piped input don't require tmux.

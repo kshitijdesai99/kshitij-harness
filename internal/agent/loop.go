@@ -5,9 +5,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 
+	"kh/internal/image"
 	"kh/internal/provider"
 	"kh/internal/tools"
 )
@@ -19,6 +21,11 @@ import (
 func Run(ctx context.Context, p provider.Provider, ts []tools.Tool, task string, steer <-chan string) error {
 	user, results := task, []provider.Result(nil)
 	for {
+		var err error
+		user, err = withPastedImage(p, user)
+		if err != nil {
+			return err
+		}
 		calls, line, err := step(ctx, p, user, results, steer)
 		if err != nil {
 			return err
@@ -33,6 +40,35 @@ func Run(ctx context.Context, p provider.Provider, ts []tools.Tool, task string,
 		results = runAll(ctx, ts, calls)
 		user = queued(tools.Held(), steer)
 	}
+}
+
+var pastedImage = regexp.MustCompile(`\[\[kh:image:([a-f0-9]{32})\]\]`)
+
+func withPastedImage(p provider.Provider, text string) (string, error) {
+	if strings.Contains(text, image.PasteMarker) {
+		return "", fmt.Errorf("this image marker predates clipboard capture; press Ctrl-V again")
+	}
+	matches := pastedImage.FindAllStringSubmatch(text, -1)
+	if len(matches) == 0 {
+		return text, nil
+	}
+	if len(matches) != 1 {
+		return "", fmt.Errorf("paste one image per message")
+	}
+	url, err := image.Take(matches[0][1])
+	if err != nil {
+		return "", err
+	}
+	attacher, ok := p.(interface{ AttachImage(string) })
+	if !ok {
+		return "", fmt.Errorf("this provider does not support images")
+	}
+	attacher.AttachImage(url)
+	text = strings.TrimSpace(strings.Replace(text, matches[0][0], "", 1))
+	if text == "" {
+		text = "Describe this image."
+	}
+	return text, nil
 }
 
 // step runs one model reply, but gives up on it as soon as the user types a

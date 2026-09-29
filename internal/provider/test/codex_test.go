@@ -72,6 +72,23 @@ func TestLoadKeepsSavedMap(t *testing.T) {
 	}
 }
 
+func TestReplayImageRedacted(t *testing.T) {
+	state := `{"session":"s","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"What's this?"},{"type":"input_image","image_url":"data:image/png;base64,SECRET"}]}]}`
+	p := provider.NewCodex(config.Defaults, "", nil)
+	if err := p.Load([]byte(state)); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	p.Replay(&out)
+	if got := out.String(); got != "> What's this?\n[image attached]\n" {
+		t.Errorf("replay: %q", got)
+	}
+	b, err := p.Save()
+	if err != nil || !strings.Contains(string(b), "data:image/png;base64,SECRET") {
+		t.Errorf("image lost on save: %v", err)
+	}
+}
+
 func TestUseSwitchesModelAndEffort(t *testing.T) {
 	p := provider.NewCodex(config.Defaults, "", nil)
 	if m, e := p.Use("", ""); m != config.Defaults.Model || e != config.Defaults.Effort {

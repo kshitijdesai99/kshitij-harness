@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"kh/internal/image"
 )
 
 var agentName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
@@ -209,6 +211,83 @@ func setAgentState(state string) {
 	if os.Getenv("TMUX") != "" {
 		_, _ = tmux("set-option", "-p", "@kh_state", state)
 		_, _ = tmux("set-option", "-w", "@kh_state", state) // older windows
+	}
+}
+
+// clipboardPaste runs at the Ctrl-V keystroke. A failed read leaves the
+// user's input unchanged and shows the pasteboard diagnosis immediately.
+func clipboardPaste(pane string) error {
+	if !regexp.MustCompile(`^%[0-9]+$`).MatchString(pane) {
+		return fmt.Errorf("invalid tmux pane")
+	}
+	active, err := tmux("display-message", "-p", "-t", pane, "#{@kh_image_paste}")
+	if err != nil || active != "1" {
+		return fmt.Errorf("not an interactive kh pane")
+	}
+	marker, err := image.Snapshot()
+	if err != nil {
+		_, _ = tmux("display-message", "-t", pane, "-d", "7000", "Image paste: "+err.Error())
+		return err
+	}
+	if _, err := tmux("send-keys", "-t", pane, "-l", "--", marker); err != nil {
+		_, _ = image.Take(strings.TrimSuffix(strings.TrimPrefix(marker, "[[kh:image:"), "]]"))
+		return err
+	}
+	return nil
+}
+
+// Ctrl-V keeps its usual behavior in shells, other apps, and other sessions.
+func installImagePasteBinding() {
+	pane := os.Getenv("TMUX_PANE")
+	if pane == "" { // A detached tmux command cannot reliably identify its own pane.
+		return
+	}
+	if _, err := tmux("set-option", "-p", "-t", pane, "@kh_image_paste", "1"); err != nil {
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	// tmux expands this pane option when the key is pressed; quoting protects
+	// executable paths containing shell metacharacters or spaces.
+	if _, err := tmux("set-option", "-p", "-t", pane, "@kh_image_command", shellCommand(exe, "clipboard-paste")); err != nil {
+		return
+	}
+	keys, err := tmux("list-keys", "-T", "root")
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(keys, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || fields[0] != "bind-key" {
+			continue
+		}
+		rootCtrlV := false
+		for i := 1; i+2 < len(fields); i++ {
+			if fields[i] == "-T" && fields[i+1] == "root" && fields[i+2] == "C-v" {
+				rootCtrlV = true
+				break
+			}
+		}
+		if !rootCtrlV {
+			continue
+		}
+		// Upgrade our old session-scoped binding, but never overwrite the
+		// user's own Ctrl-V binding.
+		if !strings.Contains(line, "[[kh:clipboard-image]]") && !strings.Contains(line, "@kh_image_command") {
+			return
+		}
+		break
+	}
+	_, _ = tmux("bind-key", "-T", "root", "C-v", "if-shell", "-F", "#{==:#{@kh_image_paste},1}",
+		"run-shell '#{@kh_image_command} #{pane_id}'", "send-keys C-v")
+}
+
+func clearImagePastePane() {
+	if pane := os.Getenv("TMUX_PANE"); pane != "" {
+		_, _ = tmux("set-option", "-p", "-t", pane, "-u", "@kh_image_paste")
+		_, _ = tmux("set-option", "-p", "-t", pane, "-u", "@kh_image_command")
 	}
 }
 

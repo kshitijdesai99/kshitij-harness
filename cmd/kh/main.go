@@ -13,6 +13,7 @@ import (
 	"kh/internal/agent"
 	"kh/internal/auth"
 	"kh/internal/config"
+	"kh/internal/image"
 	"kh/internal/memory"
 	"kh/internal/provider"
 	"kh/internal/repomap"
@@ -43,6 +44,13 @@ func main() {
 	ctx := context.Background()
 	if len(args) > 0 {
 		switch args[0] {
+		case "clipboard-paste":
+			if len(args) != 2 {
+				exit(fmt.Errorf("usage: kh clipboard-paste <tmux-pane>"))
+				return
+			}
+			exit(clipboardPaste(args[1]))
+			return
 		case "spawn", "send", "peek", "agents":
 			exit(agentCommand(args, cfg.Auto))
 			return
@@ -57,6 +65,11 @@ func main() {
 		if fi, _ := os.Stdin.Stat(); fi != nil && fi.Mode()&os.ModeCharDevice != 0 {
 			return
 		}
+	}
+
+	if os.Getenv("TMUX") != "" && (len(args) == 0 || *stay) {
+		installImagePasteBinding()
+		defer clearImagePastePane()
 	}
 
 	if strings.Join(args, " ") == "login codex" {
@@ -160,6 +173,17 @@ func main() {
 			fmt.Println()
 			return
 		}
+		if line == "/image" || strings.HasPrefix(line, "/image ") {
+			path := strings.TrimSpace(strings.TrimPrefix(line, "/image"))
+			_, url, err := image.Read(path)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "image:", err)
+				continue
+			}
+			p.AttachImage(url)
+			fmt.Println("(image attached; type your message)")
+			continue
+		}
 		if strings.HasPrefix(line, "/") {
 			command(p, line)
 		} else if line != "" {
@@ -220,7 +244,7 @@ func command(p provider.Provider, line string) {
 			model, effort = p.Use("", arg)
 		}
 	default:
-		fmt.Println("/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions")
+		fmt.Println("/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message")
 		return
 	}
 	fmt.Printf("%s(model %s, effort %s)%s\n", grey, model, effort, reset)
