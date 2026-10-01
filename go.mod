@@ -2,7 +2,10 @@ module kh
 
 go 1.24.0
 
-require modernc.org/sqlite v1.39.1
+require (
+	github.com/chzyer/readline v1.5.1
+	modernc.org/sqlite v1.39.1
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

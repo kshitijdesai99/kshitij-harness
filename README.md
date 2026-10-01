@@ -9,6 +9,8 @@ go build -o kh ./cmd/kh
 ./kh login codex        # ChatGPT login, no API key
 ```
 
+Rebuilding `./kh` does not update an installed `kh` elsewhere on `PATH` or an already-running chat. Launch the rebuilt executable explicitly (`./kh -s SESSION_ID` to resume), or use `go install ./cmd/kh` to update the installed command and then restart it. Check `command -v kh` if a bare `kh` still behaves like an older build.
+
 ## Use
 
 ```bash
@@ -22,6 +24,10 @@ go build -o kh ./cmd/kh
 ./kh -model gpt-5.5 -effort high "hi"
 ./kh -nosandbox "update ~/.zshrc"      # allow writes outside the project
 ```
+
+## Input history
+
+In interactive chat, press **Up** to recall your previous query and **Down** to move toward newer entries or restore your unfinished draft. Recalled text is editable; press Enter to submit it. History keeps up to 500 entries for the current process only (it is not saved across restarts). Blank lines and `y`/`yes`/`n`/`no` approval answers are excluded. Ctrl-C still stops the active task, and Ctrl-D on an empty line quits. Piped input remains line-based.
 
 ## Images
 

@@ -167,7 +167,6 @@ func main() {
 		}
 	}
 	for {
-		fmt.Print("> ")
 		line, ok := <-tools.Lines
 		if !ok { // Ctrl-D
 			fmt.Println()

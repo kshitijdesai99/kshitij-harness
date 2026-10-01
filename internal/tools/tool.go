@@ -2,11 +2,8 @@
 package tools
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
-	"os"
-	"strings"
 	"sync"
 )
 
@@ -20,19 +17,7 @@ var inputOnce sync.Once
 // StartInput starts reading only after tmux attach has finished in the launcher;
 // otherwise the reader could steal keystrokes from the tmux client.
 func StartInput() {
-	inputOnce.Do(func() {
-		go func() {
-			r := bufio.NewReader(os.Stdin)
-			for {
-				line, err := r.ReadString('\n')
-				if err != nil {
-					close(Lines)
-					return
-				}
-				Lines <- strings.TrimSpace(line)
-			}
-		}()
-	})
+	inputOnce.Do(func() { go readInput() })
 }
 
 // Tool is one plugin. Add a tool = one file + one line in the list in main.
