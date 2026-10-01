@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"kh/internal/tools"
+	"kh/internal/terminal"
 )
 
-// Run the public reader in a separate process so its singleton and terminal
-// state cannot interfere with other tool tests.
+// Run the public reader in a separate process so raw terminal state and
+// interrupt handling cannot interfere with the parent test runner.
 func TestInputProcess(t *testing.T) {
 	if os.Getenv("KH_INPUT_HELPER") != "1" {
 		return
@@ -21,8 +21,10 @@ func TestInputProcess(t *testing.T) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	go func() { <-ctx.Done(); fmt.Println("CANCELLED") }()
-	tools.StartInput()
-	for line := range tools.Lines {
+	console := terminal.NewConsole(os.Stdin, os.Stdout, os.Stderr)
+	defer console.Close()
+	console.Start()
+	for line := range console.Lines {
 		fmt.Printf("INPUT:%s\n", line)
 	}
 }

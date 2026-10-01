@@ -9,6 +9,7 @@ import (
 )
 
 type Config struct {
+	Provider   string   `json:"provider"` // backend adapter; model ids are independent
 	Model      string   `json:"model"`
 	Effort     string   `json:"effort"`     // reasoning: low, medium, high
 	WebSearch  bool     `json:"web_search"` // Codex's built-in search, run on OpenAI's side
@@ -24,6 +25,7 @@ type Config struct {
 
 // Short and fixed on purpose: short = fast, fixed = cacheable.
 var Defaults = Config{
+	Provider:  "codex",
 	Model:     "gpt-6-luna",
 	Effort:    "medium",
 	WebSearch: true,

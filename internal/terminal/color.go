@@ -9,6 +9,7 @@ import (
 )
 
 const (
+	Muted    = "\033[90m"
 	Query    = "\033[36m"
 	Response = "\033[32m"
 	Reset    = "\033[0m"

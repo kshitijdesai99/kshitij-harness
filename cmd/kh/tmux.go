@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"kh/internal/config"
 	"kh/internal/image"
 )
 
@@ -94,7 +95,7 @@ func agentPane(name string) (string, error) {
 	return "", fmt.Errorf("agent kh:%s not found", name)
 }
 
-func agentCommand(args []string, auto bool) error {
+func agentCommand(args []string, cfg config.Config) error {
 	switch args[0] {
 	case "spawn":
 		if len(args) != 3 || !agentName.MatchString(args[1]) || args[1] == "main" || args[2] == "" {
@@ -134,8 +135,8 @@ func agentCommand(args []string, auto bool) error {
 		if err != nil {
 			return err
 		}
-		cmd := []string{exe}
-		if auto {
+		cmd := []string{exe, "-provider", cfg.Provider, "-model", cfg.Model, "-effort", cfg.Effort}
+		if cfg.Auto {
 			cmd = append(cmd, "--auto")
 		}
 		cmd = append(cmd, "-i", args[2])

@@ -1,18 +1,17 @@
-// Package session saves chats in ~/.kh/sessions/<folder> so they can be resumed.
+// Package session saves opaque provider state per working folder.
 package session
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"kh/internal/config"
 )
 
-// dir is per working folder, so listing and -r only see this folder's chats.
-// The path becomes a readable name: /Users/me/app -> -Users-me-app.
 func dir() string {
 	wd, _ := os.Getwd()
 	if r, err := filepath.EvalSymlinks(wd); err == nil {
@@ -21,16 +20,26 @@ func dir() string {
 	return filepath.Join(config.Dir(), "sessions", strings.ReplaceAll(wd, string(filepath.Separator), "-"))
 }
 
-// New returns an id that sorts by time, so the latest is simply the last file.
-// Milliseconds, so two runs in the same second never clash.
-func New() string { return time.Now().Format("20060102-150405.000") }
+func New() string { return time.Now().Format("20060102-150405.000000000") }
 
-// List returns saved ids, oldest first.
+var validID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+
+func path(id string) (string, error) {
+	if !validID.MatchString(id) {
+		return "", fmt.Errorf("invalid session id %q", id)
+	}
+	return filepath.Join(dir(), id+".json"), nil
+}
+
+// List ignores temporary files from interrupted saves.
 func List() []string {
-	entries, _ := os.ReadDir(dir()) // sorted by name = by time
+	entries, _ := os.ReadDir(dir())
 	var ids []string
 	for _, e := range entries {
-		ids = append(ids, strings.TrimSuffix(e.Name(), ".json"))
+		id := strings.TrimSuffix(e.Name(), ".json")
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") && validID.MatchString(id) {
+			ids = append(ids, id)
+		}
 	}
 	return ids
 }
@@ -43,12 +52,38 @@ func Latest() (string, error) {
 	return ids[len(ids)-1], nil
 }
 
-// Save is 0600: sessions contain your code and command output.
+// Save never truncates the previous chat. The temporary file is private and
+// lives beside its destination so rename is atomic on the same filesystem.
 func Save(id string, b []byte) error {
+	name, err := path(id)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(dir(), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir(), id+".json"), b, 0o600)
+	f, err := os.CreateTemp(dir(), ".save-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+	if _, err := f.Write(b); err != nil {
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), name)
 }
 
-func Load(id string) ([]byte, error) { return os.ReadFile(filepath.Join(dir(), id+".json")) }
+func Load(id string) ([]byte, error) {
+	name, err := path(id)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(name)
+}

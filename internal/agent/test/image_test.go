@@ -37,13 +37,13 @@ func TestCapturedImageIsSentWithText(t *testing.T) {
 	}
 	f := &imageFake{}
 	f.step = func(_ context.Context, _ int, _ []provider.Result) ([]provider.Call, error) { return nil, nil }
-	if err := agent.Run(context.Background(), f, nil, "Describe "+marker+" briefly", nil); err != nil {
+	if err := (agent.Runner{Model: f}).Run(context.Background(), "Describe "+marker+" briefly"); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.got) != 1 || f.got[0] != "Describe  briefly" || !strings.Contains(f.attached, png) {
 		t.Errorf("message: %q, image attached: %v", f.got, f.attached != "")
 	}
-	if err := agent.Run(context.Background(), f, nil, "Again "+marker, nil); err == nil || !strings.Contains(err.Error(), "press Ctrl-V again") {
+	if err := (agent.Runner{Model: f}).Run(context.Background(), "Again "+marker); err == nil || !strings.Contains(err.Error(), "press Ctrl-V again") {
 		t.Errorf("consumed image accepted: %v", err)
 	}
 }

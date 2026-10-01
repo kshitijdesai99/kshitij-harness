@@ -14,15 +14,32 @@ import (
 
 var ctx = context.Background()
 
-func bash(t *testing.T, cfg config.Config, command string) (string, error) {
-	in, _ := json.Marshal(map[string]string{"command": command})
-	return tools.Bash(cfg).Run(ctx, in)
+type fakeApprover func(context.Context, string, bool) (bool, error)
+
+func (f fakeApprover) Approve(ctx context.Context, command string, safe bool) (bool, error) {
+	return f(ctx, command, safe)
 }
 
-// Unsafe commands ask y/n; stdin is empty in tests, so they get "user said no".
+func bash(t *testing.T, cfg config.Config, command string) (string, error) {
+	t.Helper()
+	cfg.Sandbox = false
+	return bashWithSandbox(t, cfg, command)
+}
+
+func bashWithSandbox(t *testing.T, cfg config.Config, command string) (string, error) {
+	t.Helper()
+	in, _ := json.Marshal(map[string]string{"command": command})
+	return tools.Bash(cfg, fakeApprover(func(_ context.Context, _ string, safe bool) (bool, error) {
+		return safe, nil
+	})).Run(ctx, in)
+}
+
+// The fake approver denies unsafe commands without reading global input.
 func TestSafeList(t *testing.T) {
-	os.Chdir(t.TempDir())
-	os.WriteFile("a.go", []byte("x\n"), 0o644)
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile("a.go", []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	for c, safe := range map[string]bool{
 		"cat a.go | head":               true,
 		"sed -n 1,20p a.go":             true,
@@ -59,7 +76,7 @@ func TestOutputCap(t *testing.T) {
 }
 
 func TestEdit(t *testing.T) {
-	os.Chdir(t.TempDir())
+	t.Chdir(t.TempDir())
 	edit := func(js string) error { _, err := tools.Edit.Run(ctx, []byte(js)); return err }
 
 	if err := edit(`{"path":"a.txt","old":"","new":"hi there"}`); err != nil {

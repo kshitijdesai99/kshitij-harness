@@ -8,12 +8,13 @@ import (
 
 	"kh/internal/config"
 	"kh/internal/provider"
+	"kh/internal/terminal"
 )
 
 // A failed step (here: not logged in) must leave history resumable.
 func TestSaveLoadAfterFailedStep(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	p := provider.NewCodex(config.Defaults, "", nil)
+	p := provider.NewCodex(config.Defaults, "", nil, nil)
 	if _, err := p.Step(context.Background(), "hi", nil); err == nil {
 		t.Fatal("want not-logged-in error")
 	}
@@ -22,7 +23,7 @@ func TestSaveLoadAfterFailedStep(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	q := provider.NewCodex(config.Defaults, "", nil)
+	q := provider.NewCodex(config.Defaults, "", nil, nil)
 	if err := q.Load(b); err != nil {
 		t.Fatal(err)
 	}
@@ -50,12 +51,12 @@ func TestReplay(t *testing.T) {
 		{"type":"web_search_call","action":{"type":"open_page"}},
 		{"type":"message","role":"assistant","content":[{"type":"output_text","text":"There are 3."}]}
 	]}`
-	p := provider.NewCodex(config.Defaults, "", nil)
+	p := provider.NewCodex(config.Defaults, "", nil, nil)
 	if err := p.Load([]byte(state)); err != nil {
 		t.Fatal(err)
 	}
 	var b strings.Builder
-	p.Replay(&b)
+	p.Replay(terminal.Renderer{Out: &b, Err: &b})
 	want := "> count files\n$ ls | wc -l\nedit a.go\nsearch: go 1.27\nopen: https://go.dev\nfind: release in https://go.dev\nThere are 3.\n"
 	if b.String() != want {
 		t.Errorf("got:\n%s\nwant:\n%s", b.String(), want)
@@ -64,8 +65,8 @@ func TestReplay(t *testing.T) {
 
 // Resuming keeps the session's repo map, so a changed repo can't break the cache.
 func TestLoadKeepsSavedMap(t *testing.T) {
-	b, _ := provider.NewCodex(config.Defaults, "old map", nil).Save()
-	p := provider.NewCodex(config.Defaults, "new map", nil)
+	b, _ := provider.NewCodex(config.Defaults, "old map", nil, nil).Save()
+	p := provider.NewCodex(config.Defaults, "new map", nil, nil)
 	p.Load(b)
 	if got, _ := p.Save(); !strings.Contains(string(got), `"map":"old map"`) {
 		t.Errorf("resumed with the new map: %s", got)
@@ -74,12 +75,12 @@ func TestLoadKeepsSavedMap(t *testing.T) {
 
 func TestReplayImageRedacted(t *testing.T) {
 	state := `{"session":"s","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"What's this?"},{"type":"input_image","image_url":"data:image/png;base64,SECRET"}]}]}`
-	p := provider.NewCodex(config.Defaults, "", nil)
+	p := provider.NewCodex(config.Defaults, "", nil, nil)
 	if err := p.Load([]byte(state)); err != nil {
 		t.Fatal(err)
 	}
 	var out strings.Builder
-	p.Replay(&out)
+	p.Replay(terminal.Renderer{Out: &out, Err: &out})
 	if got := out.String(); got != "> What's this?\n[image attached]\n" {
 		t.Errorf("replay: %q", got)
 	}
@@ -90,7 +91,7 @@ func TestReplayImageRedacted(t *testing.T) {
 }
 
 func TestUseSwitchesModelAndEffort(t *testing.T) {
-	p := provider.NewCodex(config.Defaults, "", nil)
+	p := provider.NewCodex(config.Defaults, "", nil, nil)
 	if m, e := p.Use("", ""); m != config.Defaults.Model || e != config.Defaults.Effort {
 		t.Errorf("show = %s %s", m, e)
 	}

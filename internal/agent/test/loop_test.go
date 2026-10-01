@@ -3,7 +3,6 @@ package test
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"testing"
 	"time"
 
@@ -22,11 +21,6 @@ func (f *fake) Step(ctx context.Context, user string, results []provider.Result)
 	f.got = append(f.got, user)
 	return f.step(ctx, len(f.got), results)
 }
-func (f *fake) Save() ([]byte, error)            { return nil, nil }
-func (f *fake) Load([]byte) error                { return nil }
-func (f *fake) Replay(io.Writer)                 {}
-func (f *fake) Stats() provider.Stats            { return provider.Stats{} }
-func (f *fake) Use(m, e string) (string, string) { return m, e }
 
 var noop = tools.Tool{Name: "noop", Run: func(context.Context, json.RawMessage) (string, error) { return "ok", nil }}
 
@@ -42,7 +36,7 @@ func TestSteerInterruptsReply(t *testing.T) {
 	}}
 	go func() { time.Sleep(50 * time.Millisecond); steer <- "no, do it in Go" }()
 
-	if err := agent.Run(context.Background(), f, nil, "write a script", steer); err != nil {
+	if err := (agent.Runner{Model: f, Input: steer}).Run(context.Background(), "write a script"); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.got) != 2 || f.got[1] != "no, do it in Go" {
@@ -65,7 +59,7 @@ func TestSteerDuringCommand(t *testing.T) {
 		}
 		return nil, nil
 	}}
-	if err := agent.Run(context.Background(), f, []tools.Tool{typing}, "fix tests", steer); err != nil {
+	if err := (agent.Runner{Model: f, Tools: []tools.Tool{typing}, Input: steer}).Run(context.Background(), "fix tests"); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.got) != 2 || f.got[1] != "skip the slow tests\nand be quick" {

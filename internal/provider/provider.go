@@ -1,53 +1,53 @@
-// Package provider talks to models. Each provider keeps its own history
-// so the loop never has to know the wire format.
+// Package provider defines backend-neutral calls, results, and capabilities.
+// Wire formats and credentials belong to the individual adapters.
 package provider
 
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"time"
 )
 
-// Call is a tool call the model asked for.
 type Call struct {
 	ID    string
 	Name  string
 	Input json.RawMessage
 }
 
-// Result is what we send back for one Call.
 type Result struct {
 	ID      string
 	Output  string
 	IsError bool
 }
 
-// Provider is one plugin per model backend.
+// Output separates presentation from provider protocol handling. Reply accepts
+// streaming fragments; the other methods accept complete lines.
+type Output interface {
+	Reply(string)
+	Query(string)
+	Action(string)
+	Notice(string)
+}
+
+// Provider is the session-level contract. Save/Load exchange opaque JSON
+// state; Stats consumes the current turn's metrics. The agent uses only Step.
 type Provider interface {
-	// Step sends user text and/or tool results (results first, then text:
-	// text with results is the user steering mid-task), streams the reply
-	// to stdout, and returns the next tool calls.
-	// No calls means the model is done.
-	Step(ctx context.Context, user string, results []Result) ([]Call, error)
-	// Save and Load the history, in the provider's own format, for resuming.
+	Step(context.Context, string, []Result) ([]Call, error)
 	Save() ([]byte, error)
 	Load([]byte) error
-	// Replay prints the history as it looked live: "> " for the user,
-	// "$ cmd" / "edit path" / "search: q" for actions, then replies.
-	Replay(w io.Writer)
-	// Stats returns what this turn cost, then resets for the next turn.
+	Replay(Output)
 	Stats() Stats
-	// Use switches model and/or effort ("" keeps the current one), mid-session,
-	// and returns both.
 	Use(model, effort string) (string, string)
 }
 
-// Stats for one turn (one user message and all the steps it took).
+// Optional capabilities let adapters reject unsupported features explicitly.
+type ImageAttacher interface{ AttachImage(string) }
+type MemorySetter interface{ SetMemory(string) }
+
 type Stats struct {
 	In, Cached, Out int
-	Think           int           // part of Out spent thinking, not shown
-	Context         int           // conversation size after the last step
-	Window          int           // model's context limit; 0 if unknown
-	TTFT            time.Duration // user message to the model's first output; 0 if none
+	Think           int
+	Context         int
+	Window          int
+	TTFT            time.Duration
 }

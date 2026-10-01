@@ -4,7 +4,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -14,11 +13,25 @@ import (
 	"kh/internal/tools"
 )
 
-// Run does one task, and lets the user steer it by typing a line on steer:
-//   - while the model replies, the reply is cut off and restarted with the line;
-//   - while commands run, the line is sent with their results (cutting a
-//     command off halfway could leave things broken).
-func Run(ctx context.Context, p provider.Provider, ts []tools.Tool, task string, steer <-chan string) error {
+// Stepper is the only model behavior the loop requires. Persistence, model
+// switching and metrics belong to the application, not tool orchestration.
+type Stepper interface {
+	Step(context.Context, string, []provider.Result) ([]provider.Call, error)
+}
+
+// Runner composes model, tools and user input without a concrete backend.
+type Runner struct {
+	Model  Stepper
+	Tools  []tools.Tool
+	Input  <-chan string
+	Held   func() []string
+	Notice func(string)
+}
+
+// Run executes one task. Steering interrupts a reply, but lets running tools
+// finish so their results can still be paired with the calls in history.
+func (r Runner) Run(ctx context.Context, task string) error {
+	p, ts, steer := r.Model, r.Tools, r.Input
 	user, results := task, []provider.Result(nil)
 	for {
 		var err error
@@ -26,7 +39,7 @@ func Run(ctx context.Context, p provider.Provider, ts []tools.Tool, task string,
 		if err != nil {
 			return err
 		}
-		calls, line, err := step(ctx, p, user, results, steer)
+		calls, line, err := step(ctx, p, user, results, steer, r.Notice)
 		if err != nil {
 			return err
 		}
@@ -38,13 +51,17 @@ func Run(ctx context.Context, p provider.Provider, ts []tools.Tool, task string,
 			return nil
 		}
 		results = runAll(ctx, ts, calls)
-		user = queued(tools.Held(), steer)
+		var held []string
+		if r.Held != nil {
+			held = r.Held()
+		}
+		user = queued(held, steer)
 	}
 }
 
 var pastedImage = regexp.MustCompile(`\[\[kh:image:([a-f0-9]{32})\]\]`)
 
-func withPastedImage(p provider.Provider, text string) (string, error) {
+func withPastedImage(p Stepper, text string) (string, error) {
 	if strings.Contains(text, image.PasteMarker) {
 		return "", fmt.Errorf("this image marker predates clipboard capture; press Ctrl-V again")
 	}
@@ -55,13 +72,13 @@ func withPastedImage(p provider.Provider, text string) (string, error) {
 	if len(matches) != 1 {
 		return "", fmt.Errorf("paste one image per message")
 	}
+	attacher, ok := p.(provider.ImageAttacher)
+	if !ok {
+		return "", fmt.Errorf("this provider does not support images")
+	}
 	url, err := image.Take(matches[0][1])
 	if err != nil {
 		return "", err
-	}
-	attacher, ok := p.(interface{ AttachImage(string) })
-	if !ok {
-		return "", fmt.Errorf("this provider does not support images")
 	}
 	attacher.AttachImage(url)
 	text = strings.TrimSpace(strings.Replace(text, matches[0][0], "", 1))
@@ -73,7 +90,7 @@ func withPastedImage(p provider.Provider, text string) (string, error) {
 
 // step runs one model reply, but gives up on it as soon as the user types a
 // line, and returns that line instead.
-func step(ctx context.Context, p provider.Provider, user string, results []provider.Result, steer <-chan string) ([]provider.Call, string, error) {
+func step(ctx context.Context, p Stepper, user string, results []provider.Result, steer <-chan string, notice func(string)) ([]provider.Call, string, error) {
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	type reply struct {
@@ -99,7 +116,9 @@ func step(ctx context.Context, p provider.Provider, user string, results []provi
 			}
 			cancel()
 			<-done // the provider drops its partial reply on cancel
-			fmt.Fprintln(os.Stderr, "\n(steered)")
+			if notice != nil {
+				notice("\n(steered)")
+			}
 			return nil, line, nil
 		}
 	}

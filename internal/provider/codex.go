@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -11,13 +10,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"strings"
 	"time"
 
 	"kh/internal/auth"
 	"kh/internal/config"
-	"kh/internal/terminal"
 	"kh/internal/tools"
 )
 
@@ -34,6 +30,7 @@ const (
 )
 
 type Codex struct {
+	out     Output
 	model   string
 	effort  string
 	rules   string // always today's config, so rule changes reach old sessions
@@ -48,18 +45,18 @@ type Codex struct {
 	window  int       // context limit of c.model: 0 = not looked up, -1 = unknown
 }
 
-func NewCodex(c config.Config, repoMap string, ts []tools.Tool) *Codex {
+func NewCodex(c config.Config, repoMap string, ts []tools.Tool, out Output) *Codex {
+	if out == nil {
+		out = discardOutput{}
+	}
 	id := make([]byte, 16)
 	rand.Read(id)
-	x := &Codex{model: c.Model, effort: c.Effort, rules: c.System, repoMap: repoMap, session: hex.EncodeToString(id)}
+	x := &Codex{out: out, model: c.Model, effort: c.Effort, rules: c.System, repoMap: repoMap, session: hex.EncodeToString(id)}
 	for _, t := range ts {
 		x.tools = append(x.tools, map[string]any{
 			"type": "function", "name": t.Name, "description": t.Description,
 			"parameters": map[string]any{"type": "object", "properties": t.Params, "required": t.Required},
 		})
-	}
-	if parent := os.Getenv("KH_PARENT"); parent != "" {
-		x.rules += "\nParent agent: " + parent + ". Report completed work using kh send."
 	}
 	if c.WebSearch {
 		// Server-side tool: OpenAI runs the search, we never see a call to execute.
@@ -133,7 +130,7 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 			break
 		}
 		if try == 0 {
-			fmt.Fprintln(os.Stderr, "(connection dropped, retrying...)")
+			c.out.Notice("(connection dropped, retrying...)")
 		}
 		select {
 		case <-time.After(retryEvery):
@@ -149,80 +146,7 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 		return nil, fmt.Errorf("codex: status %d: %s", resp.StatusCode, b)
 	}
 
-	sc := bufio.NewScanner(resp.Body)
-	sc.Buffer(nil, 16<<20) // reasoning items can be large
-	for sc.Scan() {
-		data, ok := strings.CutPrefix(sc.Text(), "data: ")
-		if !ok {
-			continue
-		}
-		var ev struct {
-			Type     string         `json:"type"`
-			Delta    string         `json:"delta"`
-			Item     map[string]any `json:"item"`
-			Response struct {
-				Error *struct{ Message string } `json:"error"`
-				Usage struct {
-					In      int `json:"input_tokens"`
-					Out     int `json:"output_tokens"`
-					Details struct {
-						Cached int `json:"cached_tokens"`
-					} `json:"input_tokens_details"`
-					OutDetails struct {
-						Think int `json:"reasoning_tokens"`
-					} `json:"output_tokens_details"`
-				} `json:"usage"`
-			} `json:"response"`
-			Message string `json:"message"`
-		}
-		if json.Unmarshal([]byte(data), &ev) != nil {
-			continue
-		}
-		switch ev.Type {
-		case "response.output_item.added":
-			// First output of any kind (thinking, text or a tool call). Timing
-			// only text would count tool runs and y/n waits as model latency.
-			if c.stats.TTFT == 0 {
-				c.stats.TTFT = time.Since(c.start)
-			}
-		case "response.output_text.delta":
-			fmt.Print(terminal.Color(os.Stdout, terminal.Response, ev.Delta))
-		case "response.output_item.done":
-			// Item ids point at server storage we turned off; replaying them 404s.
-			delete(ev.Item, "id")
-			c.input = append(c.input, ev.Item)
-			if ev.Item["type"] == "web_search_call" {
-				action, _ := ev.Item["action"].(map[string]any)
-				if s := webAction(action); s != "" {
-					fmt.Fprintln(os.Stderr, s)
-				}
-			}
-			if ev.Item["type"] == "function_call" {
-				id, _ := ev.Item["call_id"].(string)
-				name, _ := ev.Item["name"].(string)
-				args, _ := ev.Item["arguments"].(string)
-				calls = append(calls, Call{ID: id, Name: name, Input: json.RawMessage(args)})
-			}
-		case "response.completed":
-			u := ev.Response.Usage
-			c.stats.In += u.In
-			c.stats.Cached += u.Details.Cached
-			c.stats.Out += u.Out
-			c.stats.Think += u.OutDetails.Think
-			c.stats.Context = u.In + u.Out // what the next step starts from
-		case "response.failed":
-			if ev.Response.Error != nil {
-				return nil, fmt.Errorf("codex: %s", ev.Response.Error.Message)
-			}
-			return nil, fmt.Errorf("codex: response failed")
-		case "response.incomplete":
-			return nil, fmt.Errorf("codex: reply was cut off")
-		case "error":
-			return nil, fmt.Errorf("codex: %s", ev.Message)
-		}
-	}
-	fmt.Println()
-	return calls, sc.Err()
+	return c.readStream(resp.Body)
 }
 
 // AttachImage stages a data URL for the next user message. The current session
@@ -355,7 +279,10 @@ func (c *Codex) Load(b []byte) error {
 	return nil
 }
 
-func (c *Codex) Replay(w io.Writer) {
+func (c *Codex) Replay(out Output) {
+	if out == nil {
+		return
+	}
 	for _, it := range c.input {
 		// Round-trip through JSON: loaded items are generic maps, so this
 		// is the shortest way to read their fields.
@@ -370,24 +297,24 @@ func (c *Codex) Replay(w io.Writer) {
 		case "message":
 			for _, part := range m.Content {
 				if part.Type == "input_image" {
-					fmt.Fprintln(w, "[image attached]")
+					out.Action("[image attached]")
 				} else if m.Role == "user" {
-					fmt.Fprintln(w, terminal.Color(w, terminal.Query, "> "+part.Text))
+					out.Query(part.Text)
 				} else {
-					fmt.Fprintln(w, terminal.Color(w, terminal.Response, part.Text))
+					out.Reply(part.Text + "\n")
 				}
 			}
 		case "function_call":
 			var a struct{ Command, Path string }
 			json.Unmarshal([]byte(m.Arguments), &a)
 			if a.Command != "" {
-				fmt.Fprintln(w, "$", a.Command)
+				out.Action("$ " + a.Command)
 			} else {
-				fmt.Fprintln(w, "edit", a.Path)
+				out.Action("edit " + a.Path)
 			}
 		case "web_search_call":
 			if s := webAction(m.Action); s != "" {
-				fmt.Fprintln(w, s)
+				out.Action(s)
 			}
 		}
 	}

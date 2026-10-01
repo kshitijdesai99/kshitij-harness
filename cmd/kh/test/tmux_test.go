@@ -38,7 +38,7 @@ func TestTmuxAgents(t *testing.T) {
 	kh := func(args ...string) (string, error) {
 		t.Helper()
 		cmd := exec.Command(binary, args...)
-		cmd.Env = append(os.Environ(), "TMUX="+socket+",1,0", "HOME="+home)
+		cmd.Env = append(os.Environ(), "TMUX="+socket+",1,0", "HOME="+home, "KH_PROVIDER=", "KH_MODEL=", "KH_EFFORT=")
 		b, err := cmd.CombinedOutput()
 		return string(b), err
 	}
@@ -51,11 +51,14 @@ func TestTmuxAgents(t *testing.T) {
 	if s, err := kh("peek", "kh:main"); err != nil || !strings.Contains(s, "hello from test") {
 		t.Fatalf("peek: %q %v", s, err)
 	}
-	if s, err := kh("--auto", "spawn", "docs", "hello world"); err != nil {
+	if s, err := kh("--auto", "-provider", "codex", "-model", "future-model", "-effort", "low", "spawn", "docs", "hello world"); err != nil {
 		t.Fatalf("spawn: %q %v", s, err)
 	}
-	if command := runTmux("display-message", "-p", "-t", "kh:docs", "#{pane_start_command}"); !strings.Contains(command, "--auto") {
-		t.Errorf("spawn did not pass --auto: %q", command)
+	command := runTmux("display-message", "-p", "-t", "kh:docs", "#{pane_start_command}")
+	for _, value := range []string{"--auto", "-provider", "codex", "-model", "future-model", "-effort", "low"} {
+		if !strings.Contains(command, value) {
+			t.Errorf("spawn did not pass %q: %q", value, command)
+		}
 	}
 	if s, err := kh("agents"); err != nil || !strings.Contains(s, "kh:docs") {
 		t.Fatalf("agents after spawn: %q %v", s, err)

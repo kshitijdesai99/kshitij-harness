@@ -1,6 +1,6 @@
 # kh
 
-A lightweight, fast coding harness in Go. Three tools (`bash`, `edit`, `memory`), Codex provider.
+A lightweight, fast coding harness in Go. Three tools (`bash`, `edit`, `memory`), a backend-neutral core, and a Codex adapter.
 
 ## Setup
 
@@ -68,13 +68,26 @@ Use `global` instead of `repo` for preferences that apply across projects. The h
 Optional `~/.kh/config.json`; set only what you want to change:
 
 ```json
-{ "model": "gpt-6-luna", "effort": "medium", "timeout_sec": 30, "output_cap": 20000, "map_cap": 0 }
+{ "provider": "codex", "model": "gpt-6-luna", "effort": "medium", "timeout_sec": 30, "output_cap": 20000, "map_cap": 0 }
 ```
 
 Also `web_search` (on by default), `system`, `safe`, `auto`, `sandbox` and `writable` (extra dirs bash may write to). Flags override the file.
 
 Type while a task runs to steer it: a reply in progress is cut off and restarted with your line; a running command finishes first. In chat, `/model gpt-5.5` and `/effort high` switch from the next message and are saved to `~/.kh/config.json`, so every session (open ones too) follows; `/model` alone shows both.
 
-Read-only commands (`rg`, `cat`, `ls`, `git diff`, ...) run without asking. Everything else asks y/n unless `--auto`. On macOS, bash can only write inside the project (plus temp and cache dirs) unless `-nosandbox`.
+Read-only commands (`rg`, `cat`, `ls`, `git diff`, ...) run without asking when their syntax and options are recognized. Write/execute options and unsupported syntax require approval. This conservative allowlist is not a shell security boundary; custom `safe` entries are trusted configuration. Everything else asks y/n unless `--auto`. On macOS, bash can only write inside the project (plus temp and cache dirs) unless `-nosandbox`. Command output is bounded while it is collected, not only when it is sent to the model.
+
+## Architecture
+
+- `cmd/kh`: CLI setup and one chat's lifecycle.
+- `internal/agent`: orchestration against a small `Stepper` interface, independent of model APIs.
+- `internal/provider`: backend contracts, selection factory, and protocol adapters. Only Codex is currently implemented.
+- `internal/terminal`: per-chat input/history, cancellable approvals, and rendering. Adapters emit text, not terminal colors.
+- `internal/tools`: tool schemas and behavior; bash receives an approval interface instead of using global input.
+- `internal/session`: atomic saves of versioned, backend-tagged opaque state. Legacy Codex chats still resume.
+
+`provider` selects the API/auth adapter; `model` selects a model within that backend. `-provider codex` overrides the configured backend. Resuming uses the session's recorded backend; an explicit conflicting `-provider` is rejected. Switching backends starts a new chat rather than reinterpreting another provider's history. Spawned agents inherit the active provider, model, and effort, including command-line overrides.
+
+To add a backend, implement `provider.Provider`, emit through the injected `provider.Output`, and add its constructor/login route in `provider/factory.go`. The loop, tools, UI, and session storage do not need backend-specific branches. Image and retrieved-memory support are explicit optional capabilities. Keep credentials, request formats, streaming events, and private history inside the adapter; do not infer a backend from a model-name prefix.
 
 Architecture is discoverable with `kh memory search architecture` and `kh memory get <id>`; see [todo.md](todo.md) for future ideas.

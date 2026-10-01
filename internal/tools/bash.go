@@ -10,24 +10,19 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
 	"kh/internal/config"
 )
 
-// Flags that make an otherwise read-only command write. Not configurable on purpose.
-var writeFlags = map[string][]string{
-	"sed":  {"-i"},
-	"find": {"-exec", "-execdir", "-delete", "-ok"},
+// Approver owns command display, prompting, and steering during approval.
+type Approver interface {
+	Approve(context.Context, string, bool) (bool, error)
 }
 
-// termMu keeps parallel calls from printing over a pending y/n question.
-var termMu sync.Mutex
-
 // Bash runs one command per call.
-func Bash(c config.Config) Tool {
+func Bash(c config.Config, approval Approver) Tool {
 	timeout := time.Duration(c.TimeoutSec) * time.Second
 	// No profile/rc: starts in milliseconds instead of loading your shell setup.
 	argv := []string{"/bin/bash", "--noprofile", "--norc", "-c"}
@@ -43,12 +38,34 @@ func Bash(c config.Config) Tool {
 		Required:    []string{"command"},
 		Run: func(ctx context.Context, input json.RawMessage) (string, error) {
 			var in struct{ Command string }
-			if json.Unmarshal(input, &in) != nil || in.Command == "" {
+			if json.Unmarshal(input, &in) != nil || strings.TrimSpace(in.Command) == "" {
 				return "", fmt.Errorf("need a command")
 			}
-			StartInput()
-			if !show(in.Command, c.Auto || isSafe(in.Command, c.Safe)) {
+			if err := ctx.Err(); err != nil {
+				return "", err
+			}
+			if c.TimeoutSec <= 0 || int64(c.TimeoutSec) > int64((1<<63-1)/time.Second) {
+				return "", fmt.Errorf("timeout_sec must be positive and fit a time.Duration")
+			}
+			if c.OutputCap <= 0 {
+				return "", fmt.Errorf("output_cap must be positive")
+			}
+			allowed := c.Auto || isSafe(in.Command, c.Safe)
+			if approval != nil {
+				var err error
+				allowed, err = approval.Approve(ctx, in.Command, allowed)
+				if ctx.Err() != nil {
+					return "", ctx.Err()
+				}
+				if err != nil {
+					return "", err
+				}
+			}
+			if !allowed {
 				return "", fmt.Errorf("user said no")
+			}
+			if err := ctx.Err(); err != nil {
+				return "", err
 			}
 			out, err := run(ctx, append(argv, in.Command), timeout, c.OutputCap)
 			// The error is the same for our sandbox and for macOS privacy, so name both.
@@ -62,6 +79,7 @@ func Bash(c config.Config) Tool {
 }
 
 func run(ctx context.Context, argv []string, timeout time.Duration, outputCap int) (string, error) {
+	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
@@ -69,14 +87,15 @@ func run(ctx context.Context, argv []string, timeout time.Duration, outputCap in
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = time.Second // don't hang on pipes held by leftover children
-	out, err := cmd.CombinedOutput()
-
-	s := string(out)
-	if half := outputCap / 2; len(s) > outputCap { // keep head and tail: errors are usually at the end
-		s = s[:half] + "\n...[cut]...\n" + s[len(s)-half:]
-	}
+	out := newOutput(outputCap)
+	cmd.Stdout, cmd.Stderr = out, out
+	err := cmd.Run()
+	s := out.String()
 	if err != nil {
 		s += "\n" + err.Error()
+	}
+	if parent.Err() != nil {
+		return s, parent.Err()
 	}
 	// Our timeout, not the user's Ctrl-C: tell the model so it retries smaller.
 	if ctx.Err() == context.DeadlineExceeded {
@@ -101,70 +120,4 @@ func sandbox(dirs []string) []string {
 		p += " (subpath " + strconv.Quote(d) + ")"
 	}
 	return []string{"/usr/bin/sandbox-exec", "-p", p + ")"}
-}
-
-// isSafe allows safe commands joined by | ; && ||. Redirects, backgrounding (&),
-// substitution ($, `) and newlines never pass. A safe entry like "git diff"
-// matches the leading words of a command.
-func isSafe(c string, safe []string) bool {
-	c = strings.NewReplacer("&&", "|", "||", "|", ";", "|").Replace(c)
-	if strings.ContainsAny(c, "&><`$\n") {
-		return false
-	}
-	for _, part := range strings.Split(c, "|") {
-		f := strings.Fields(part)
-		if len(f) == 0 || !matchesAny(f, safe) {
-			return false
-		}
-		for _, flag := range writeFlags[f[0]] {
-			if strings.Contains(part, flag) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func matchesAny(f, safe []string) bool {
-	for _, s := range safe {
-		want := strings.Fields(s)
-		if len(want) > 0 && len(f) >= len(want) && strings.Join(f[:len(want)], " ") == strings.Join(want, " ") {
-			return true
-		}
-	}
-	return false
-}
-
-// show prints the command and, unless it is ok to run, asks the user.
-// The question sits right under its own command.
-func show(c string, ok bool) bool {
-	termMu.Lock()
-	defer termMu.Unlock()
-	fmt.Fprintln(os.Stderr, "$", c)
-	if ok {
-		return true
-	}
-	for {
-		fmt.Fprint(os.Stderr, "  run it? [y/N] ")
-		switch line := <-Lines; strings.ToLower(line) { // "" once closed = no
-		case "y", "yes":
-			return true
-		case "", "n", "no":
-			return false
-		default: // typed to steer, not to answer: keep it for the model
-			held = append(held, line)
-			fmt.Fprintln(os.Stderr, "  (noted for the model)")
-		}
-	}
-}
-
-var held []string // steering lines typed while a y/n question was open
-
-// Held returns and clears steering lines caught by a y/n question.
-func Held() []string {
-	termMu.Lock()
-	defer termMu.Unlock()
-	h := held
-	held = nil
-	return h
 }
