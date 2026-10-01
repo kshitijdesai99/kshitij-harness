@@ -27,6 +27,8 @@ Rebuilding `./kh` does not update an installed `kh` elsewhere on `PATH` or an al
 
 ## Input history
 
+Queries are cyan and assistant responses are green in interactive terminals, including replayed sessions. Redirected output stays plain; set `NO_COLOR=1` to disable chat colors.
+
 In interactive chat, press **Up** to recall your previous query and **Down** to move toward newer entries or restore your unfinished draft. Recalled text is editable; press Enter to submit it. History keeps up to 500 entries for the current process only (it is not saved across restarts). Blank lines and `y`/`yes`/`n`/`no` approval answers are excluded. Ctrl-C still stops the active task, and Ctrl-D on an empty line quits. Piped input remains line-based.
 
 ## Images

@@ -17,6 +17,7 @@ import (
 
 	"kh/internal/auth"
 	"kh/internal/config"
+	"kh/internal/terminal"
 	"kh/internal/tools"
 )
 
@@ -185,7 +186,7 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 				c.stats.TTFT = time.Since(c.start)
 			}
 		case "response.output_text.delta":
-			fmt.Print(ev.Delta)
+			fmt.Print(terminal.Color(os.Stdout, terminal.Response, ev.Delta))
 		case "response.output_item.done":
 			// Item ids point at server storage we turned off; replaying them 404s.
 			delete(ev.Item, "id")
@@ -371,9 +372,9 @@ func (c *Codex) Replay(w io.Writer) {
 				if part.Type == "input_image" {
 					fmt.Fprintln(w, "[image attached]")
 				} else if m.Role == "user" {
-					fmt.Fprintln(w, ">", part.Text)
+					fmt.Fprintln(w, terminal.Color(w, terminal.Query, "> "+part.Text))
 				} else {
-					fmt.Fprintln(w, part.Text)
+					fmt.Fprintln(w, terminal.Color(w, terminal.Response, part.Text))
 				}
 			}
 		case "function_call":

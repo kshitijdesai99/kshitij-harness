@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 
+	"kh/internal/terminal"
+
 	"github.com/chzyer/readline"
 )
 
@@ -18,7 +20,8 @@ func readInput() {
 		return
 	}
 	rl, err := readline.NewEx(&readline.Config{
-		Prompt: "> ", HistoryLimit: 500, DisableAutoSaveHistory: true,
+		Prompt: terminal.Color(os.Stdout, terminal.Query, "> "), Painter: queryPainter{},
+		HistoryLimit: 500, DisableAutoSaveHistory: true,
 		InterruptPrompt: "^C", EOFPrompt: "\n",
 	})
 	if err != nil {
@@ -52,6 +55,12 @@ func readInput() {
 		}
 		Lines <- line
 	}
+}
+
+type queryPainter struct{}
+
+func (queryPainter) Paint(line []rune, _ int) []rune {
+	return []rune(terminal.Color(os.Stdout, terminal.Query, string(line)))
 }
 
 func readPlainInput() {

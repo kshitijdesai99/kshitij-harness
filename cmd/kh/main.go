@@ -18,6 +18,7 @@ import (
 	"kh/internal/provider"
 	"kh/internal/repomap"
 	"kh/internal/session"
+	"kh/internal/terminal"
 	"kh/internal/tools"
 )
 
@@ -102,9 +103,9 @@ func main() {
 		exit(err)
 		exit(p.Load(b))
 		if len(args) == 0 || *stay { // chat: show where we left off
-			fmt.Printf("--- session %s ---\n%s", *id, grey)
+			fmt.Printf("--- session %s ---\n", *id)
 			p.Replay(os.Stdout)
-			fmt.Println(reset + "---")
+			fmt.Println("---")
 		}
 	} else {
 		*id = session.New()
@@ -161,7 +162,7 @@ func main() {
 	}
 	fmt.Fprintf(os.Stderr, "kh chat, session %s (%s, %s). Type while it works to steer. Ctrl-C stops a task, Ctrl-D quits, /help for commands.\n", *id, cfg.Model, cfg.Effort)
 	if task != "" {
-		fmt.Println(">", task)
+		fmt.Println(terminal.Color(os.Stdout, terminal.Query, "> "+task))
 		if err := turn(task); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 		}

@@ -46,7 +46,7 @@ func TestTerminalHistory(t *testing.T) {
 	cmd := exec.CommandContext(ctx, "python3", "-c", `import os,pty,select,subprocess,sys,time,fcntl,termios,struct
 master,slave=pty.openpty()
 fcntl.ioctl(slave,termios.TIOCSWINSZ,struct.pack('HHHH',24,80,0,0))
-p=subprocess.Popen([sys.argv[1],'-test.run=^TestInputProcess$'],stdin=slave,stdout=slave,stderr=slave,env=dict(os.environ,KH_INPUT_HELPER='1',TERM='xterm'))
+p=subprocess.Popen([sys.argv[1],'-test.run=^TestInputProcess$'],stdin=slave,stdout=slave,stderr=slave,env=dict(os.environ,KH_INPUT_HELPER='1',TERM='xterm',NO_COLOR=''))
 os.close(slave)
 buf=b''
 def expect(text):
@@ -60,8 +60,10 @@ def send(data,result):
     os.write(master,data)
     expect(b'INPUT:'+result+b'\r\n')
 try:
-    expect(b'> ')
-    send(b'first\r',b'first')
+    expect(b'\x1b[36m> ')
+    os.write(master,b'first\r')
+    expect(b'\x1b[36mfirst\x1b[0m')
+    expect(b'INPUT:first\r\n')
     send(b'second\r',b'second')
     send(b'\x1b[A\r',b'second')
     send(b'\x1b[A\x1b[A\r',b'first')
