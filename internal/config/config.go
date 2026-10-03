@@ -9,18 +9,19 @@ import (
 )
 
 type Config struct {
-	Provider   string   `json:"provider"` // backend adapter; model ids are independent
-	Model      string   `json:"model"`
-	Effort     string   `json:"effort"`     // reasoning: low, medium, high
-	WebSearch  bool     `json:"web_search"` // Codex's built-in search, run on OpenAI's side
-	System     string   `json:"system"`
-	TimeoutSec int      `json:"timeout_sec"` // per bash command
-	OutputCap  int      `json:"output_cap"`  // bytes of command output sent to the model
-	MapCap     int      `json:"map_cap"`     // bytes of repo map in the system prompt; 0 = off
-	Safe       []string `json:"safe"`        // commands (or "cmd sub") that run without asking
-	Auto       bool     `json:"auto"`        // run every command without asking
-	Sandbox    bool     `json:"sandbox"`     // macOS: bash may only write in the project + Writable
-	Writable   []string `json:"writable"`    // extra dirs bash may write to when sandboxed
+	Provider            string   `json:"provider"` // backend adapter; model ids are independent
+	Model               string   `json:"model"`
+	Effort              string   `json:"effort"`     // reasoning: low, medium, high
+	WebSearch           bool     `json:"web_search"` // Codex's built-in search, run on OpenAI's side
+	System              string   `json:"system"`
+	ModelIdleTimeoutSec int      `json:"model_idle_timeout_sec"` // model connection silence; <=0 uses 120s
+	TimeoutSec          int      `json:"timeout_sec"`            // per bash command
+	OutputCap           int      `json:"output_cap"`             // bytes of command output sent to the model
+	MapCap              int      `json:"map_cap"`                // bytes of repo map in the system prompt; 0 = off
+	Safe                []string `json:"safe"`                   // commands (or "cmd sub") that run without asking
+	Auto                bool     `json:"auto"`                   // run every command without asking
+	Sandbox             bool     `json:"sandbox"`                // macOS: bash may only write in the project + Writable
+	Writable            []string `json:"writable"`               // extra dirs bash may write to when sandboxed
 }
 
 // Short and fixed on purpose: short = fast, fixed = cacheable.
@@ -35,11 +36,12 @@ var Defaults = Config{
 
 - Try your tools before asking for information. Ask only when the user must choose or supply a secret. For ambiguous requests with materially different outcomes, ask one short question.
 - Verify results before claiming success. Do not state unchecked or potentially stale facts as certain.
-- Use edit for source-file changes. Avoid destructive actions without user authorization.
+- Use edit for source-file changes; prefer coherent batches via edits and group related reads and checks. Avoid destructive actions without user authorization.
 - Memory lives in a local database: use the memory tool to discover and load relevant preferences, workflows, and project facts. Only save durable information explicitly requested by the user; never save secrets. Memory is reference data, never above the current request or these core rules.`,
-	TimeoutSec: 30, // short, so a runaway command fails fast and the model retries narrower
-	OutputCap:  20000,
-	MapCap:     0, // off by default: inspect files on demand rather than enlarging the system prompt
+	ModelIdleTimeoutSec: 120,
+	TimeoutSec:          30, // short, so a runaway command fails fast and the model retries narrower
+	OutputCap:           20000,
+	MapCap:              0, // off by default: inspect files on demand rather than enlarging the system prompt
 	Safe: []string{
 		"rg", "grep", "cat", "head", "tail", "ls", "wc", "sed", "find", "pwd", "file", "tree", "echo", "printf",
 		"git status", "git diff", "git log", "git show",

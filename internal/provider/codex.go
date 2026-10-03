@@ -1,14 +1,11 @@
 package provider
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -25,24 +22,25 @@ const (
 	codexModelsURL = "https://chatgpt.com/backend-api/codex/models?client_version=99.0.0"
 	originator     = "kh" // OpenAI asks third-party harnesses to name themselves
 	userAgent      = "kh/0.1"
-	retryEvery     = 500 * time.Millisecond // when the connection drops
-	retryFor       = time.Minute            // then give up; Ctrl-C stops sooner
+	retryEvery     = time.Second // after a recoverable connection failure
+	retryFor       = time.Minute // recovery budget; Ctrl-C stops sooner
 )
 
 type Codex struct {
-	out     Output
-	model   string
-	effort  string
-	rules   string // always today's config, so rule changes reach old sessions
-	repoMap string // frozen per session: it changes often and would miss the cache
-	memory  string // ephemeral for this turn; never copied into saved conversation
-	image   string // data URL attached to the next user message; retained if the request fails
-	tools   []map[string]any
-	input   []map[string]any // full history; the server stores nothing (store: false)
-	session string
-	stats   Stats
-	start   time.Time // when the current turn's user message was sent
-	window  int       // context limit of c.model: 0 = not looked up, -1 = unknown
+	out         Output
+	model       string
+	effort      string
+	rules       string // always today's config, so rule changes reach old sessions
+	repoMap     string // frozen per session: it changes often and would miss the cache
+	memory      string // ephemeral for this turn; never copied into saved conversation
+	image       string // data URL attached to the next user message; retained if the request fails
+	tools       []map[string]any
+	input       []map[string]any // full history; the server stores nothing (store: false)
+	session     string
+	stats       Stats
+	start       time.Time     // when the current turn's user message was sent
+	window      int           // context limit of c.model: 0 = not looked up, -1 = unknown
+	idleTimeout time.Duration // bounds silent headers/streams, not total reasoning time
 }
 
 func NewCodex(c config.Config, repoMap string, ts []tools.Tool, out Output) *Codex {
@@ -51,10 +49,14 @@ func NewCodex(c config.Config, repoMap string, ts []tools.Tool, out Output) *Cod
 	}
 	id := make([]byte, 16)
 	rand.Read(id)
-	x := &Codex{out: out, model: c.Model, effort: c.Effort, rules: c.System, repoMap: repoMap, session: hex.EncodeToString(id)}
+	idle := time.Duration(c.ModelIdleTimeoutSec) * time.Second
+	if idle <= 0 {
+		idle = 120 * time.Second
+	}
+	x := &Codex{out: out, model: c.Model, effort: c.Effort, rules: c.System, repoMap: repoMap, session: hex.EncodeToString(id), idleTimeout: idle}
 	for _, t := range ts {
 		x.tools = append(x.tools, map[string]any{
-			"type": "function", "name": t.Name, "description": t.Description,
+			"type": "function", "name": t.Name, "description": t.Description, "strict": false,
 			"parameters": map[string]any{"type": "object", "properties": t.Params, "required": t.Required},
 		})
 	}
@@ -115,38 +117,7 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 	if err != nil {
 		return nil, err
 	}
-	var resp *http.Response
-	giveUp := time.Now().Add(retryFor)
-	for try := 0; ; try++ {
-		req, _ := http.NewRequestWithContext(ctx, "POST", codexURL, bytes.NewReader(body))
-		setHeaders(req, access, account)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "text/event-stream")
-		req.Header.Set("session_id", c.session)
-		resp, err = http.DefaultClient.Do(req)
-		// A dropped connection (e.g. an HTTP/2 stream reset) before any reply
-		// is usually gone on retry. Nothing was streamed, so retrying is safe.
-		if err == nil || ctx.Err() != nil || time.Now().After(giveUp) {
-			break
-		}
-		if try == 0 {
-			c.out.Notice("(connection dropped, retrying...)")
-		}
-		select {
-		case <-time.After(retryEvery):
-		case <-ctx.Done():
-		}
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("codex: status %d: %s", resp.StatusCode, b)
-	}
-
-	return c.readStream(resp.Body)
+	return c.requestWithRetry(ctx, body, access, account, n)
 }
 
 // AttachImage stages a data URL for the next user message. The current session
@@ -305,10 +276,21 @@ func (c *Codex) Replay(out Output) {
 				}
 			}
 		case "function_call":
-			var a struct{ Command, Path string }
+			var a struct {
+				Command, Path string
+				Edits         []struct{ Path string }
+			}
 			json.Unmarshal([]byte(m.Arguments), &a)
 			if a.Command != "" {
 				out.Action("$ " + a.Command)
+			} else if len(a.Edits) > 0 {
+				seen := make(map[string]bool)
+				for _, edit := range a.Edits {
+					if !seen[edit.Path] {
+						out.Action("edit " + edit.Path)
+						seen[edit.Path] = true
+					}
+				}
 			} else {
 				out.Action("edit " + a.Path)
 			}

@@ -23,6 +23,10 @@ func (c *Console) Approve(ctx context.Context, command string, safe bool) (bool,
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
+	if !safe {
+		c.activityPhase("waiting for approval")
+		defer c.activityPhase("running bash")
+	}
 	fmt.Fprintln(c.err, "$", command)
 	if safe {
 		return true, nil

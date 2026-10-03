@@ -24,15 +24,28 @@ type Console struct {
 	mu           sync.Mutex
 	rl           *readline.Instance
 	pending      []string
+	pastes       *pasteStore
 	approval     chan struct{}
+	activity     *Activity
 }
 
 func NewConsole(in io.Reader, out, err io.Writer) *Console {
 	lines := make(chan string, 16)
 	c := &Console{Lines: lines, lines: lines, in: in, out: out, err: err,
-		done: make(chan struct{}), approval: make(chan struct{}, 1)}
+		done: make(chan struct{}), approval: make(chan struct{}, 1), pastes: newPasteStore()}
 	c.approval <- struct{}{}
 	return c
+}
+
+// SetActivity attaches presentation only; input and approval remain independent.
+func (c *Console) SetActivity(a *Activity) { c.mu.Lock(); c.activity = a; c.mu.Unlock() }
+func (c *Console) activityPhase(phase string) {
+	c.mu.Lock()
+	a := c.activity
+	c.mu.Unlock()
+	if a != nil {
+		a.Set(phase)
+	}
 }
 
 // Start must run after the tmux launcher so it cannot steal client keystrokes.
@@ -51,8 +64,13 @@ func (c *Console) Close() {
 }
 
 func (c *Console) send(line string) bool {
+	line, err := c.pastes.expand(strings.TrimSpace(line))
+	if err != nil {
+		fmt.Fprintln(c.err, "paste:", err)
+		return true // stay at the prompt; never submit a partial/rejected paste
+	}
 	select {
-	case c.lines <- strings.TrimSpace(line):
+	case c.lines <- line:
 		return true
 	case <-c.done:
 		return false
@@ -68,7 +86,7 @@ func (c *Console) read() {
 		return
 	}
 	rl, err := readline.NewEx(&readline.Config{
-		Stdin: readline.NewCancelableStdin(in), Stdout: c.out, Stderr: c.err,
+		Stdin: readline.NewCancelableStdin(newPasteReader(in, c.pastes)), Stdout: c.out, Stderr: c.err,
 		Prompt: Color(c.out, Query, "> "), Painter: queryPainter{c.out},
 		HistoryLimit: 500, DisableAutoSaveHistory: true,
 		InterruptPrompt: "^C", EOFPrompt: "\n",
@@ -87,6 +105,10 @@ func (c *Console) read() {
 		return
 	default:
 	}
+	// Ask the terminal (including tmux) to frame pastes. Disable the mode
+	// before leaving the editor so the next application inherits a clean tty.
+	fmt.Fprint(c.out, "\x1b[?2004h")
+	defer fmt.Fprint(c.out, "\x1b[?2004l")
 	// Raw-mode Ctrl-C is a key. Forward it to the active turn's context;
 	// an idle chat must stay alive even without an active listener.
 	interrupts := make(chan os.Signal, 1)
@@ -114,9 +136,13 @@ func (c *Console) read() {
 }
 
 func (c *Console) readPlain() {
-	r := bufio.NewReader(c.in)
+	r := bufio.NewReader(newPasteReader(c.in, c.pastes))
 	for {
 		line, err := r.ReadString('\n')
+		if err != nil && err != io.EOF {
+			fmt.Fprintln(c.err, "input:", err)
+			return // an incomplete paste must not flush an unfinished draft
+		}
 		if len(line) > 0 && !c.send(line) {
 			return
 		}

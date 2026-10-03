@@ -3,15 +3,20 @@ package terminal
 import (
 	"fmt"
 	"io"
+	"strings"
 )
 
 // Renderer owns chat presentation. Model adapters emit text, not ANSI codes.
 type Renderer struct {
-	Out io.Writer
-	Err io.Writer
+	Out      io.Writer
+	Err      io.Writer
+	Activity *Activity
 }
 
 func (r Renderer) Reply(text string) {
+	if r.Activity != nil && strings.TrimSpace(text) != "" {
+		r.Activity.Set("responding")
+	}
 	fmt.Fprint(r.Out, Color(r.Out, Response, text))
 }
 

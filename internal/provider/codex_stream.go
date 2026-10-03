@@ -14,7 +14,12 @@ func (c *Codex) readStream(r io.Reader) ([]Call, error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(nil, 16<<20)
 	var calls []Call
-	defer c.out.Reply("\n")
+	displayed, completed := false, false
+	defer func() {
+		if displayed || completed {
+			c.out.Reply("\n")
+		}
+	}()
 	for sc.Scan() {
 		data, ok := strings.CutPrefix(sc.Text(), "data: ")
 		if !ok {
@@ -51,6 +56,9 @@ func (c *Codex) readStream(r io.Reader) ([]Call, error) {
 				c.stats.TTFT = time.Since(c.start)
 			}
 		case "response.output_text.delta":
+			if ev.Delta != "" {
+				displayed = true
+			}
 			c.out.Reply(ev.Delta)
 		case "response.output_item.done":
 			if ev.Item == nil {
@@ -61,6 +69,7 @@ func (c *Codex) readStream(r io.Reader) ([]Call, error) {
 			if ev.Item["type"] == "web_search_call" {
 				action, _ := ev.Item["action"].(map[string]any)
 				if s := webAction(action); s != "" {
+					displayed = true
 					c.out.Action(s)
 				}
 			}
@@ -74,6 +83,7 @@ func (c *Codex) readStream(r io.Reader) ([]Call, error) {
 				calls = append(calls, Call{ID: id, Name: name, Input: json.RawMessage(args)})
 			}
 		case "response.completed":
+			completed = true
 			u := ev.Response.Usage
 			c.stats.In += u.In
 			c.stats.Cached += u.Details.Cached
@@ -93,7 +103,10 @@ func (c *Codex) readStream(r io.Reader) ([]Call, error) {
 		}
 	}
 	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("codex: stream: %w", err)
+		if err == bufio.ErrTooLong {
+			return nil, fmt.Errorf("codex: stream: %w", err)
+		}
+		return nil, &streamDisconnect{err: fmt.Errorf("codex: stream: %w", err), displayed: displayed}
 	}
-	return nil, fmt.Errorf("codex: stream ended before response.completed")
+	return nil, &streamDisconnect{err: fmt.Errorf("codex: stream ended before response.completed"), displayed: displayed}
 }

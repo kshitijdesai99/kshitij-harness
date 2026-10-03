@@ -44,6 +44,9 @@ type Provider interface {
 type ImageAttacher interface{ AttachImage(string) }
 type MemorySetter interface{ SetMemory(string) }
 
+// Compacter summarizes history without executing tools. Failure leaves history intact.
+type Compacter interface{ Compact(context.Context) error }
+
 type Stats struct {
 	In, Cached, Out int
 	Think           int

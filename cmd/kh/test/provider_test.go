@@ -52,9 +52,11 @@ func TestProviderSelectionAndLegacyResume(t *testing.T) {
 	if err == nil || !strings.Contains(out, "unsupported provider") {
 		t.Fatalf("unknown: %s: %v", out, err)
 	}
-	out, err = run("sessions")
-	if err != nil || !strings.Contains(out, "legacy-chat  > previous question") {
-		t.Fatalf("listing: %s: %v", out, err)
+	for _, args := range [][]string{{"sessions"}, {"--sessions"}, {"--sessions", "-i"}} {
+		out, err = run(args...)
+		if err != nil || !strings.Contains(out, "legacy-chat  > previous question") {
+			t.Fatalf("listing %v: %s: %v", args, out, err)
+		}
 	}
 }
 

@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -25,7 +26,12 @@ func TestInputProcess(t *testing.T) {
 	defer console.Close()
 	console.Start()
 	for line := range console.Lines {
-		fmt.Printf("INPUT:%s\n", line)
+		if os.Getenv("KH_INPUT_JSON") == "1" {
+			b, _ := json.Marshal(line)
+			fmt.Printf("INPUT_JSON:%s\n", b)
+		} else {
+			fmt.Printf("INPUT:%s\n", line)
+		}
 	}
 }
 

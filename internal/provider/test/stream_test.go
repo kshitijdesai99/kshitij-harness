@@ -61,7 +61,13 @@ func TestStreamRequiresCompletionAndRollsBackPartialItems(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := mockCodex(t, stream)
-			calls, err := p.Step(context.Background(), "question", nil)
+			ctx := context.Background()
+			if name == "empty" || name == "partial tool" || name == "done without completion" {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 100*time.Millisecond)
+				defer cancel()
+			}
+			calls, err := p.Step(ctx, "question", nil)
 			if err == nil || len(calls) != 0 {
 				t.Fatalf("calls=%v err=%v", calls, err)
 			}

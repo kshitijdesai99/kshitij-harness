@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,11 +21,13 @@ import (
 
 // OpenAI protocol values: changing these breaks login, so they are not config.
 const (
-	issuer       = "https://auth.openai.com"
-	clientID     = "app_EMoamEEZ73f0CkXaXp7hrann" // public Codex CLI client
-	pollEvery    = 5 * time.Second
-	loginTimeout = 15 * time.Minute
-	refreshEarly = 2 * time.Minute // refresh before the token expires, not after
+	issuer        = "https://auth.openai.com"
+	clientID      = "app_EMoamEEZ73f0CkXaXp7hrann" // public Codex CLI client
+	pollEvery     = 5 * time.Second
+	loginTimeout  = 15 * time.Minute
+	refreshEarly  = 2 * time.Minute // refresh before the token expires, not after
+	tokenTimeout  = 30 * time.Second
+	lockPollEvery = 50 * time.Millisecond
 )
 
 type tokens struct {
@@ -73,12 +76,15 @@ func Login(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return withLock(func(f *os.File) error { return save(f, t) })
+	return withLock(context.Background(), func(f *os.File) error { return save(f, t) })
 }
 
 // Token returns a fresh access token and the ChatGPT account ID.
 func Token(ctx context.Context) (access, account string, err error) {
-	err = withLock(func(f *os.File) error {
+	// Bound lock acquisition and refresh together, even without a parent deadline.
+	ctx, cancel := context.WithTimeout(ctx, tokenTimeout)
+	defer cancel()
+	err = withLock(ctx, func(f *os.File) error {
 		var t tokens
 		if json.NewDecoder(f).Decode(&t) != nil || t.Refresh == "" {
 			return fmt.Errorf("not logged in: run `kh login codex`")
@@ -87,6 +93,8 @@ func Token(ctx context.Context) (access, account string, err error) {
 		// already refreshed we see its new tokens and never reuse a spent one.
 		if exp, _ := claims(t.Access)["exp"].(float64); time.Until(time.Unix(int64(exp), 0)) < refreshEarly {
 			var n tokens
+			// The Token deadline also bounds reading the refresh response body.
+			// Never retry: refresh tokens may already have been spent.
 			err := post(ctx, issuer+"/oauth/token", url.Values{
 				"grant_type":    {"refresh_token"},
 				"refresh_token": {t.Refresh},
@@ -112,17 +120,38 @@ func Token(ctx context.Context) (access, account string, err error) {
 }
 
 // withLock opens the token file (0600) under an exclusive lock.
-func withLock(fn func(*os.File) error) error {
+func withLock(ctx context.Context, fn func(*os.File) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	os.MkdirAll(filepath.Dir(tokenPath()), 0o700)
 	f, err := os.OpenFile(tokenPath(), os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		return err
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return fn(f)
+		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) && !errors.Is(err, syscall.EINTR) {
+			return err
+		}
+		timer := time.NewTimer(lockPollEvery)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
 	}
-	return fn(f)
 }
 
 func save(f *os.File, t tokens) error {

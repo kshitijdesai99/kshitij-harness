@@ -63,6 +63,19 @@ func TestReplay(t *testing.T) {
 	}
 }
 
+func TestReplayBatchEdits(t *testing.T) {
+	state := `{"session":"s","input":[{"type":"function_call","call_id":"1","name":"edit","arguments":"{\"edits\":[{\"path\":\"a.go\",\"old\":\"x\",\"new\":\"y\"},{\"path\":\"a.go\",\"old\":\"y\",\"new\":\"z\"},{\"path\":\"b.go\",\"old\":\"\",\"new\":\"new\"}]}"}]}`
+	p := provider.NewCodex(config.Defaults, "", nil, nil)
+	if err := p.Load([]byte(state)); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	p.Replay(terminal.Renderer{Out: &out, Err: &out})
+	if got := out.String(); got != "edit a.go\nedit b.go\n" {
+		t.Fatalf("batch replay: %q", got)
+	}
+}
+
 // Resuming keeps the session's repo map, so a changed repo can't break the cache.
 func TestLoadKeepsSavedMap(t *testing.T) {
 	b, _ := provider.NewCodex(config.Defaults, "old map", nil, nil).Save()

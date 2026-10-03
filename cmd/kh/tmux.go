@@ -2,20 +2,27 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
 
-	"kh/internal/config"
 	"kh/internal/image"
 )
 
 var agentName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 func tmux(args ...string) (string, error) {
-	b, err := exec.Command("tmux", args...).CombinedOutput()
+	return tmuxContext(context.Background(), args...)
+}
+
+func tmuxContext(ctx context.Context, args ...string) (string, error) {
+	b, err := exec.CommandContext(ctx, "tmux", args...).CombinedOutput()
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
 	if err != nil {
 		return "", fmt.Errorf("tmux %s: %s: %w", strings.Join(args, " "), strings.TrimSpace(string(b)), err)
 	}
@@ -31,22 +38,39 @@ func shellCommand(args ...string) string {
 	return strings.Join(args, " ")
 }
 
-func address() (string, error) {
+func currentPane(ctx context.Context) (string, error) {
 	if os.Getenv("TMUX") == "" {
 		return "", fmt.Errorf("not inside tmux")
 	}
-	s, err := tmux("display-message", "-p", "#{session_name}:#{@kh_name}:#{window_name}")
+	if pane := os.Getenv("TMUX_PANE"); pane != "" {
+		return pane, nil
+	}
+	return tmuxContext(ctx, "display-message", "-p", "#{pane_id}")
+}
+
+func address() (string, error) { return agentAddress(context.Background()) }
+
+func agentAddress(ctx context.Context) (string, error) {
+	pane, err := currentPane(ctx)
 	if err != nil {
 		return "", err
 	}
-	parts := strings.SplitN(s, ":", 3)
-	if len(parts) != 3 {
+	s, err := tmuxContext(ctx, "display-message", "-p", "-t", pane, "#{@kh_name}|#{window_name}")
+	if err != nil {
+		return "", err
+	}
+	parts := strings.SplitN(s, "|", 2)
+	if len(parts) != 2 {
 		return "", fmt.Errorf("invalid tmux address: %q", s)
 	}
-	if parts[1] != "" {
-		return parts[0] + ":" + parts[1], nil
+	name := parts[0]
+	if name == "" {
+		name = parts[1]
 	}
-	return parts[0] + ":" + parts[2], nil
+	if !agentName.MatchString(name) {
+		return "", fmt.Errorf("this pane needs an agent name")
+	}
+	return "kh:" + name, nil
 }
 
 func validAddress(s string) bool {
@@ -55,20 +79,25 @@ func validAddress(s string) bool {
 }
 
 // Agent identities belong to panes, not windows: an agent keeps its name when
-// its pane is moved or joined to a different window.
+// its pane is moved or joined to a different window. kh:<name> is a logical
+// address scoped to the caller's tmux session, not a hard-coded session name.
 type namedPane struct {
-	id, name, state string
+	id, name, state, window string
 }
 
-func agentPanes() ([]namedPane, error) {
-	s, err := tmux("list-panes", "-s", "-t", "kh", "-F", "#{pane_id}|#{@kh_name}|#{window_name}|#{window_panes}|#{@kh_state}")
+func agentPanesContext(ctx context.Context) ([]namedPane, error) {
+	target, err := currentPane(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s, err := tmuxContext(ctx, "list-panes", "-s", "-t", target, "-F", "#{pane_id}|#{@kh_name}|#{window_name}|#{window_panes}|#{@kh_state}|#{window_id}")
 	if err != nil {
 		return nil, err
 	}
 	var panes []namedPane
 	for _, line := range strings.Split(s, "\n") {
 		fields := strings.Split(line, "|")
-		if len(fields) != 5 {
+		if len(fields) != 6 {
 			continue
 		}
 		name := fields[1]
@@ -76,142 +105,19 @@ func agentPanes() ([]namedPane, error) {
 			name = fields[2]
 		}
 		if name != "" {
-			panes = append(panes, namedPane{fields[0], name, fields[4]})
+			panes = append(panes, namedPane{fields[0], name, fields[4], fields[5]})
 		}
 	}
 	return panes, nil
 }
 
-func agentPane(name string) (string, error) {
-	panes, err := agentPanes()
-	if err != nil {
-		return "", err
-	}
-	for _, pane := range panes {
-		if pane.name == name {
-			return pane.id, nil
-		}
-	}
-	return "", fmt.Errorf("agent kh:%s not found", name)
-}
-
-func agentCommand(args []string, cfg config.Config) error {
-	switch args[0] {
-	case "spawn":
-		if len(args) != 3 || !agentName.MatchString(args[1]) || args[1] == "main" || args[2] == "" {
-			return fmt.Errorf("usage: kh spawn <name> <task> (name cannot be main)")
-		}
-		parent, err := address()
-		if err != nil {
-			return err
-		}
-		if !validAddress(parent) {
-			return fmt.Errorf("agents must be in the kh tmux session")
-		}
-		panes, err := agentPanes()
-		if err != nil {
-			return err
-		}
-		for _, pane := range panes {
-			if pane.name == args[1] {
-				return fmt.Errorf("agent kh:%s already exists", pane.name)
-			}
-		}
-		// tmux window names must also be unique, even when their agent moved away.
-		names, err := tmux("list-windows", "-t", "kh", "-F", "#{window_name}")
-		if err != nil {
-			return err
-		}
-		for _, n := range strings.Split(names, "\n") {
-			if n == args[1] {
-				return fmt.Errorf("window kh:%s already exists", n)
-			}
-		}
-		exe, err := os.Executable()
-		if err != nil {
-			return err
-		}
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		cmd := []string{exe, "-provider", cfg.Provider, "-model", cfg.Model, "-effort", cfg.Effort}
-		if cfg.Auto {
-			cmd = append(cmd, "--auto")
-		}
-		cmd = append(cmd, "-i", args[2])
-		_, err = tmux("new-window", "-d", "-t", "kh:", "-n", args[1], "-c", cwd, "-e", "KH_PARENT="+parent, shellCommand(cmd...))
-		if err != nil {
-			return err
-		}
-		// Store the name on the pane so joining it to another window does not
-		// break kh send/peek/agents. The title also labels pane borders in tmux.
-		target := "kh:" + args[1] + ".0"
-		if _, err = tmux("set-option", "-p", "-t", target, "@kh_name", args[1]); err != nil {
-			return err
-		}
-		if _, err = tmux("select-pane", "-t", target, "-T", args[1]); err != nil {
-			return err
-		}
-		if _, err = tmux("set-option", "-w", "-t", target, "pane-border-status", "top"); err != nil {
-			return err
-		}
-		if _, err = tmux("set-option", "-w", "-t", target, "pane-border-format", " #{pane_title} "); err != nil {
-			return err
-		}
-		fmt.Println("spawned kh:" + args[1])
-		return nil
-	case "send":
-		if len(args) != 3 || !validAddress(args[1]) || args[2] == "" || strings.ContainsAny(args[2], "\r\n") {
-			return fmt.Errorf("usage: kh send kh:<name> <single-line message>")
-		}
-		name := strings.TrimPrefix(args[1], "kh:")
-		pane, err := agentPane(name)
-		if err != nil {
-			return err
-		}
-		if _, err = tmux("send-keys", "-t", pane, "-l", "--", args[2]); err != nil {
-			return err
-		}
-		_, err = tmux("send-keys", "-t", pane, "Enter")
-		return err
-	case "peek":
-		if len(args) != 2 || !validAddress(args[1]) {
-			return fmt.Errorf("usage: kh peek kh:<name>")
-		}
-		pane, err := agentPane(strings.TrimPrefix(args[1], "kh:"))
-		if err != nil {
-			return err
-		}
-		s, err := tmux("capture-pane", "-p", "-t", pane, "-S", "-25")
-		if err == nil {
-			fmt.Println(s)
-		}
-		return err
-	case "agents":
-		if len(args) != 1 {
-			return fmt.Errorf("usage: kh agents")
-		}
-		panes, err := agentPanes()
-		if err != nil {
-			return err
-		}
-		for _, pane := range panes {
-			state := pane.state
-			if state == "" {
-				state = "unknown"
-			}
-			fmt.Printf("kh:%s  %s\n", pane.name, state)
-		}
-		return nil
-	}
-	return fmt.Errorf("unknown agent command: %s", args[0])
-}
-
 func setAgentState(state string) {
 	if os.Getenv("TMUX") != "" {
-		_, _ = tmux("set-option", "-p", "@kh_state", state)
-		_, _ = tmux("set-option", "-w", "@kh_state", state) // older windows
+		pane, err := currentPane(context.Background())
+		if err == nil {
+			_, _ = tmux("set-option", "-p", "-t", pane, "@kh_state", state, ";",
+				"set-option", "-w", "-t", pane, "@kh_state", state)
+		}
 	}
 }
 

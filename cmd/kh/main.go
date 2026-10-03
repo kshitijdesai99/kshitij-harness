@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
 
 	"kh/internal/config"
@@ -20,7 +21,10 @@ import (
 
 func main() {
 	cfg, err := config.Load()
-	exit(err)
+	configErr := err
+	if configErr != nil {
+		cfg = config.Defaults
+	} // --rebuild does not need valid chat config
 	fromFile := cfg // before inheritance/flags, to spot later file changes
 	for key, field := range map[string]*string{
 		"KH_PROVIDER": &cfg.Provider, "KH_MODEL": &cfg.Model, "KH_EFFORT": &cfg.Effort,
@@ -37,8 +41,26 @@ func main() {
 	noSandbox := flag.Bool("nosandbox", false, "let bash write outside the project")
 	resume := flag.Bool("r", false, "resume the latest session")
 	id := flag.String("s", "", "resume a session by id (files in ~/.kh/sessions)")
+	list := flag.Bool("sessions", false, "list this folder's saved sessions")
 	stay := flag.Bool("i", false, "stay in chat after the task")
+	rebuildFlag := flag.Bool("rebuild", false, "rebuild this executable from local kh sources, then exit")
 	flag.Parse()
+	if *rebuildFlag {
+		otherFlags := false
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name != "rebuild" {
+				otherFlags = true
+			}
+		})
+		if otherFlags || flag.NArg() != 0 {
+			exit(fmt.Errorf("kh --rebuild takes no other flags or task; rebuild, then run kh -r separately"))
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		exit(rebuild(ctx))
+		return
+	}
+	exit(configErr)
 	cfg.Sandbox = cfg.Sandbox && !*noSandbox
 	if cfg.Auto {
 		os.Setenv("KH_AUTO", "1") // carry --auto into bash-invoked kh subcommands
@@ -46,6 +68,10 @@ func main() {
 		cfg.Auto = true
 	}
 	args := flag.Args()
+	if *list || strings.Join(args, " ") == "sessions" {
+		listSessions(cfg)
+		return
+	}
 	ctx := context.Background()
 	if len(args) > 0 && args[0] == "login" {
 		if len(args) != 2 {
@@ -86,11 +112,6 @@ func main() {
 		defer clearImagePastePane()
 	}
 
-	if strings.Join(args, " ") == "sessions" {
-		listSessions(cfg)
-		return
-	}
-
 	db, err := memory.Open(memory.Path())
 	exit(err)
 	defer db.Close()
@@ -100,7 +121,17 @@ func main() {
 	console := terminal.NewConsole(os.Stdin, os.Stdout, os.Stderr)
 	defer console.Close()
 	ui := terminal.Renderer{Out: os.Stdout, Err: os.Stderr}
-	ts := []tools.Tool{tools.Bash(cfg, console), tools.Edit, tools.Memory(db, repoScope)}
+	if os.Getenv("TMUX") != "" {
+		exit(nameChatPane())
+	}
+	activityName := "kh"
+	if self, err := address(); err == nil {
+		activityName = strings.TrimPrefix(self, "kh:")
+	}
+	ui.Activity = terminal.NewActivity(os.Stdout, activityName)
+	defer ui.Activity.Close()
+	console.SetActivity(ui.Activity)
+	ts := []tools.Tool{tools.Bash(cfg, console), tools.Edit, tools.Memory(db, repoScope), agentTool(cfg, ui.Action)}
 	if *resume {
 		*id, err = session.Latest()
 		exit(err)
@@ -158,7 +189,9 @@ func main() {
 			fmt.Println()
 			return
 		}
-		if line == "/image" || strings.HasPrefix(line, "/image ") {
+		// Multiline paste is message content, never a batch of slash commands.
+		singleLine := !strings.ContainsAny(line, "\r\n")
+		if singleLine && (line == "/image" || strings.HasPrefix(line, "/image ")) {
 			attacher, ok := p.(provider.ImageAttacher)
 			if !ok {
 				fmt.Fprintln(os.Stderr, "image: this provider does not support images")
@@ -174,7 +207,13 @@ func main() {
 			fmt.Println("(image attached; type your message)")
 			continue
 		}
-		if strings.HasPrefix(line, "/") {
+		if singleLine && line == "/compact" {
+			if err := c.compact(ctx); err != nil {
+				fmt.Fprintln(os.Stderr, "compact:", err)
+			}
+			continue
+		}
+		if singleLine && strings.HasPrefix(line, "/") {
 			command(p, line)
 		} else if line != "" {
 			if err := turn(line); err != nil {
@@ -203,7 +242,7 @@ func command(p provider.Provider, line string) {
 			model, effort = p.Use("", arg)
 		}
 	default:
-		fmt.Println("/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message")
+		fmt.Println("/compact   summarize context and save the session\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message")
 		return
 	}
 	fmt.Println(terminal.Color(os.Stdout, terminal.Muted, fmt.Sprintf("(model %s, effort %s)", model, effort)))

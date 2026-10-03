@@ -69,8 +69,31 @@ try:
     # not become a model request containing a literal escape sequence.
     os.write(master,b'\x15/model\r')
     wait(lambda:screen().count(b'(model ')>=2)
+    # Bracketed multiline paste stays a draft until Enter. Slash commands
+    # inside the block are literal message content, not CLI operations.
+    config=os.path.join(home,'.kh','config.json')
+    assert not os.path.exists(config),config
+    os.write(master,b'\x1b[200~/effort high\n/model pasted-model\n/image missing.png\n\x1b[201~')
+    wait(lambda:b'[paste ' in screen())
+    time.sleep(.15)
+    assert b'not logged in' not in screen(),screen()
+    assert not os.path.exists(config),config
+    os.write(master,b'\r')
+    wait(lambda:b'not logged in' in screen())
+    assert not os.path.exists(config),config
+    assert b'image:' not in screen(),screen()
+    # Failed model request still leaves a usable normal prompt.
+    os.write(master,b'/model\r')
+    wait(lambda:screen().count(b'(model ')>=3)
     os.write(master,b'\x04')
-    client.wait(timeout=5)
+    # Keep draining the attached client's terminal output while it exits;
+    # otherwise a full PTY output buffer can block tmux's final redraw.
+    end=time.monotonic()+5
+    while client.poll() is None and time.monotonic()<end:
+        if select.select([master],[],[],.05)[0]:
+            try: os.read(master,65536)
+            except OSError: break
+    client.wait(timeout=1)
     assert client.returncode==0,client.returncode
 finally:
     subprocess.run(['tmux','-L',socket,'kill-server'],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)

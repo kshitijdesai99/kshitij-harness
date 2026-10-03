@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A private tmux socket keeps this test away from the user's tmux sessions.
@@ -32,16 +33,19 @@ func TestTmuxAgents(t *testing.T) {
 		}
 		return strings.TrimSpace(string(b))
 	}
-	runTmux("new-session", "-d", "-s", "kh", "-n", "main", "sleep 60")
+	runTmux("new-session", "-d", "-s", "kh", "-n", "main", "-x", "240", "-y", "90", "sleep 60")
 	defer runTmux("kill-server")
 	socket := runTmux("display-message", "-p", "#{socket_path}")
-	kh := func(args ...string) (string, error) {
+	mainPane := runTmux("display-message", "-p", "-t", "kh:main.0", "#{pane_id}")
+	runTmux("set-option", "-p", "-t", mainPane, "@kh_name", "main")
+	khFrom := func(pane string, args ...string) (string, error) {
 		t.Helper()
 		cmd := exec.Command(binary, args...)
-		cmd.Env = append(os.Environ(), "TMUX="+socket+",1,0", "HOME="+home, "KH_PROVIDER=", "KH_MODEL=", "KH_EFFORT=")
+		cmd.Env = append(os.Environ(), "TMUX="+socket+",1,0", "TMUX_PANE="+pane, "HOME="+home, "KH_PROVIDER=", "KH_MODEL=", "KH_EFFORT=")
 		b, err := cmd.CombinedOutput()
 		return string(b), err
 	}
+	kh := func(args ...string) (string, error) { return khFrom(mainPane, args...) }
 	if s, err := kh("agents"); err != nil || !strings.Contains(s, "kh:main  unknown") {
 		t.Fatalf("agents: %q %v", s, err)
 	}
@@ -51,10 +55,29 @@ func TestTmuxAgents(t *testing.T) {
 	if s, err := kh("peek", "kh:main"); err != nil || !strings.Contains(s, "hello from test") {
 		t.Fatalf("peek: %q %v", s, err)
 	}
+	start := time.Now()
 	if s, err := kh("--auto", "-provider", "codex", "-model", "future-model", "-effort", "low", "spawn", "docs", "hello world"); err != nil {
 		t.Fatalf("spawn: %q %v", s, err)
 	}
-	command := runTmux("display-message", "-p", "-t", "kh:docs", "#{pane_start_command}")
+	elapsed := time.Since(start)
+	t.Logf("spawn returned in %v (does not wait for model)", elapsed)
+	if elapsed > 3*time.Second {
+		t.Errorf("spawn waited too long: %v", elapsed)
+	}
+	docsPane := runTmux("display-message", "-p", "-t", "kh:main.1", "#{pane_id}")
+	command := runTmux("display-message", "-p", "-t", docsPane, "#{pane_start_command}")
+	if windows := runTmux("list-windows", "-t", "kh", "-F", "#{window_name}"); windows != "main" {
+		t.Fatalf("spawn opened another tab: %s", windows)
+	}
+	if active := runTmux("display-message", "-p", "-t", "kh:main", "#{pane_id}"); active != mainPane {
+		t.Fatalf("spawn stole focus: %s", active)
+	}
+	if left := runTmux("display-message", "-p", "-t", docsPane, "#{pane_left}"); left == "0" {
+		t.Fatal("worker not on the right")
+	}
+	if title := runTmux("display-message", "-p", "-t", docsPane, "#{pane_title}"); title != "docs" {
+		t.Fatalf("worker title: %q", title)
+	}
 	for _, value := range []string{"--auto", "-provider", "codex", "-model", "future-model", "-effort", "low"} {
 		if !strings.Contains(command, value) {
 			t.Errorf("spawn did not pass %q: %q", value, command)
@@ -69,10 +92,37 @@ func TestTmuxAgents(t *testing.T) {
 	if s, err := kh("send", "kh:main", "bad\nmessage"); err == nil {
 		t.Fatalf("accepted multiline: %q", s)
 	}
-	// A named pane stays addressable after it is joined into another window.
-	runTmux("set-option", "-p", "-t", "kh:main.0", "@kh_name", "main")
-	runTmux("join-pane", "-h", "-s", "kh:docs.0", "-t", "kh:main.0")
-	if name := runTmux("display-message", "-p", "-t", "kh:main.1", "#{@kh_name}"); name != "docs" {
+	// The invoker's identity must not depend on which pane the user focuses.
+	runTmux("select-pane", "-t", docsPane)
+	if s, err := kh("spawn", "tests", "run isolated tests"); err != nil {
+		t.Fatalf("second spawn: %q %v", s, err)
+	}
+	if active := runTmux("display-message", "-p", "-t", "kh:main", "#{pane_id}"); active != docsPane {
+		t.Fatalf("second spawn changed focus: %s", active)
+	}
+	testsPane := runTmux("display-message", "-p", "-t", "kh:main.2", "#{pane_id}")
+	if count := runTmux("display-message", "-p", "-t", "kh:main", "#{window_panes}"); count != "3" {
+		t.Fatalf("want three panes: %s", count)
+	}
+	if left := runTmux("display-message", "-p", "-t", testsPane, "#{pane_left}"); left != runTmux("display-message", "-p", "-t", docsPane, "#{pane_left}") {
+		t.Fatal("workers not stacked in the same right column")
+	}
+	if s, err := khFrom(docsPane, "send", "kh:tests", "peer coordination"); err != nil {
+		t.Fatalf("peer send: %q %v", s, err)
+	}
+	if s, err := kh("peek", "kh:tests"); err != nil || !strings.Contains(s, "[from kh:docs] peer coordination") {
+		t.Fatalf("peer message missing: %q %v", s, err)
+	}
+	if s, err := khFrom(testsPane, "send", "kh:main", "yes"); err != nil {
+		t.Fatalf("reply: %q %v", s, err)
+	}
+	if s, err := kh("peek", "kh:main"); err != nil || !strings.Contains(s, "[from kh:tests] yes") {
+		t.Fatalf("reply lacks sender attribution: %q %v", s, err)
+	}
+	// Pane identity, not a window name/index, survives a move and rejoin.
+	runTmux("break-pane", "-d", "-s", docsPane, "-n", "moved")
+	runTmux("join-pane", "-v", "-d", "-s", docsPane, "-t", testsPane)
+	if name := runTmux("display-message", "-p", "-t", docsPane, "#{@kh_name}"); name != "docs" {
 		t.Fatalf("pane lost name after join: %q", name)
 	}
 	if s, err := kh("agents"); err != nil || !strings.Contains(s, "kh:docs") || !strings.Contains(s, "kh:main") {
@@ -86,5 +136,33 @@ func TestTmuxAgents(t *testing.T) {
 	}
 	if s, err := kh("spawn", "docs", "duplicate after join"); err == nil {
 		t.Fatalf("accepted duplicate after join: %q", s)
+	}
+	for _, message := range []string{"literal ;", "--leading-option", "quotes ' and \" and $() and `code`", "UTF-8: café 日本語", "yes"} {
+		if s, err := khFrom(docsPane, "send", "kh:main", message); err != nil {
+			t.Fatalf("literal send: %q %v", s, err)
+		}
+		if s, err := kh("peek", "kh:main"); err != nil || !strings.Contains(s, "[from kh:docs] "+message) {
+			t.Fatalf("message altered: %q %v", s, err)
+		}
+	}
+	if s, err := kh("send", "kh:main", "interrupt\x03"); err == nil {
+		t.Fatalf("accepted terminal control input: %q", s)
+	}
+	// Logical addresses also work in an existing, non-kh tmux session.
+	runTmux("new-session", "-d", "-s", "work", "-n", "chat", "-x", "240", "-y", "90", "sleep 60")
+	workMain := runTmux("display-message", "-p", "-t", "work:chat.0", "#{pane_id}")
+	runTmux("set-option", "-p", "-t", workMain, "@kh_name", "main")
+	if s, err := khFrom(workMain, "spawn", "docs", "independent session worker"); err != nil {
+		t.Fatalf("existing session spawn: %q %v", s, err)
+	}
+	workDocs := runTmux("display-message", "-p", "-t", "work:chat.1", "#{pane_id}")
+	if s, err := khFrom(workDocs, "send", "kh:main", "session-local reply"); err != nil {
+		t.Fatalf("existing session send: %q %v", s, err)
+	}
+	if s, err := khFrom(workMain, "peek", "kh:main"); err != nil || !strings.Contains(s, "session-local reply") {
+		t.Fatalf("reply misrouted: %q %v", s, err)
+	}
+	if s, err := kh("peek", "kh:main"); err != nil || strings.Contains(s, "session-local reply") {
+		t.Fatalf("message leaked across sessions: %q %v", s, err)
 	}
 }

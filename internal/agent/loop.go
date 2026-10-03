@@ -21,11 +21,12 @@ type Stepper interface {
 
 // Runner composes model, tools and user input without a concrete backend.
 type Runner struct {
-	Model  Stepper
-	Tools  []tools.Tool
-	Input  <-chan string
-	Held   func() []string
-	Notice func(string)
+	Model    Stepper
+	Tools    []tools.Tool
+	Input    <-chan string
+	Held     func() []string
+	Notice   func(string)
+	Activity func(string)
 }
 
 // Run executes one task. Steering interrupts a reply, but lets running tools
@@ -39,6 +40,9 @@ func (r Runner) Run(ctx context.Context, task string) error {
 		if err != nil {
 			return err
 		}
+		if r.Activity != nil {
+			r.Activity("waiting for model")
+		}
 		calls, line, err := step(ctx, p, user, results, steer, r.Notice)
 		if err != nil {
 			return err
@@ -49,6 +53,13 @@ func (r Runner) Run(ctx context.Context, task string) error {
 		}
 		if len(calls) == 0 {
 			return nil
+		}
+		if r.Activity != nil {
+			phase := "running " + calls[0].Name
+			if len(calls) > 1 {
+				phase = fmt.Sprintf("running tools (%d)", len(calls))
+			}
+			r.Activity(phase)
 		}
 		results = runAll(ctx, ts, calls)
 		var held []string

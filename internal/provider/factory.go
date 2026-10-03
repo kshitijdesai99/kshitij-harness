@@ -14,7 +14,7 @@ import (
 // Config.Model; a different API needs a new adapter, not changes to the loop.
 func New(c config.Config, repoMap string, ts []tools.Tool, out Output) (Provider, error) {
 	if parent := os.Getenv("KH_PARENT"); parent != "" {
-		c.System += "\nParent agent: " + parent + ". Report completed work using kh send."
+		c.System += "\nYour address is " + os.Getenv("KH_AGENT") + "; parent: " + parent + ". Use the native agents tool to coordinate directly with peers and send results to your parent."
 	}
 	switch c.Provider {
 	case "codex":

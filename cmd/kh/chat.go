@@ -30,6 +30,10 @@ type chat struct {
 }
 
 func (c *chat) turn(ctx context.Context, msg string) error {
+	if c.ui.Activity != nil {
+		c.ui.Activity.Start("working")
+		defer c.ui.Activity.Stop()
+	}
 	setAgentState("busy")
 	defer setAgentState("waiting")
 	// Flags hold until the file changes. A different backend starts a new
@@ -56,6 +60,9 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 	}
 	runner := agent.Runner{Model: c.model, Tools: c.tools, Input: c.input.Lines,
 		Held: c.input.Held, Notice: c.ui.Notice}
+	if c.ui.Activity != nil {
+		runner.Activity = c.ui.Activity.Set
+	}
 	err := runner.Run(tctx, msg)
 	if tctx.Err() == context.Canceled {
 		c.ui.Notice("\n(stopped)")
@@ -65,6 +72,13 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 		c.ui.Notice(fmt.Sprintf("(ttft %s, total %s, %s in, %s cached %d%%, %s out, %s thinking, %s)",
 			secs(s.TTFT), secs(time.Since(start)), k(s.In), k(s.Cached), s.Cached*100/s.In, k(s.Out), k(s.Think), contextUsed(s)))
 	}
+	if c.ui.Activity != nil {
+		c.ui.Activity.Set("saving session")
+	}
+	return errors.Join(err, c.save())
+}
+
+func (c *chat) save() error {
 	b, saveErr := c.model.Save()
 	if saveErr == nil {
 		b, saveErr = session.Encode(c.backend, b)
@@ -73,9 +87,32 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 		saveErr = session.Save(c.id, b)
 	}
 	if saveErr != nil {
-		err = errors.Join(err, fmt.Errorf("save session %s: %w", c.id, saveErr))
+		return fmt.Errorf("save session %s: %w", c.id, saveErr)
 	}
-	return err
+	return nil
+}
+
+func (c *chat) compact(ctx context.Context) error {
+	compacter, ok := c.model.(provider.Compacter)
+	if !ok {
+		return fmt.Errorf("this provider does not support compaction")
+	}
+	tctx, stop := signal.NotifyContext(ctx, os.Interrupt)
+	defer stop()
+	setAgentState("busy")
+	defer setAgentState("waiting")
+	if c.ui.Activity != nil {
+		c.ui.Activity.Start("compacting context")
+		defer c.ui.Activity.Stop()
+	}
+	if err := compacter.Compact(tctx); err != nil {
+		return err
+	}
+	if err := c.save(); err != nil {
+		return err
+	}
+	c.ui.Notice("(context compacted and session saved)")
+	return nil
 }
 
 // Child agents inherit the active selection, including command-line model
