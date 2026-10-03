@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -42,6 +43,37 @@ func List() []string {
 		}
 	}
 	return ids
+}
+
+// Entry describes a saved chat without decoding provider state.
+// SavedAt is the file modification time, not a response-generation timestamp.
+type Entry struct {
+	ID      string
+	SavedAt time.Time
+}
+
+// Recent lists all chats newest-save first. Equal times use descending IDs.
+// List and Latest retain their existing creation-ID ordering.
+func Recent() []Entry {
+	var entries []Entry
+	for _, id := range List() {
+		name, err := path(id)
+		if err != nil {
+			continue
+		}
+		info, err := os.Stat(name)
+		if err != nil {
+			continue
+		}
+		entries = append(entries, Entry{ID: id, SavedAt: info.ModTime()})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].SavedAt.Equal(entries[j].SavedAt) {
+			return entries[i].ID > entries[j].ID
+		}
+		return entries[i].SavedAt.After(entries[j].SavedAt)
+	})
+	return entries
 }
 
 func Latest() (string, error) {

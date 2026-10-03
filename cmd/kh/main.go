@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"kh/internal/config"
+	"kh/internal/help"
 	"kh/internal/image"
 	"kh/internal/memory"
 	"kh/internal/provider"
@@ -44,6 +45,8 @@ func main() {
 	list := flag.Bool("sessions", false, "list this folder's saved sessions")
 	stay := flag.Bool("i", false, "stay in chat after the task")
 	rebuildFlag := flag.Bool("rebuild", false, "rebuild this executable from local kh sources, then exit")
+	helpFlag := flag.Bool("help", false, "show usage, or answer a one-off question without saving a session")
+	flag.BoolVar(helpFlag, "h", false, "alias for --help")
 	flag.Parse()
 	if *rebuildFlag {
 		otherFlags := false
@@ -58,6 +61,25 @@ func main() {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
 		exit(rebuild(ctx))
+		return
+	}
+	if *helpFlag {
+		if flag.NArg() == 0 {
+			flag.Usage()
+			return
+		}
+		if *resume || *id != "" || *stay || *list {
+			exit(fmt.Errorf("kh --help with a request cannot be combined with -r, -s, -i, or --sessions"))
+		}
+		exit(configErr)
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		var usage strings.Builder
+		previousOutput := flag.CommandLine.Output()
+		flag.CommandLine.SetOutput(&usage)
+		flag.PrintDefaults()
+		flag.CommandLine.SetOutput(previousOutput)
+		exit(help.Run(ctx, cfg, strings.Join(flag.Args(), " "), usage.String(), terminal.Renderer{Out: os.Stdout, Err: os.Stderr}))
 		return
 	}
 	exit(configErr)

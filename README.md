@@ -16,10 +16,12 @@ Once installed, use **`kh --rebuild`** to rebuild and atomically replace the exa
 ## Use
 
 ```bash
+./kh --help                              # show CLI usage
+./kh --help how do i load a session       # kh-aware one-off answer: no session opened or saved
 ./kh --rebuild                           # rebuild this executable from local sources, then exit
 ./kh                                    # chat: keep typing, Ctrl-C stops a task, Ctrl-D quits
 ./kh -r                                 # continue this folder's last session; shows the earlier chat first
-./kh --sessions                         # list this folder's latest 20 sessions with their first message (alias: kh sessions)
+./kh --sessions                         # list this folder's 20 most recently saved chats with last-response previews (alias: kh sessions)
 ./kh -s 20260928-194501.123             # continue a specific one (ids in ~/.kh/sessions)
 ./kh "fix the failing test in foo_test.go"
 ./kh -i "fix the failing test"          # do the task, then stay in chat
@@ -28,7 +30,11 @@ Once installed, use **`kh --rebuild`** to rebuild and atomically replace the exa
 ./kh -nosandbox "update ~/.zshrc"      # allow writes outside the project
 ```
 
+`kh --help REQUEST` (also `-h REQUEST`) streams one answer and exits. It assumes questions about sessions, models, and commands refer to kh, and includes kh's command reference and the running executable's flag usage. Explicitly unrelated questions are still supported. It uses your configured provider/model and login, but does not load or save a chat, open an interactive console/tmux pane, access stored memory, or execute local shell/edit tools. Configured built-in web search remains available. Quote the request if it contains shell-special characters; model/effort flags must come before the request. It cannot be combined with `-r`, `-s`, `-i`, or `--sessions`. Bare `kh --help` displays usage without needing valid chat configuration or login.
+
 ## Input history
+
+Session listings show local last-saved time, session ID, and a single-line preview of the last assistant response (up to 70 characters, including the ellipsis). Chats without an assistant response are labeled explicitly. Last-saved time is the session file's modification time, not an exact response-generation timestamp; `kh -r` still resumes the newest session by creation ID.
 
 Queries are cyan and assistant responses are green in interactive terminals, including replayed sessions. Redirected output stays plain; set `NO_COLOR=1` to disable chat colors.
 
