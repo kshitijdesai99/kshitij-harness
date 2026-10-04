@@ -1,4 +1,4 @@
-package provider
+package codex
 
 import (
 	"bufio"
@@ -7,13 +7,15 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"kh/internal/provider"
 )
 
 // readStream is adapter-specific: the loop and renderer never see SSE events.
-func (c *Codex) readStream(r io.Reader) ([]Call, error) {
+func (c *Client) readStream(r io.Reader) ([]provider.Call, error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(nil, 16<<20)
-	var calls []Call
+	var calls []provider.Call
 	displayed, completed := false, false
 	defer func() {
 		if displayed || completed {
@@ -80,7 +82,7 @@ func (c *Codex) readStream(r io.Reader) ([]Call, error) {
 				if id == "" || name == "" || !json.Valid([]byte(args)) {
 					return nil, fmt.Errorf("codex: invalid tool call")
 				}
-				calls = append(calls, Call{ID: id, Name: name, Input: json.RawMessage(args)})
+				calls = append(calls, provider.Call{ID: id, Name: name, Input: json.RawMessage(args)})
 			}
 		case "response.completed":
 			completed = true

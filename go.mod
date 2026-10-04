@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	github.com/chzyer/readline v1.5.1
+	github.com/rivo/uniseg v0.4.7
 	modernc.org/sqlite v1.39.1
 )
 

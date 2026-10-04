@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"kh/internal/tools"
 )
 
 // Approve serializes parallel questions, but both waiting for the prompt and
@@ -27,7 +29,7 @@ func (c *Console) Approve(ctx context.Context, command string, safe bool) (bool,
 		c.activityPhase("waiting for approval")
 		defer c.activityPhase("running bash")
 	}
-	fmt.Fprintln(c.err, "$", command)
+	fmt.Fprintln(c.err, tools.CommandLabel(command))
 	if safe {
 		return true, nil
 	}

@@ -1,5 +1,4 @@
-// Package auth logs in to ChatGPT for Codex, the same way Hermes does.
-package auth
+package codex
 
 import (
 	"context"

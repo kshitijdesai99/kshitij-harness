@@ -8,10 +8,13 @@ import (
 	"go/token"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Build returns one line per file ("path: sym sym"), capped at maxBytes. 0 = off.
+// Paths containing whitespace, controls, quotes or backslashes are Go-quoted.
 func Build(dir string, maxBytes int) string {
 	if maxBytes <= 0 {
 		return ""
@@ -19,6 +22,11 @@ func Build(dir string, maxBytes int) string {
 	var b strings.Builder
 	for _, f := range files(dir) {
 		line := f
+		if strings.ContainsFunc(f, func(r rune) bool {
+			return unicode.IsSpace(r) || unicode.IsControl(r) || r == '"' || r == '\'' || r == '\\'
+		}) {
+			line = strconv.Quote(f)
+		}
 		if strings.HasSuffix(f, ".go") {
 			if syms := goSymbols(filepath.Join(dir, f)); syms != "" {
 				line += ": " + syms
@@ -37,10 +45,13 @@ func Build(dir string, maxBytes int) string {
 // made this session show up). Outside git there is no map: in a folder like
 // ~/Documents it would be thousands of random paths the model pays to read.
 func files(dir string) []string {
-	cmd := exec.Command("git", "ls-files", "--cached", "--others", "--exclude-standard")
+	cmd := exec.Command("git", "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 	cmd.Dir = dir
 	out, _ := cmd.Output() // not a repo, or ignored by a parent repo: empty
-	return strings.Fields(string(out))
+	if len(out) == 0 {
+		return nil
+	}
+	return strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
 }
 
 // goSymbols returns top-level types, vars, funcs and methods (as Type.Method).

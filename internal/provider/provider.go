@@ -31,6 +31,9 @@ type Output interface {
 
 // Provider is the session-level contract. Save/Load exchange opaque JSON
 // state; Stats consumes the current turn's metrics. The agent uses only Step.
+// Step must promptly return when ctx is cancelled. On failure or cancellation,
+// preserve supplied user/results but discard partial output and unpaired calls
+// from that step, so steering and resume never reuse incomplete responses.
 type Provider interface {
 	Step(context.Context, string, []Result) ([]Call, error)
 	Save() ([]byte, error)
@@ -39,6 +42,11 @@ type Provider interface {
 	Stats() Stats
 	Use(model, effort string) (string, string)
 }
+
+// LastResponder exposes semantic message boundaries for session previews.
+// Replay/Output callbacks are presentation fragments, not message boundaries.
+// An empty most-recent assistant message returns empty, not an older reply.
+type LastResponder interface{ LastResponse() string }
 
 // Optional capabilities let adapters reject unsupported features explicitly.
 type ImageAttacher interface{ AttachImage(string) }

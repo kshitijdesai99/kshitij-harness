@@ -16,8 +16,8 @@ func TestSelf(t *testing.T) {
 		"internal/tools/bash.go: ", "isSafe",
 		"internal/tools/edit.go: Edit",
 		"internal/repomap/test/self_test.go: TestSelf", // untracked files are listed
-		"internal/provider/codex.go:",
-		"Codex.Step",
+		"internal/provider/codex/client.go:",
+		"Client.Step",
 		"README.md\n",
 	} {
 		if !strings.Contains(m, want) {

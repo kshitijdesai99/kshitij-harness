@@ -1,4 +1,4 @@
-package auth_test
+package test
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"kh/internal/auth"
+	"kh/internal/provider/codex"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -76,7 +76,7 @@ func TestTokenLockCancellation(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, _, err := auth.Token(ctx)
+		_, _, err := codex.Token(ctx)
 		done <- err
 	}()
 	select {
@@ -93,7 +93,7 @@ func TestTokenAlreadyCanceled(t *testing.T) {
 	tokenFile(t, accessToken(time.Now().Add(time.Hour)))
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, _, err := auth.Token(ctx)
+	_, _, err := codex.Token(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Token error = %v, want canceled", err)
 	}
@@ -114,7 +114,7 @@ func TestTokenReadsAfterAcquiringLock(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		a, id, err := auth.Token(ctx)
+		a, id, err := codex.Token(ctx)
 		done <- result{a, id, err}
 	}()
 	// Leave time for Token to encounter the held lock before rotating tokens.
@@ -153,7 +153,7 @@ func TestRefreshDeadlineAndSave(t *testing.T) {
 		b, _ := json.Marshal(map[string]string{"access_token": fresh, "refresh_token": "rotated"})
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(b))), Header: make(http.Header)}, nil
 	})
-	access, account, err := auth.Token(context.Background())
+	access, account, err := codex.Token(context.Background())
 	if err != nil || access != fresh || account != "account" {
 		t.Fatalf("Token = %q, %q, %v", access, account, err)
 	}
@@ -168,7 +168,7 @@ func TestRefreshDeadlineAndSave(t *testing.T) {
 	if stored["refresh_token"] != "rotated" || stored["access_token"] != fresh || calls != 1 {
 		t.Fatalf("stored = %v, refresh calls = %d", stored, calls)
 	}
-	if _, _, err := auth.Token(context.Background()); err != nil || calls != 1 {
+	if _, _, err := codex.Token(context.Background()); err != nil || calls != 1 {
 		t.Fatalf("cached Token error = %v, refresh calls = %d", err, calls)
 	}
 }
@@ -191,7 +191,7 @@ func TestRefreshParentCancellationReleasesLockWithoutRetry(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	_, _, err = auth.Token(ctx)
+	_, _, err = codex.Token(ctx)
 	if !errors.Is(err, context.DeadlineExceeded) || calls != 1 {
 		t.Fatalf("Token error = %v, refresh calls = %d", err, calls)
 	}

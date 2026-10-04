@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"kh/internal/config"
-	"kh/internal/provider"
+	"kh/internal/provider/codex"
 	"kh/internal/terminal"
 )
 
@@ -23,7 +23,7 @@ func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f
 
 // Fake credentials and an in-process transport exercise the public adapter
 // without a real account or network. No other test in this package is parallel.
-func mockCodex(t *testing.T, stream string) *provider.Codex {
+func mockCodex(t *testing.T, stream string) *codex.Client {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	claims, _ := json.Marshal(map[string]any{
@@ -46,7 +46,7 @@ func mockCodex(t *testing.T, stream string) *provider.Codex {
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(stream)), Header: make(http.Header)}, nil
 	})}
 	t.Cleanup(func() { http.DefaultClient = old })
-	return provider.NewCodex(config.Defaults, "", nil, nil)
+	return codex.New(config.Defaults, "", nil, nil)
 }
 
 const toolItem = `data: {"type":"response.output_item.done","item":{"type":"function_call","id":"server-id","call_id":"call-1","name":"bash","arguments":"{\"command\":\"pwd\"}"}}` + "\n\n"
@@ -101,34 +101,11 @@ func TestCompletedStreamReturnsToolCalls(t *testing.T) {
 func TestAdapterStreamsThroughInjectedRenderer(t *testing.T) {
 	_ = mockCodex(t, `data: {"type":"response.output_text.delta","delta":"hello"}`+"\n\n"+completeEvent)
 	var out strings.Builder
-	p := provider.NewCodex(config.Defaults, "", nil, terminal.Renderer{Out: &out, Err: &out})
+	p := codex.New(config.Defaults, "", nil, terminal.Renderer{Out: &out, Err: &out})
 	if _, err := p.Step(context.Background(), "question", nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := out.String(); got != "hello\n" {
 		t.Fatalf("output=%q", got)
-	}
-}
-
-func TestFactoryRejectsUnknownBackend(t *testing.T) {
-	c := config.Defaults
-	c.Provider = "not-installed"
-	if _, err := provider.New(c, "", nil, nil); err == nil {
-		t.Fatal("unknown backend accepted")
-	}
-	if err := provider.Login(context.Background(), c.Provider); err == nil {
-		t.Fatal("unknown login backend accepted")
-	}
-}
-
-func TestFactoryDoesNotInferBackendFromModelName(t *testing.T) {
-	c := config.Defaults
-	c.Model = "future-model-name"
-	p, err := provider.New(c, "", nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if model, _ := p.Use("", ""); model != c.Model {
-		t.Fatal(model)
 	}
 }

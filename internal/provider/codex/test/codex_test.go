@@ -7,14 +7,14 @@ import (
 	"testing"
 
 	"kh/internal/config"
-	"kh/internal/provider"
+	"kh/internal/provider/codex"
 	"kh/internal/terminal"
 )
 
 // A failed step (here: not logged in) must leave history resumable.
 func TestSaveLoadAfterFailedStep(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	p := provider.NewCodex(config.Defaults, "", nil, nil)
+	p := codex.New(config.Defaults, "", nil, nil)
 	if _, err := p.Step(context.Background(), "hi", nil); err == nil {
 		t.Fatal("want not-logged-in error")
 	}
@@ -23,7 +23,7 @@ func TestSaveLoadAfterFailedStep(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	q := provider.NewCodex(config.Defaults, "", nil, nil)
+	q := codex.New(config.Defaults, "", nil, nil)
 	if err := q.Load(b); err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestReplay(t *testing.T) {
 		{"type":"web_search_call","action":{"type":"open_page"}},
 		{"type":"message","role":"assistant","content":[{"type":"output_text","text":"There are 3."}]}
 	]}`
-	p := provider.NewCodex(config.Defaults, "", nil, nil)
+	p := codex.New(config.Defaults, "", nil, nil)
 	if err := p.Load([]byte(state)); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestReplay(t *testing.T) {
 
 func TestReplayBatchEdits(t *testing.T) {
 	state := `{"session":"s","input":[{"type":"function_call","call_id":"1","name":"edit","arguments":"{\"edits\":[{\"path\":\"a.go\",\"old\":\"x\",\"new\":\"y\"},{\"path\":\"a.go\",\"old\":\"y\",\"new\":\"z\"},{\"path\":\"b.go\",\"old\":\"\",\"new\":\"new\"}]}"}]}`
-	p := provider.NewCodex(config.Defaults, "", nil, nil)
+	p := codex.New(config.Defaults, "", nil, nil)
 	if err := p.Load([]byte(state)); err != nil {
 		t.Fatal(err)
 	}
@@ -78,8 +78,8 @@ func TestReplayBatchEdits(t *testing.T) {
 
 // Resuming keeps the session's repo map, so a changed repo can't break the cache.
 func TestLoadKeepsSavedMap(t *testing.T) {
-	b, _ := provider.NewCodex(config.Defaults, "old map", nil, nil).Save()
-	p := provider.NewCodex(config.Defaults, "new map", nil, nil)
+	b, _ := codex.New(config.Defaults, "old map", nil, nil).Save()
+	p := codex.New(config.Defaults, "new map", nil, nil)
 	p.Load(b)
 	if got, _ := p.Save(); !strings.Contains(string(got), `"map":"old map"`) {
 		t.Errorf("resumed with the new map: %s", got)
@@ -88,7 +88,7 @@ func TestLoadKeepsSavedMap(t *testing.T) {
 
 func TestReplayImageRedacted(t *testing.T) {
 	state := `{"session":"s","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"What's this?"},{"type":"input_image","image_url":"data:image/png;base64,SECRET"}]}]}`
-	p := provider.NewCodex(config.Defaults, "", nil, nil)
+	p := codex.New(config.Defaults, "", nil, nil)
 	if err := p.Load([]byte(state)); err != nil {
 		t.Fatal(err)
 	}
@@ -103,8 +103,59 @@ func TestReplayImageRedacted(t *testing.T) {
 	}
 }
 
+func TestLastResponseUsesLatestAssistantMessage(t *testing.T) {
+	for _, tc := range []struct {
+		name, input, want string
+	}{
+		{"empty history", `[]`, ""},
+		{"no assistant", `[{"type":"message","role":"user","content":[{"type":"input_text","text":"question"}]}]`, ""},
+		{"consecutive assistant messages", `[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"earlier"}]},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"latest"}]}]`, "latest"},
+		{"multipart", `[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"first part"},{"type":"output_text","text":"second part"}]}]`, "first part\nsecond part"},
+		{"trailing query and actions", `[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"answer"}]},{"type":"message","role":"user","content":[{"type":"input_text","text":"next question"}]},{"type":"function_call","name":"bash","arguments":"{}"},{"type":"function_call_output","output":"tool output"},{"type":"web_search_call","action":{"type":"search","query":"query"}},{"type":"reasoning","encrypted_content":"secret"}]`, "answer"},
+		{"latest empty content", `[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"stale"}]},{"type":"message","role":"assistant","content":[]}]`, ""},
+		{"latest empty text", `[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"stale"}]},{"type":"message","role":"assistant","content":[{"type":"output_text","text":""}]}]`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := codex.New(config.Defaults, "", nil, nil)
+			if err := p.Load([]byte(`{"session":"s","input":` + tc.input + `}`)); err != nil {
+				t.Fatal(err)
+			}
+			before, err := p.Save()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := p.LastResponse(); got != tc.want {
+				t.Fatalf("LastResponse=%q want=%q", got, tc.want)
+			}
+			after, err := p.Save()
+			if err != nil || string(after) != string(before) {
+				t.Fatalf("inspection changed saved history: err=%v before=%s after=%s", err, before, after)
+			}
+		})
+	}
+}
+
+func TestReplayDescribesToolsByName(t *testing.T) {
+	state := `{"session":"s","input":[
+		{"type":"function_call","name":"memory","arguments":"{\"action\":\"search\",\"path\":\"not-an-edit\"}"},
+		{"type":"function_call","name":"agents","arguments":"{\"action\":\"send\",\"address\":\"kh:main\",\"path\":\"not-an-edit\"}"},
+		{"type":"function_call","name":"agents","arguments":"{\"action\":\"spawn\",\"name\":\"review\"}"},
+		{"type":"function_call","name":"custom","arguments":"{\"command\":\"not-bash\",\"edits\":[{\"path\":\"not-an-edit\"}]}"}
+	]}`
+	p := codex.New(config.Defaults, "", nil, nil)
+	if err := p.Load([]byte(state)); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	p.Replay(terminal.Renderer{Out: &out, Err: &out})
+	want := "memory search\nagents send kh:main\nagents spawn review\ntool custom\n"
+	if got := out.String(); got != want {
+		t.Fatalf("named tool replay: got %q want %q", got, want)
+	}
+}
+
 func TestUseSwitchesModelAndEffort(t *testing.T) {
-	p := provider.NewCodex(config.Defaults, "", nil, nil)
+	p := codex.New(config.Defaults, "", nil, nil)
 	if m, e := p.Use("", ""); m != config.Defaults.Model || e != config.Defaults.Effort {
 		t.Errorf("show = %s %s", m, e)
 	}

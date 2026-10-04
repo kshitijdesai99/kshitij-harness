@@ -15,6 +15,9 @@ import (
 
 // Stepper is the only model behavior the loop requires. Persistence, model
 // switching and metrics belong to the application, not tool orchestration.
+// Step must promptly honor context cancellation and roll back partial output
+// and unpaired calls from failed/cancelled steps before returning. Steering
+// waits for this cleanup before sending another message to the same model.
 type Stepper interface {
 	Step(context.Context, string, []provider.Result) ([]provider.Call, error)
 }

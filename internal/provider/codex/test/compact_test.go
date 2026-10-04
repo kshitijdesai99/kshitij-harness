@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"kh/internal/config"
-	"kh/internal/provider"
+	"kh/internal/provider/codex"
 	"kh/internal/terminal"
 	"kh/internal/tools"
 )
 
-func compactState(t *testing.T, p *provider.Codex) []byte {
+func compactState(t *testing.T, p *codex.Client) []byte {
 	t.Helper()
 	b, err := json.Marshal(map[string]any{"session": "compact-session", "map": "saved map", "input": []any{map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": strings.Repeat("old conversation details ", 100)}}}}})
 	if err != nil {
@@ -40,7 +40,9 @@ func summaryStream(text string) string {
 func TestCompactSummarizesWithoutToolsAndResumes(t *testing.T) {
 	mockCodex(t, summaryStream("Goal: add /compact. Tests pending."))
 	var output strings.Builder
-	p := provider.NewCodex(config.Defaults, "", []tools.Tool{tools.Edit}, terminal.Renderer{Out: &output, Err: &output})
+	cfg := config.Defaults
+	cfg.System += "\nUse the agents tool and curl for operational work."
+	p := codex.New(cfg, "", []tools.Tool{tools.Edit, {Name: "agents"}, {Name: "bash"}}, terminal.Renderer{Out: &output, Err: &output})
 	before := compactState(t, p)
 	p.SetMemory("EPHEMERAL_MEMORY")
 	p.AttachImage("STAGED_IMAGE")
@@ -61,6 +63,9 @@ func TestCompactSummarizesWithoutToolsAndResumes(t *testing.T) {
 		if len(request.Tools) != 0 || !strings.Contains(request.Instructions, "Do not use tools") {
 			t.Fatalf("unsafe compaction request: %s", body)
 		}
+		if strings.Contains(strings.ToLower(request.Instructions), "agents") || strings.Contains(strings.ToLower(request.Instructions), "curl") {
+			t.Fatalf("operational rules retained in compaction: %s", body)
+		}
 		if bytes.Contains(body, []byte("EPHEMERAL_MEMORY")) || bytes.Contains(body, []byte("STAGED_IMAGE")) {
 			t.Fatalf("ephemeral state included: %s", body)
 		}
@@ -79,7 +84,7 @@ func TestCompactSummarizesWithoutToolsAndResumes(t *testing.T) {
 	if output.Len() != 0 {
 		t.Fatalf("summary streamed into chat: %q", output.String())
 	}
-	resumed := provider.NewCodex(config.Defaults, "", nil, nil)
+	resumed := codex.New(config.Defaults, "", nil, nil)
 	if err := resumed.Load(after); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +140,7 @@ func TestCompactFailurePreservesHistory(t *testing.T) {
 }
 
 func TestCompactEmptyHistory(t *testing.T) {
-	p := provider.NewCodex(config.Defaults, "", nil, nil)
+	p := codex.New(config.Defaults, "", nil, nil)
 	before, _ := p.Save()
 	if err := p.Compact(context.Background()); err == nil {
 		t.Fatal("empty history accepted")

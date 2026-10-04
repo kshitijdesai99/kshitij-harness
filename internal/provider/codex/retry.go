@@ -1,4 +1,4 @@
-package provider
+package codex
 
 import (
 	"bytes"
@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"kh/internal/provider"
 )
 
 var errModelIdle = errors.New("codex: connection silent past model idle timeout")
@@ -24,7 +26,7 @@ type streamDisconnect struct {
 func (e *streamDisconnect) Error() string { return e.err.Error() }
 func (e *streamDisconnect) Unwrap() error { return e.err }
 
-func (c *Codex) requestWithRetry(ctx context.Context, body []byte, access, account string, historyLen int) ([]Call, error) {
+func (c *Client) requestWithRetry(ctx context.Context, body []byte, access, account string, historyLen int) ([]provider.Call, error) {
 	var recoveryDeadline time.Time
 	stats := c.stats
 	for attempt := 1; ; attempt++ {
@@ -52,7 +54,7 @@ func (c *Codex) requestWithRetry(ctx context.Context, body []byte, access, accou
 		resp, err := http.DefaultClient.Do(req)
 		retry := err != nil
 		delay := retryEvery
-		var calls []Call
+		var calls []provider.Call
 		if err == nil {
 			watch.touch()
 			// Cancellation must interrupt a blocked body read as well as Do.

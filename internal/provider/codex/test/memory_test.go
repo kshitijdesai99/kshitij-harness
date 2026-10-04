@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	"kh/internal/config"
-	"kh/internal/provider"
+	"kh/internal/provider/codex"
 )
 
 func TestMemoryNotSavedInSession(t *testing.T) {
-	p := provider.NewCodex(config.Defaults, "", nil, nil)
+	p := codex.New(config.Defaults, "", nil, nil)
 	p.SetMemory("transient retrieved detail")
 	saved, err := p.Save()
 	if err != nil {
@@ -18,7 +18,7 @@ func TestMemoryNotSavedInSession(t *testing.T) {
 	if strings.Contains(string(saved), "transient retrieved detail") {
 		t.Fatal("memory leaked into saved session")
 	}
-	resumed := provider.NewCodex(config.Defaults, "", nil, nil)
+	resumed := codex.New(config.Defaults, "", nil, nil)
 	if err := resumed.Load(saved); err != nil {
 		t.Fatal(err)
 	}

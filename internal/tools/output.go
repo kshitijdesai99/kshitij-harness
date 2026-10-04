@@ -3,10 +3,13 @@ package tools
 import (
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
 // output retains only the first ceil(cap/2) and last floor(cap/2) bytes.
 // Writes never buffer the intervening output, including single enormous writes.
+// String trims partial UTF-8 runes only when cut; uncut output is joined before
+// returning it, since a rune may straddle both writes and the head/tail boundary.
 type output struct {
 	mu         sync.Mutex
 	head, tail []byte
@@ -44,11 +47,26 @@ func (o *output) Write(p []byte) (int, error) {
 func (o *output) String() string {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	head, tail := o.head, o.tail
+	if o.cut {
+		// The fixed byte windows can end/start inside a rune. Do not change
+		// the stored windows: later writes may complete a currently partial rune.
+		start := len(head) - 1
+		for start >= 0 && !utf8.RuneStart(head[start]) {
+			start--
+		}
+		if start >= 0 && !utf8.FullRune(head[start:]) {
+			head = head[:start]
+		}
+		for len(tail) > 0 && !utf8.RuneStart(tail[0]) {
+			tail = tail[1:]
+		}
+	}
 	var b strings.Builder
-	b.Write(o.head)
+	b.Write(head)
 	if o.cut {
 		b.WriteString("\n...[cut]...\n")
 	}
-	b.Write(o.tail)
+	b.Write(tail)
 	return b.String()
 }

@@ -1,7 +1,6 @@
 package test
 
 import (
-	"os"
 	"testing"
 	"time"
 
@@ -39,13 +38,13 @@ func TestList(t *testing.T) {
 func TestPerFolder(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	a, b := t.TempDir(), t.TempDir()
-	os.Chdir(a)
+	t.Chdir(a)
 	session.Save("x", nil)
-	os.Chdir(b)
+	t.Chdir(b)
 	if got := session.List(); len(got) != 0 {
 		t.Errorf("folder b sees folder a's sessions: %v", got)
 	}
-	os.Chdir(a)
+	t.Chdir(a)
 	if got := session.List(); len(got) != 1 {
 		t.Errorf("folder a lost its session: %v", got)
 	}

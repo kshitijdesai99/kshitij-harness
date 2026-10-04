@@ -1,4 +1,5 @@
-package provider
+// Package codex implements Codex protocol, credentials, and session state.
+package codex
 
 import (
 	"context"
@@ -7,10 +8,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
-	"kh/internal/auth"
 	"kh/internal/config"
+	"kh/internal/provider"
 	"kh/internal/tools"
 )
 
@@ -26,8 +28,8 @@ const (
 	retryFor       = time.Minute // recovery budget; Ctrl-C stops sooner
 )
 
-type Codex struct {
-	out         Output
+type Client struct {
+	out         provider.Output
 	model       string
 	effort      string
 	rules       string // always today's config, so rule changes reach old sessions
@@ -37,13 +39,13 @@ type Codex struct {
 	tools       []map[string]any
 	input       []map[string]any // full history; the server stores nothing (store: false)
 	session     string
-	stats       Stats
+	stats       provider.Stats
 	start       time.Time     // when the current turn's user message was sent
 	window      int           // context limit of c.model: 0 = not looked up, -1 = unknown
 	idleTimeout time.Duration // bounds silent headers/streams, not total reasoning time
 }
 
-func NewCodex(c config.Config, repoMap string, ts []tools.Tool, out Output) *Codex {
+func New(c config.Config, repoMap string, ts []tools.Tool, out provider.Output) *Client {
 	if out == nil {
 		out = discardOutput{}
 	}
@@ -53,7 +55,7 @@ func NewCodex(c config.Config, repoMap string, ts []tools.Tool, out Output) *Cod
 	if idle <= 0 {
 		idle = 120 * time.Second
 	}
-	x := &Codex{out: out, model: c.Model, effort: c.Effort, rules: c.System, repoMap: repoMap, session: hex.EncodeToString(id), idleTimeout: idle}
+	x := &Client{out: out, model: c.Model, effort: c.Effort, rules: c.System, repoMap: repoMap, session: hex.EncodeToString(id), idleTimeout: idle}
 	for _, t := range ts {
 		x.tools = append(x.tools, map[string]any{
 			"type": "function", "name": t.Name, "description": t.Description, "strict": false,
@@ -63,15 +65,18 @@ func NewCodex(c config.Config, repoMap string, ts []tools.Tool, out Output) *Cod
 	if c.WebSearch {
 		// Server-side tool: OpenAI runs the search, we never see a call to execute.
 		x.tools = append(x.tools, map[string]any{"type": "web_search"})
-		// Without this the model scrapes pages with curl: slower, often
-		// blocked, and every call needs a y/n.
-		x.rules += "\n\nWeb\n- For anything on the web, use the built-in web search: it can search, open pages and find text on them. " +
-			"Use curl only for APIs or raw data that search can't reach."
+		x.rules += "\n\nWeb\n- For anything on the web, use the built-in web search: it can search, open pages and find text on them."
+		for _, tool := range ts {
+			if tool.Name == "bash" {
+				x.rules += " Use curl only for APIs or raw data that search can't reach."
+				break
+			}
+		}
 	}
 	return x
 }
 
-func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls []Call, err error) {
+func (c *Client) Step(ctx context.Context, user string, results []provider.Result) (calls []provider.Call, err error) {
 	if results == nil {
 		c.start = time.Now() // a new turn, not a step inside one
 	}
@@ -113,7 +118,7 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 		"include":          []string{"reasoning.encrypted_content"},
 		"prompt_cache_key": c.cacheKey(),
 	})
-	access, account, err := auth.Token(ctx)
+	access, account, err := Token(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -122,13 +127,13 @@ func (c *Codex) Step(ctx context.Context, user string, results []Result) (calls 
 
 // AttachImage stages a data URL for the next user message. The current session
 // saves the image with that message so resuming preserves its context.
-func (c *Codex) AttachImage(dataURL string) { c.image = dataURL }
+func (c *Client) AttachImage(dataURL string) { c.image = dataURL }
 
 // SetMemory replaces this turn's retrieved memory. It is never persisted in
 // conversation history; the next turn may retrieve different or updated data.
-func (c *Codex) SetMemory(text string) { c.memory = text }
+func (c *Client) SetMemory(text string) { c.memory = text }
 
-func (c *Codex) inputWithMemory() []map[string]any {
+func (c *Client) inputWithMemory() []map[string]any {
 	if c.memory == "" {
 		return c.input
 	}
@@ -149,7 +154,7 @@ func (c *Codex) inputWithMemory() []map[string]any {
 	return c.input
 }
 
-func (c *Codex) instructions() string {
+func (c *Client) instructions() string {
 	if c.repoMap == "" {
 		return c.rules
 	}
@@ -158,13 +163,13 @@ func (c *Codex) instructions() string {
 
 // cacheKey is a hash of everything before the history. Same prompt and tools
 // = same key, so every session in a repo shares one warm cache.
-func (c *Codex) cacheKey() string {
+func (c *Client) cacheKey() string {
 	b, _ := json.Marshal([]any{c.model, c.instructions(), c.tools})
 	h := sha256.Sum256(b)
 	return "kh_" + hex.EncodeToString(h[:12])
 }
 
-func (c *Codex) Use(model, effort string) (string, string) {
+func (c *Client) Use(model, effort string) (string, string) {
 	if model != "" && model != c.model {
 		c.model, c.window = model, 0
 	}
@@ -174,7 +179,7 @@ func (c *Codex) Use(model, effort string) (string, string) {
 	return c.model, c.effort
 }
 
-func (c *Codex) Stats() Stats {
+func (c *Client) Stats() provider.Stats {
 	if c.window == 0 { // look up once per model, even if it fails
 		c.window = c.fetchWindow()
 		if c.window == 0 {
@@ -183,16 +188,16 @@ func (c *Codex) Stats() Stats {
 	}
 	s := c.stats
 	s.Window = max(c.window, 0)
-	c.stats = Stats{}
+	c.stats = provider.Stats{}
 	return s
 }
 
 // fetchWindow looks up c.model's context limit in the Codex catalog. Short
 // timeout, 0 on any failure: the meter just shows "used" without a limit.
-func (c *Codex) fetchWindow() int {
+func (c *Client) fetchWindow() int {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	access, account, err := auth.Token(ctx)
+	access, account, err := Token(ctx)
 	if err != nil {
 		return 0
 	}
@@ -231,14 +236,14 @@ type codexState struct {
 	Input   []map[string]any `json:"input"`
 }
 
-func (c *Codex) Save() ([]byte, error) {
+func (c *Client) Save() ([]byte, error) {
 	return json.Marshal(codexState{c.session, c.repoMap, c.input})
 }
 
 // Load restores the session's repo map, so the prompt stays byte-identical
 // and cached; rules still come from today's config (one cache miss after
 // you change them).
-func (c *Codex) Load(b []byte) error {
+func (c *Client) Load(b []byte) error {
 	var s codexState
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
@@ -250,7 +255,7 @@ func (c *Codex) Load(b []byte) error {
 	return nil
 }
 
-func (c *Codex) Replay(out Output) {
+func (c *Client) Replay(out provider.Output) {
 	if out == nil {
 		return
 	}
@@ -258,9 +263,9 @@ func (c *Codex) Replay(out Output) {
 		// Round-trip through JSON: loaded items are generic maps, so this
 		// is the shortest way to read their fields.
 		var m struct {
-			Type, Role, Arguments string
-			Content               []struct{ Type, Text string }
-			Action                map[string]any
+			Type, Role, Name, Arguments string
+			Content                     []struct{ Type, Text string }
+			Action                      map[string]any
 		}
 		b, _ := json.Marshal(it)
 		json.Unmarshal(b, &m)
@@ -276,23 +281,8 @@ func (c *Codex) Replay(out Output) {
 				}
 			}
 		case "function_call":
-			var a struct {
-				Command, Path string
-				Edits         []struct{ Path string }
-			}
-			json.Unmarshal([]byte(m.Arguments), &a)
-			if a.Command != "" {
-				out.Action("$ " + a.Command)
-			} else if len(a.Edits) > 0 {
-				seen := make(map[string]bool)
-				for _, edit := range a.Edits {
-					if !seen[edit.Path] {
-						out.Action("edit " + edit.Path)
-						seen[edit.Path] = true
-					}
-				}
-			} else {
-				out.Action("edit " + a.Path)
+			for _, action := range tools.DescribeCall(m.Name, json.RawMessage(m.Arguments)) {
+				out.Action(action)
 			}
 		case "web_search_call":
 			if s := webAction(m.Action); s != "" {
@@ -301,6 +291,37 @@ func (c *Codex) Replay(out Output) {
 		}
 	}
 }
+
+// LastResponse reads the most recent assistant message, preserving its text
+// part boundaries. Presentation callbacks intentionally do not define messages.
+func (c *Client) LastResponse() string {
+	for i := len(c.input) - 1; i >= 0; i-- {
+		var message struct {
+			Type, Role string
+			Content    []struct{ Type, Text string }
+		}
+		b, _ := json.Marshal(c.input[i])
+		if json.Unmarshal(b, &message) != nil || message.Type != "message" || message.Role != "assistant" {
+			continue
+		}
+		var parts []string
+		for _, part := range message.Content {
+			if part.Type == "output_text" || part.Type == "text" {
+				parts = append(parts, part.Text)
+			}
+		}
+		return strings.Join(parts, "\n")
+	}
+	return ""
+}
+
+// Nil output is useful for session inspection and non-interactive consumers.
+type discardOutput struct{}
+
+func (discardOutput) Reply(string)  {}
+func (discardOutput) Query(string)  {}
+func (discardOutput) Action(string) {}
+func (discardOutput) Notice(string) {}
 
 // webAction describes one web search step: a search, opening a page, or
 // finding text on a page. "" if there is nothing useful to show.

@@ -3,9 +3,11 @@ package test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"runtime"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"kh/internal/config"
 	"kh/internal/tools"
@@ -51,6 +53,59 @@ func TestOutputCapBoundaries(t *testing.T) {
 			if out != want {
 				t.Errorf("cap=%d text=%q got=%q want=%q", cap, text, out, want)
 			}
+		}
+	}
+}
+
+// Exercise the public Bash tool, including writes split inside UTF-8 runes.
+func TestUnicodeOutputCap(t *testing.T) {
+	for _, text := range []string{"é", "€", "😀", "aé€😀z", "😀😀😀😀", "雪だるま☃"} {
+		for cap := 1; cap <= len(text)+1; cap++ {
+			cfg := config.Defaults
+			cfg.Auto, cfg.OutputCap = true, cap
+			// printf's octal escapes emit exact bytes independently of locale.
+			var command strings.Builder
+			for i := range len(text) {
+				fmt.Fprintf(&command, "printf '\\%03o'; ", text[i])
+			}
+			out, err := bash(t, cfg, command.String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := text
+			if len(text) > cap {
+				head, tail := text[:cap-cap/2], text[len(text)-cap/2:]
+				for !utf8.ValidString(head) {
+					head = head[:len(head)-1]
+				}
+				for !utf8.ValidString(tail) {
+					tail = tail[1:]
+				}
+				want = head + "\n...[cut]...\n" + tail
+			}
+			if out != want || !utf8.ValidString(out) {
+				t.Errorf("cap=%d text=%q: got %q, want %q", cap, text, out, want)
+			}
+		}
+	}
+}
+
+func TestUnicodeOutputAcrossDelayedWrites(t *testing.T) {
+	for _, cap := range []int{3, 4, 5, 6, 7, 8} {
+		cfg := config.Defaults
+		cfg.Auto, cfg.OutputCap = true, cap
+		// Force writes on opposite sides of a multi-byte rune to arrive
+		// separately. With cap=6 the head/tail boundary also bisects it.
+		out, err := bash(t, cfg, "printf 'A\\360'; sleep 0.02; printf '\\237\\230'; sleep 0.02; printf '\\200Z'")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "A😀Z"
+		if cap < len(want) {
+			want = "A\n...[cut]...\nZ"
+		}
+		if out != want || !utf8.ValidString(out) {
+			t.Errorf("cap=%d: got %q, want %q", cap, out, want)
 		}
 	}
 }

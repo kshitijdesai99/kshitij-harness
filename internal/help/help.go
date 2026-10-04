@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"kh/internal/backend"
 	"kh/internal/config"
 	"kh/internal/provider"
 )
@@ -39,7 +40,7 @@ func Run(ctx context.Context, cfg config.Config, request, cliUsage string, out p
 	// Help has a dedicated prompt rather than autonomous coding instructions,
 	// which otherwise tell the model to inspect files and use unavailable tools.
 	cfg.System = helpInstructions + "\n\nCLI flags from this running kh executable:\n" + cliUsage
-	p, err := provider.New(cfg, "", nil, out)
+	p, err := backend.New(cfg, "", nil, out)
 	if err != nil {
 		return err
 	}

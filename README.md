@@ -34,7 +34,9 @@ Once installed, use **`kh --rebuild`** to rebuild and atomically replace the exa
 
 ## Input history
 
-Session listings show local last-saved time, session ID, and a single-line preview of the last assistant response (up to 70 characters, including the ellipsis). Chats without an assistant response are labeled explicitly. Last-saved time is the session file's modification time, not an exact response-generation timestamp; `kh -r` still resumes the newest session by creation ID.
+Session listings show local last-saved time, session ID, and a preview of the most recent assistant message. Rows fit the detected stdout terminal width; redirected output uses a valid `COLUMNS` value or defaults to 120 columns. Previews use at most 70 display columns including the ellipsis, preserve Unicode grapheme clusters, and strip terminal controls. In narrow panes the timestamp is omitted and the preview shrinks; IDs remain exact unless the pane itself is narrower than the ID. Chats without an assistant response are labeled explicitly. Last-saved time is the session file's modification time, not an exact response-generation timestamp; `kh -r` still resumes the newest session by creation ID.
+
+New sessions are saved in `~/.kh/sessions/v2/<SHA-256 of canonical working-folder path>/`. This avoids collisions between distinct paths that contained separators and hyphens. Existing chats in the old flattened folder layout are still listed and loadable; resaving writes to the new namespace without moving or deleting the legacy file. New saves take precedence when an ID exists in both locations. Already-ambiguous legacy folder keys cannot be assigned to an original project automatically.
 
 Queries are cyan and assistant responses are green in interactive terminals, including replayed sessions. Redirected output stays plain; set `NO_COLOR=1` to disable chat colors.
 
@@ -116,19 +118,21 @@ Use `/compact` between turns to summarize the conversation with the current mode
 
 Type while a task runs to steer it: a reply in progress is cut off and restarted with your line; a running command finishes first. In chat, `/model gpt-5.5` and `/effort high` switch from the next message and are saved to `~/.kh/config.json`, so every session (open ones too) follows; `/model` alone shows both.
 
-Read-only commands (`rg`, `cat`, `ls`, `git diff`, ...) run without asking when their syntax and options are recognized. Write/execute options and unsupported syntax require approval. This conservative allowlist is not a shell security boundary; custom `safe` entries are trusted configuration. Everything else asks y/n unless `--auto`. On macOS, bash can only write inside the project (plus temp and cache dirs) unless `-nosandbox`. Command output is bounded while it is collected, not only when it is sent to the model.
+Read-only commands (`rg`, `cat`, `ls`, `git diff`, ...) run without asking when their syntax and options are recognized. Write/execute options and unsupported syntax require approval. This conservative allowlist is not a shell security boundary; custom `safe` entries are trusted configuration. Everything else asks y/n unless `--auto`. On macOS, bash can only write inside the project (plus temp and cache dirs) unless `-nosandbox`. On other Unix platforms, kh warns that the OS sandbox is unavailable; approval checks still apply, but are not an OS security boundary. The implementation requires Unix process/locking APIs and `/bin/bash`; Windows is not currently supported. Interactive tmux features require tmux, and clipboard-image capture is macOS-only (local image paths remain usable). Command output is bounded while it is collected, not only when it is sent to the model; truncation drops partial UTF-8 characters at cut boundaries.
 
 ## Architecture
 
 - `cmd/kh`: CLI setup and one chat's lifecycle.
 - `internal/agent`: orchestration against a small `Stepper` interface, independent of model APIs.
-- `internal/provider`: backend contracts, selection factory, and protocol adapters. Only Codex is currently implemented.
+- `internal/provider`: backend-neutral contracts, optional capabilities, and cancellation/rollback requirements. Replay callbacks are presentation fragments; semantic last-response previews use a separate optional capability.
+- `internal/backend`: provider selection and login dispatch, isolated from the provider contract. Capability-specific instructions are added only when the corresponding tool is available.
+- `internal/provider/codex`: all Codex implementation code—client/protocol, authentication, stream parsing, retries, compaction—and its `test/` suite. Only Codex is currently implemented.
 - `internal/terminal`: per-chat input/history, cancellable approvals, and rendering. Adapters emit text, not terminal colors.
 - `internal/tools`: tool schemas and behavior; bash receives an approval interface instead of using global input.
-- `internal/session`: atomic saves of versioned, backend-tagged opaque state. Legacy Codex chats still resume.
+- `internal/session`: collision-resistant per-folder namespaces and atomic saves of versioned, backend-tagged opaque state. Legacy storage locations and pre-envelope Codex chats still resume.
 
 `provider` selects the API/auth adapter; `model` selects a model within that backend. `-provider codex` overrides the configured backend. Resuming uses the session's recorded backend; an explicit conflicting `-provider` is rejected. Switching backends starts a new chat rather than reinterpreting another provider's history. Spawned agents inherit the active provider, model, and effort, including command-line overrides.
 
-To add a backend, implement `provider.Provider`, emit through the injected `provider.Output`, and add its constructor/login route in `provider/factory.go`. The loop, tools, UI, and session storage do not need backend-specific branches. Image and retrieved-memory support are explicit optional capabilities. Keep credentials, request formats, streaming events, and private history inside the adapter; do not infer a backend from a model-name prefix.
+To add a backend, implement `provider.Provider`, emit through the injected `provider.Output`, and add its constructor/login route in `internal/backend/backend.go`. The loop, tools, UI, and session storage do not need backend-specific branches. Images, retrieved memory, compaction, and semantic last-response previews are explicit optional capabilities. Every adapter must honor context cancellation promptly and discard partial failed responses/unpaired tool calls before returning; add conformance tests for these guarantees. Keep credentials, request formats, streaming events, and private history inside the adapter; do not infer a backend from a model-name prefix.
 
 Architecture is discoverable with `kh memory search architecture` and `kh memory get <id>`; see [todo.md](todo.md) for future ideas.

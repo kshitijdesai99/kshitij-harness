@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 
+	"kh/internal/backend"
 	"kh/internal/config"
 	"kh/internal/help"
 	"kh/internal/image"
@@ -100,7 +102,7 @@ func main() {
 			exit(fmt.Errorf("usage: kh login <provider>"))
 			return
 		}
-		exit(provider.Login(ctx, args[1]))
+		exit(backend.Login(ctx, args[1]))
 		fmt.Println("Logged in.")
 		return
 	}
@@ -153,6 +155,9 @@ func main() {
 	ui.Activity = terminal.NewActivity(os.Stdout, activityName)
 	defer ui.Activity.Close()
 	console.SetActivity(ui.Activity)
+	if cfg.Sandbox && runtime.GOOS != "darwin" {
+		fmt.Fprintln(os.Stderr, "warning: kh's bash sandbox is macOS-only; shell commands are not OS-sandboxed on this platform. Approval checks still apply.")
+	}
 	ts := []tools.Tool{tools.Bash(cfg, console), tools.Edit, tools.Memory(db, repoScope), agentTool(cfg, ui.Action)}
 	if *resume {
 		*id, err = session.Latest()
@@ -171,7 +176,7 @@ func main() {
 		})
 		cfg.Provider = saved.Provider
 	}
-	p, err := provider.New(cfg, repomap.Build(".", cfg.MapCap), ts, ui)
+	p, err := backend.New(cfg, repomap.Build(".", cfg.MapCap), ts, ui)
 	exit(err)
 	console.Start()
 	if *id != "" {

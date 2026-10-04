@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"kh/internal/config"
-	"kh/internal/provider"
+	"kh/internal/provider/codex"
 )
 
 // Retry tests use the public adapter and the same isolated credentials as the
@@ -75,7 +75,7 @@ func TestRetryTransportAndUndisplayedStreamFailures(t *testing.T) {
 		t.Run(failure, func(t *testing.T) {
 			mockCodex(t, "")
 			out := &retryOutput{}
-			p := provider.NewCodex(config.Defaults, "", nil, out)
+			p := codex.New(config.Defaults, "", nil, out)
 			attempts := 0
 			http.DefaultClient.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
 				attempts++
@@ -161,7 +161,7 @@ func TestRetryDoesNotRepeatDisplayedReplyOrAction(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			mockCodex(t, "")
 			out := &retryOutput{}
-			p := provider.NewCodex(config.Defaults, "", nil, out)
+			p := codex.New(config.Defaults, "", nil, out)
 			attempts := 0
 			http.DefaultClient.Transport = roundTrip(func(*http.Request) (*http.Response, error) {
 				attempts++
@@ -228,7 +228,7 @@ func TestRetryIdleTimeoutRecoversHeadersAndBody(t *testing.T) {
 			mockCodex(t, "")
 			cfg := config.Defaults
 			cfg.ModelIdleTimeoutSec = 1
-			p := provider.NewCodex(cfg, "", nil, nil)
+			p := codex.New(cfg, "", nil, nil)
 			attempts := 0
 			http.DefaultClient.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
 				attempts++
@@ -256,7 +256,7 @@ func TestRetryIdleTimeoutResetsOnBytes(t *testing.T) {
 	mockCodex(t, "")
 	cfg := config.Defaults
 	cfg.ModelIdleTimeoutSec = 1
-	p := provider.NewCodex(cfg, "", nil, nil)
+	p := codex.New(cfg, "", nil, nil)
 	attempts := 0
 	http.DefaultClient.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
 		attempts++
@@ -295,7 +295,7 @@ func TestRetryIdleTimeoutAfterDisplayedReplyDoesNotReplay(t *testing.T) {
 	cfg := config.Defaults
 	cfg.ModelIdleTimeoutSec = 1
 	out := &retryOutput{}
-	p := provider.NewCodex(cfg, "", nil, out)
+	p := codex.New(cfg, "", nil, out)
 	attempts := 0
 	http.DefaultClient.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
 		attempts++
@@ -344,6 +344,38 @@ func TestRetryParentCancellationStopsBlockedBody(t *testing.T) {
 	}
 }
 
+func TestCancellationRollsBackPartialStreamHistory(t *testing.T) {
+	p := mockCodex(t, "")
+	attempts := 0
+	http.DefaultClient.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
+		attempts++
+		resp := retryResponse(200, "")
+		partial := toolItem + `data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"uncommitted"}]}}` + "\n\n"
+		resp.Body = io.NopCloser(io.MultiReader(strings.NewReader(partial), retryBlockedBody{r.Context()}))
+		return resp, nil
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	calls, err := p.Step(ctx, "question", nil)
+	if !errors.Is(err, context.DeadlineExceeded) || attempts != 1 || len(calls) != 0 {
+		t.Fatalf("attempts=%d calls=%v err=%v", attempts, calls, err)
+	}
+	saved, err := p.Save()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state struct{ Input []map[string]any }
+	if err := json.Unmarshal(saved, &state); err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Input) != 1 || state.Input[0]["role"] != "user" {
+		t.Fatalf("cancelled stream retained partial history: %s", saved)
+	}
+	if got := p.LastResponse(); got != "" {
+		t.Fatalf("cancelled stream published final response: %q", got)
+	}
+}
+
 // An HTTP error body can stay active indefinitely. Closing the diagnostic
 // reader must stop a trickling writer even though no idle timeout has elapsed.
 type retryDiagnosticBody struct {
@@ -389,7 +421,7 @@ func TestRetryBoundsTricklingHTTPDiagnosticBodies(t *testing.T) {
 			mockCodex(t, "")
 			cfg := config.Defaults
 			cfg.ModelIdleTimeoutSec = 1
-			p := provider.NewCodex(cfg, "", nil, nil)
+			p := codex.New(cfg, "", nil, nil)
 			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 			defer cancel()
 			attempts := 0
