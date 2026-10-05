@@ -21,6 +21,7 @@ func (c *Client) readStream(r io.Reader) ([]provider.Call, error) {
 		if displayed || completed {
 			c.out.Reply("\n")
 		}
+		provider.FlushReply(c.out)
 	}()
 	for sc.Scan() {
 		data, ok := strings.CutPrefix(sc.Text(), "data: ")

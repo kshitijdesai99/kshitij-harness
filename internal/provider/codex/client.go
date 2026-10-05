@@ -269,6 +269,7 @@ func (c *Client) Replay(out provider.Output) {
 					out.Reply(part.Text + "\n")
 				}
 			}
+			provider.FlushReply(out)
 		case "function_call":
 			for _, action := range tools.DescribeCall(m.Name, json.RawMessage(m.Arguments)) {
 				out.Action(action)

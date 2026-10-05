@@ -83,7 +83,7 @@ func main() {
 		flag.CommandLine.SetOutput(&usage)
 		flag.PrintDefaults()
 		flag.CommandLine.SetOutput(previousOutput)
-		exit(help.Run(ctx, cfg, strings.Join(flag.Args(), " "), usage.String(), terminal.Renderer{Out: os.Stdout, Err: os.Stderr}))
+		exit(help.Run(ctx, cfg, strings.Join(flag.Args(), " "), usage.String(), terminal.NewRenderer(os.Stdout, os.Stderr)))
 		return
 	}
 	exit(configErr)
@@ -156,7 +156,7 @@ func main() {
 	}
 	console := terminal.NewConsole(os.Stdin, os.Stdout, os.Stderr)
 	defer console.Close()
-	ui := terminal.Renderer{Out: os.Stdout, Err: os.Stderr}
+	ui := terminal.NewRenderer(os.Stdout, os.Stderr)
 	if os.Getenv("TMUX") != "" {
 		exit(nameChatPane())
 	}
@@ -195,7 +195,7 @@ func main() {
 		exit(p.Load(saved.State))
 		if len(args) == 0 || *stay {
 			fmt.Printf("--- session %s ---\n", *id)
-			p.Replay(terminal.Renderer{Out: os.Stdout, Err: os.Stdout})
+			p.Replay(terminal.NewRenderer(os.Stdout, os.Stdout))
 			fmt.Println("---")
 		}
 	} else {

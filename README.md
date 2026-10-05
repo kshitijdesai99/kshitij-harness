@@ -2,6 +2,12 @@
 
 A lightweight, fast coding harness in Go. Native shell, edit, memory, and tmux-agent tools, a backend-neutral core, and a Codex adapter.
 
+## Terminal preview
+
+![kh terminal showing rendered Markdown responses](sample.png)
+
+An example of how kh looks in the terminal with Markdown rendering enabled.
+
 ## Setup
 
 ```bash
@@ -38,7 +44,9 @@ Session listings show local last-saved time, session ID, and a preview of the mo
 
 New sessions are saved in `~/.kh/sessions/v2/<SHA-256 of canonical working-folder path>/`. This avoids collisions between distinct paths that contained separators and hyphens. Existing chats in the old flattened folder layout are still listed and loadable; resaving writes to the new namespace without moving or deleting the legacy file. New saves take precedence when an ID exists in both locations. Already-ambiguous legacy folder keys cannot be assigned to an original project automatically.
 
-Queries are cyan and assistant responses are green in interactive terminals, including replayed sessions. Redirected output stays plain; set `NO_COLOR=1` to disable chat colors.
+Interactive terminals render assistant Markdown with styled headings, emphasis, lists, tables, and indented code blocks, including replayed sessions and one-off help. Prose wraps to the detected terminal width. Each assistant reply is buffered until it finishes (or is interrupted), so lists, code, math, and reference links are parsed together correctly; tool/status lines flush any pending reply first. The working indicator still updates while tokens arrive. Replies over 1 MiB fall back to plain streaming to bound memory. Queries remain cyan. Redirected output and `TERM=dumb` keep the original Markdown text; `NO_COLOR=1` disables colors while retaining readable terminal formatting.
+
+Common LaTeX math is converted to readable Unicode/text in the terminal (such as Greek letters, superscripts, square roots, and fractions). This is not full typesetting: unsupported expressions stay literal, and code examples are left untouched. Existing running chats retain their old renderer: run `kh --rebuild`, then exit and run `kh -r` to load the new build.
 
 In interactive chat, press **Up** to recall your previous query and **Down** to move toward newer entries or restore your unfinished draft. Recalled text is editable; press Enter to submit it. History keeps up to 500 entries for the current process only (it is not saved across restarts). Blank lines and `y`/`yes`/`n`/`no` approval answers are excluded. Ctrl-C still stops the active task, and Ctrl-D on an empty line quits. Piped input remains line-based unless it includes explicit bracketed-paste boundaries.
 

@@ -29,6 +29,14 @@ type Output interface {
 	Notice(string)
 }
 
+// FlushReply signals an optional presentation boundary without requiring
+// captures and other plain Outputs to implement buffering.
+func FlushReply(out Output) {
+	if f, ok := out.(interface{ FlushReply() }); ok {
+		f.FlushReply()
+	}
+}
+
 // Provider is the session-level contract. Save/Load exchange opaque JSON
 // state; Stats consumes the current turn's metrics. The agent uses only Step.
 // Step must promptly return when ctx is cancelled. On failure or cancellation,
