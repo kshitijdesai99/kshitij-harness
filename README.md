@@ -112,7 +112,7 @@ kh memory purge repo css-framework                  # delete every version
 kh memory import-md AGENTS.md                       # one-time: split a rules file into notes, after review
 ```
 
-The `memory` tool lets the model search, and remember or forget when you ask. On first open, records from the earlier discovery/detail tables move into the new table. The database lives outside Git and is private to the local user.
+The background hooks are the only writers, so every save is reported once; saying "remember …" in chat goes through the pre-hook too. The `memory` tool lets the model search, and forget when you ask; `kh memory remember` saves by hand. On first open, records from the earlier discovery/detail tables move into the new table. The database lives outside Git and is private to the local user.
 
 ## Config
 
