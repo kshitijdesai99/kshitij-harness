@@ -135,4 +135,4 @@ Read-only commands (`rg`, `cat`, `ls`, `git diff`, ...) run without asking when 
 
 To add a backend, implement `provider.Provider`, emit through the injected `provider.Output`, and add its constructor/login route in `internal/backend/backend.go`. The loop, tools, UI, and session storage do not need backend-specific branches. Images, retrieved memory, compaction, and semantic last-response previews are explicit optional capabilities. Every adapter must honor context cancellation promptly and discard partial failed responses/unpaired tool calls before returning; add conformance tests for these guarantees. Keep credentials, request formats, streaming events, and private history inside the adapter; do not infer a backend from a model-name prefix.
 
-Architecture is discoverable with `kh memory search architecture` and `kh memory get <id>`; see [todo.md](todo.md) for future ideas.
+Architecture is discoverable with `kh memory search architecture` and `kh memory get <id>`; see [todo.md](todo.md) for completed implementation milestones.
