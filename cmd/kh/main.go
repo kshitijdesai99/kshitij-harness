@@ -254,6 +254,14 @@ func main() {
 			fmt.Println("(image attached; type your message)")
 			continue
 		}
+		if singleLine && line == "/fork" {
+			if out, err := forkChat(ctx, cfg, &c); err != nil {
+				fmt.Fprintln(os.Stderr, "fork:", err)
+			} else {
+				ui.Notice("(" + out + ")")
+			}
+			continue
+		}
 		if singleLine && line == "/compact" {
 			if err := c.compact(ctx); err != nil {
 				fmt.Fprintln(os.Stderr, "compact:", err)
@@ -289,7 +297,7 @@ func command(p provider.Provider, line string) {
 			model, effort = p.Use("", arg)
 		}
 	default:
-		fmt.Println("/compact   summarize context and save the session\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message")
+		fmt.Println("/compact   summarize context and save the session\n/fork   copy this chat into a new tmux window to the right and switch to it\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message")
 		return
 	}
 	fmt.Println(terminal.Color(os.Stdout, terminal.Muted, fmt.Sprintf("(model %s, effort %s)", model, effort)))

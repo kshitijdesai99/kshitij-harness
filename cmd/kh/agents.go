@@ -8,6 +8,8 @@ import (
 	"unicode"
 
 	"kh/internal/config"
+	"kh/internal/provider"
+	"kh/internal/session"
 	"kh/internal/tools"
 )
 
@@ -209,6 +211,71 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 		return strings.TrimSuffix(out.String(), "\n"), nil
 	}
 	return "", fmt.Errorf("unknown agent command: %s", args[0])
+}
+
+// forkChat copies this chat into a new session and opens it in a new tmux
+// window directly to the right, which becomes the active window. The fork
+// replays the chat up to its last reply and waits for input; the original
+// is unchanged.
+func forkChat(ctx context.Context, cfg config.Config, c *chat) (string, error) {
+	current, err := currentPane(ctx)
+	if err != nil {
+		return "", fmt.Errorf("fork needs tmux: %w", err)
+	}
+	if r, ok := c.model.(provider.LastResponder); ok && r.LastResponse() == "" {
+		return "", fmt.Errorf("nothing to fork yet")
+	}
+	if err := c.save(); err != nil {
+		return "", err
+	}
+	state, err := session.Load(c.id)
+	if err != nil {
+		return "", err
+	}
+	id := session.New()
+	if err := session.Save(id, state); err != nil {
+		return "", err
+	}
+	panes, err := agentPanesContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	taken := map[string]bool{}
+	for _, pane := range panes {
+		taken[pane.name] = true
+	}
+	name := "fork"
+	for n := 2; taken[name]; n++ {
+		name = fmt.Sprintf("fork-%d", n)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	// The active model and effort, including /model switches in this chat.
+	model, effort := c.model.Use("", "")
+	command := []string{exe, "-provider", c.backend, "-model", model, "-effort", effort}
+	if cfg.Auto {
+		command = append(command, "--auto")
+	}
+	if !cfg.Sandbox {
+		command = append(command, "-nosandbox")
+	}
+	command = append(command, "-s", id)
+	window, err := tmuxContext(ctx, "display-message", "-p", "-t", current, "#{window_id}")
+	if err != nil {
+		return "", err
+	}
+	// -a places the window right after the current one; without -d it is selected.
+	if _, err := tmuxContext(ctx, "new-window", "-a", "-t", window, "-n", name, "-c", cwd,
+		"-e", "KH_AGENT=kh:"+name, shellCommand(command...)); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("forked to window %s (session %s, address kh:%s)", name, id, name), nil
 }
 
 func findAgentPane(ctx context.Context, name string) (string, error) {
