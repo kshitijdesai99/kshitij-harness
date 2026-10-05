@@ -74,19 +74,19 @@ In an interactive tmux chat on macOS, copy an image and press **Ctrl-V** in a `k
 
 Agent orchestration is a native model tool (`agents`), not a shell-command recipe. Ask kh to open a tests/review/docs agent: it chooses a purpose-based name and immediately opens a pane **on the right of the current window**. Main stays on the left; additional workers stack in the right column. Your current tab and focus are preserved. Creation does not wait for the worker's model response.
 
-The native tool supports `spawn` (name/task), `send` (address/message), `peek` (address), and `list`. Main and workers can communicate directly with each other at `kh:main` and `kh:<name>`; messages carry the sender's address. These are logical addresses within the current tmux session, so this also works when you start kh inside your own tmux session. Names survive pane moves and joins.
+The native tool supports `spawn` (name/task, optional keep), `send` (address/message), `peek` (address), and `list`. Main and workers can communicate directly with each other at `kh:main` and `kh:<name>`; messages carry the sender's address. These are logical addresses within the current tmux session, so this also works when you start kh inside your own tmux session. Names survive pane moves and joins.
 
 Interactive `kh` starts or attaches to a tmux session named `kh` when launched outside tmux. Install tmux first; one-shot tasks and piped input don't require it. The CLI remains available:
 
 ```bash
 kh spawn tester "run the failing tests"    # right-hand pane, same working folder
-kh spawn reviewer "review the tester's proposed fix"
+kh spawn --keep reviewer "review the tester's proposed fix"  # stays open for follow-ups
 kh send kh:reviewer "tester found an edge case in parser.go"
 kh peek kh:tester                     # read recent screen lines
 kh agents                            # list addresses and busy/waiting state
 ```
 
-A spawned agent stays in chat after its task, knows its own and parent's addresses, and is instructed to report back using the native tool. Spawning and messaging through this tool require no separate shell approval; bash commands inside each worker still obey the inherited approval and sandbox settings. Agents inherit the active provider/model/effort without another login. They share files: assign independent files and coordinate before editing the same file. If the screen is too small for another pane, spawning reports the tmux error rather than hiding the worker in another tab.
+A spawned agent does its task, reports back using the native tool, and exits, so tmux closes its pane. If the task fails, it stays in chat so the error stays visible. Use `--keep` (or `keep` in the tool) to leave a worker open for follow-up messages. Each agent knows its own and parent's addresses. Spawning and messaging through this tool require no separate shell approval; bash commands inside each worker still obey the inherited approval and sandbox settings. Agents inherit the active provider/model/effort without another login. They share files: assign independent files and coordinate before editing the same file. If the screen is too small for another pane, spawning reports the tmux error rather than hiding the worker in another tab.
 
 ## Memory
 

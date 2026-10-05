@@ -211,9 +211,16 @@ func main() {
 	setAgentState("waiting")
 	task := strings.Join(args, " ")
 	if task != "" && !*stay {
-		exit(turn(task))
-		fmt.Fprintf(os.Stderr, "(session %s: kh -r to continue)\n", *id)
-		return
+		err := turn(task)
+		// A spawned agent's pane closes when kh exits. On failure stay in chat
+		// instead, so the error stays visible and the agent can be steered.
+		if err == nil || os.Getenv("KH_PARENT") == "" {
+			exit(err)
+			fmt.Fprintf(os.Stderr, "(session %s: kh -r to continue)\n", *id)
+			return
+		}
+		fmt.Fprintln(os.Stderr, "error:", err)
+		task = ""
 	}
 	model, effort := p.Use("", "")
 	fmt.Fprintf(os.Stderr, "kh chat, session %s (%s, %s). Type while it works to steer. Ctrl-C stops a task, Ctrl-D quits, /help for commands.\n", *id, model, effort)

@@ -78,6 +78,9 @@ func TestTmuxAgents(t *testing.T) {
 	if title := runTmux("display-message", "-p", "-t", docsPane, "#{pane_title}"); title != "docs" {
 		t.Fatalf("worker title: %q", title)
 	}
+	if strings.Contains(command, "'-i'") {
+		t.Errorf("spawned agent should exit after its task: %q", command)
+	}
 	for _, value := range []string{"--auto", "-provider", "codex", "-model", "future-model", "-effort", "low"} {
 		if !strings.Contains(command, value) {
 			t.Errorf("spawn did not pass %q: %q", value, command)
@@ -164,5 +167,13 @@ func TestTmuxAgents(t *testing.T) {
 	}
 	if s, err := kh("peek", "kh:main"); err != nil || strings.Contains(s, "session-local reply") {
 		t.Fatalf("message leaked across sessions: %q %v", s, err)
+	}
+	// --keep leaves the worker in chat for follow-up messages.
+	if s, err := khFrom(workMain, "spawn", "--keep", "keeper", "stay for follow-ups"); err != nil {
+		t.Fatalf("keep spawn: %q %v", s, err)
+	}
+	keeper := runTmux("display-message", "-p", "-t", "work:chat.2", "#{pane_start_command}")
+	if !strings.Contains(keeper, "'-i'") {
+		t.Fatalf("--keep did not keep the agent in chat: %q", keeper)
 	}
 }

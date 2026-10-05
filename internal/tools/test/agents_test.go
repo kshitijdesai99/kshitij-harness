@@ -13,6 +13,7 @@ import (
 func TestNativeAgentsDispatch(t *testing.T) {
 	for _, request := range []tools.AgentRequest{
 		{Action: "spawn", Name: "tests", Task: "run focused tests"},
+		{Action: "spawn", Name: "review", Task: "review the fix", Keep: true},
 		{Action: "send", Address: "kh:review", Message: "inspect edit.go"},
 		{Action: "peek", Address: "kh:tests"},
 		{Action: "list"},

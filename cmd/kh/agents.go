@@ -36,6 +36,9 @@ func agentTool(cfg config.Config, action func(string)) tools.Tool {
 			}
 			defer func() { <-spawning }()
 			args = []string{"spawn", request.Name, request.Task}
+			if request.Keep {
+				args = []string{"spawn", "--keep", request.Name, request.Task}
+			}
 		case "send":
 			args = []string{"send", request.Address, request.Message}
 		case "peek":
@@ -75,8 +78,12 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 	}
 	switch args[0] {
 	case "spawn":
+		keep := len(args) > 1 && args[1] == "--keep"
+		if keep {
+			args = append(args[:1:1], args[2:]...)
+		}
 		if len(args) != 3 || !agentName.MatchString(args[1]) || args[1] == "main" || strings.TrimSpace(args[2]) == "" {
-			return "", fmt.Errorf("usage: kh spawn <name> <task> (name cannot be main)")
+			return "", fmt.Errorf("usage: kh spawn [--keep] <name> <task> (name cannot be main)")
 		}
 		parent, err := agentAddress(ctx)
 		if err != nil {
@@ -125,7 +132,11 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 		if !cfg.Sandbox {
 			command = append(command, "-nosandbox")
 		}
-		command = append(command, "-i", args[2])
+		// Without -i the agent exits after its task and tmux closes the pane.
+		if keep {
+			command = append(command, "-i")
+		}
+		command = append(command, args[2])
 		pane, err := tmuxContext(ctx, "set-option", "-p", "-t", current, "@kh_name", strings.TrimPrefix(parent, "kh:"), ";",
 			"split-window", direction, "-d", "-P", "-F", "#{pane_id}", "-t", target, "-c", cwd,
 			"-e", "KH_PARENT="+parent, "-e", "KH_AGENT=kh:"+args[1], shellCommand(command...))

@@ -13,6 +13,7 @@ type AgentRequest struct {
 	Action  string `json:"action"`
 	Name    string `json:"name,omitempty"`
 	Task    string `json:"task,omitempty"`
+	Keep    bool   `json:"keep,omitempty"`
 	Address string `json:"address,omitempty"`
 	Message string `json:"message,omitempty"`
 }
@@ -22,11 +23,12 @@ type AgentRequest struct {
 func Agents(run func(context.Context, AgentRequest) (string, error)) Tool {
 	return Tool{
 		Name:        "agents",
-		Description: "Native tmux agents. action spawn opens a purpose-named agent to the right in the current window; supply name and task. action send delivers a single-line message directly to any address (kh:main or kh:<name>), including peers; supply address and message. action peek reads recent output at address. action list shows addresses and states. Spawn returns immediately, not when the task finishes. Agents share files: assign independent files, coordinate directly, and report results to the parent using send. Use this tool instead of bash/tmux/kh commands for agent orchestration.",
+		Description: "Native tmux agents. action spawn opens a purpose-named agent to the right in the current window; supply name and task. action send delivers a single-line message directly to any address (kh:main or kh:<name>), including peers; supply address and message. action peek reads recent output at address. action list shows addresses and states. Spawn returns immediately, not when the task finishes. A spawned agent's pane closes when its task is done (it stays open on failure); set keep to leave it open for follow-up messages. Agents share files: assign independent files, coordinate directly, and report results to the parent using send. Use this tool instead of bash/tmux/kh commands for agent orchestration.",
 		Params: map[string]any{
 			"action":  map[string]any{"type": "string", "enum": []string{"spawn", "send", "peek", "list"}},
 			"name":    map[string]any{"type": "string", "description": "Short unique purpose-based name, e.g. tests, review, docs."},
 			"task":    map[string]any{"type": "string"},
+			"keep":    map[string]any{"type": "boolean", "description": "spawn only: keep the pane open after the task"},
 			"address": map[string]any{"type": "string", "description": "Agent address from list/spawn, e.g. kh:review."},
 			"message": map[string]any{"type": "string"},
 		},

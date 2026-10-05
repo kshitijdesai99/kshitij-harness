@@ -23,6 +23,7 @@ type Console struct {
 	start, close sync.Once
 	mu           sync.Mutex
 	rl           *readline.Instance
+	stdin        *readline.CancelableStdin
 	pending      []string
 	pastes       *pasteStore
 	approval     chan struct{}
@@ -55,8 +56,13 @@ func (c *Console) Close() {
 	c.close.Do(func() {
 		close(c.done)
 		c.mu.Lock()
-		rl := c.rl
+		rl, stdin := c.rl, c.stdin
 		c.mu.Unlock()
+		// readline's Close does not close the reader it was given, so it would
+		// wait for one more keypress; closing it first lets kh exit at once.
+		if stdin != nil {
+			_ = stdin.Close()
+		}
 		if rl != nil {
 			_ = rl.Close()
 		}
@@ -85,8 +91,9 @@ func (c *Console) read() {
 		c.readPlain()
 		return
 	}
+	stdin := readline.NewCancelableStdin(newPasteReader(in, c.pastes))
 	rl, err := readline.NewEx(&readline.Config{
-		Stdin: readline.NewCancelableStdin(newPasteReader(in, c.pastes)), Stdout: c.out, Stderr: c.err,
+		Stdin: stdin, Stdout: c.out, Stderr: c.err,
 		Prompt: Color(c.out, Query, "> "), Painter: queryPainter{c.out},
 		HistoryLimit: 500, DisableAutoSaveHistory: true,
 		InterruptPrompt: "^C", EOFPrompt: "\n",
@@ -98,7 +105,7 @@ func (c *Console) read() {
 	}
 	defer rl.Close()
 	c.mu.Lock()
-	c.rl = rl
+	c.rl, c.stdin = rl, stdin
 	c.mu.Unlock()
 	select {
 	case <-c.done:
