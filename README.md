@@ -119,7 +119,7 @@ The `memory` tool lets the model search, and remember or forget when you ask. On
 Optional `~/.kh/config.json`; set only what you want to change:
 
 ```json
-{ "provider": "codex", "model": "gpt-6-luna", "effort": "medium", "model_idle_timeout_sec": 120, "timeout_sec": 30, "output_cap": 20000, "map_cap": 0 }
+{ "provider": "codex", "model": "gpt-6.1-sol", "effort": "medium", "model_idle_timeout_sec": 120, "timeout_sec": 30, "output_cap": 20000, "map_cap": 0 }
 ```
 
 Also `web_search` (on by default), `system`, `safe`, `auto`, `sandbox` and `writable` (extra dirs bash may write to). Memory: `memory_model` (cheap model for the background hooks; empty uses the chat model, `"off"` disables automatic saving), `summary_max_tokens` (2500, estimated as characters ÷ 4), `top_instructions` and `top_gotchas` (10 each). Flags override the file.

@@ -31,7 +31,7 @@ type Config struct {
 // Short and fixed on purpose: short = fast, fixed = cacheable.
 var Defaults = Config{
 	Provider:  "codex",
-	Model:     "gpt-6-luna",
+	Model:     "gpt-6.1-sol",
 	Effort:    "medium",
 	WebSearch: true,
 	// Short grouped rules, most important first: models follow these better
