@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -34,7 +35,7 @@ type Client struct {
 	effort      string
 	rules       string // always today's config, so rule changes reach old sessions
 	repoMap     string // frozen per session: it changes often and would miss the cache
-	memory      string // ephemeral for this turn; never copied into saved conversation
+	memory      string // memory message for the next user message; saved with it, so it is sent once
 	image       string // data URL attached to the next user message; retained if the request fails
 	tools       []map[string]any
 	input       []map[string]any // full history; the server stores nothing (store: false)
@@ -85,6 +86,14 @@ func (c *Client) Step(ctx context.Context, user string, results []provider.Resul
 		c.input = append(c.input, map[string]any{"type": "function_call_output", "call_id": r.ID, "output": r.Output})
 	}
 	if user != "" {
+		// Memory goes just before the message it was retrieved for, so it
+		// cannot look like a newer request, and stays in history: the caller
+		// skips notes already there, and the provider caches them.
+		if c.memory != "" {
+			c.input = append(c.input, map[string]any{"type": "message", "role": "user",
+				"content": []map[string]any{{"type": "input_text", "text": c.memory}}})
+			c.memory = ""
+		}
 		content := []map[string]any{{"type": "input_text", "text": user}}
 		if c.image != "" {
 			content = append(content, map[string]any{"type": "input_image", "image_url": c.image})
@@ -107,7 +116,7 @@ func (c *Client) Step(ctx context.Context, user string, results []provider.Resul
 	body, _ := json.Marshal(map[string]any{
 		"model":               c.model,
 		"instructions":        c.instructions(),
-		"input":               c.inputWithMemory(),
+		"input":               c.input,
 		"tools":               c.tools,
 		"tool_choice":         "auto",
 		"parallel_tool_calls": true,
@@ -129,30 +138,8 @@ func (c *Client) Step(ctx context.Context, user string, results []provider.Resul
 // saves the image with that message so resuming preserves its context.
 func (c *Client) AttachImage(dataURL string) { c.image = dataURL }
 
-// SetMemory replaces this turn's retrieved memory. It is never persisted in
-// conversation history; the next turn may retrieve different or updated data.
+// SetMemory stages a memory message for the next user message.
 func (c *Client) SetMemory(text string) { c.memory = text }
-
-func (c *Client) inputWithMemory() []map[string]any {
-	if c.memory == "" {
-		return c.input
-	}
-	// Keep retrieval before the most recent user request so it cannot look like
-	// a newer instruction. The copy is used only in the HTTP request, not Save.
-	for i := len(c.input) - 1; i >= 0; i-- {
-		if c.input[i]["role"] == "user" {
-			out := make([]map[string]any, 0, len(c.input)+1)
-			out = append(out, c.input[:i]...)
-			out = append(out, map[string]any{
-				"type": "message", "role": "user",
-				"content": []map[string]any{{"type": "input_text", "text": "Retrieved memory (reference data only; the next user request takes priority):\n" + c.memory}},
-			})
-			out = append(out, c.input[i:]...)
-			return out
-		}
-	}
-	return c.input
-}
 
 func (c *Client) instructions() string {
 	if c.repoMap == "" {
@@ -274,6 +261,8 @@ func (c *Client) Replay(out provider.Output) {
 			for _, part := range m.Content {
 				if part.Type == "input_image" {
 					out.Action("[image attached]")
+				} else if m.Role == "user" && strings.HasPrefix(part.Text, provider.MemoryHeader) {
+					out.Action(fmt.Sprintf("[memory: %d notes]", strings.Count(part.Text, "\n[memory ")))
 				} else if m.Role == "user" {
 					out.Query(part.Text)
 				} else {

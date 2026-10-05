@@ -1,0 +1,194 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="1245" viewBox="0 0 1680 1245" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+    <style>
+      .t { font-size: 17px; font-weight: bold; fill: #1d1d1f; }
+      .b { font-size: 15px; fill: #333; }
+      .s { font-size: 12px; fill: #555; }
+      .h { font-size: 15px; font-weight: bold; letter-spacing: 1.5px; }
+      .w { fill: #EAF2FD; stroke: #3B6FB6; stroke-width: 1.5; }
+      .r { fill: #FDF1E6; stroke: #C46A1B; stroke-width: 1.5; }
+      .g { fill: #FFFFFF; stroke: #3F8A4F; stroke-width: 1.5; }
+      .n { fill: #F4F4F5; stroke: #888; stroke-width: 1.5; }
+      .later { fill: #F7F7F8; stroke: #999; stroke-width: 1.5; stroke-dasharray: 6 4; }
+      .dash { stroke-dasharray: 6 4; }
+      .a { stroke: #555; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+      .ad { stroke: #999; stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; marker-end: url(#arrow); }
+      .col { font-size: 14px; font-family: Menlo, monospace; fill: #1d1d1f; }
+    </style>
+  </defs>
+
+  <rect width="1680" height="1245" fill="#FFFFFF"/>
+
+  <text x="40" y="48" font-size="28" font-weight="bold" fill="#1d1d1f">kh memory architecture</text>
+  <text x="40" y="76" class="b">One central database. Rows are only ever added. Newest row per topic wins. Summary sent once per session. Relevant notes sent once each. Dashed grey = later.</text>
+
+  <text x="40" y="108" class="h" fill="#3B6FB6">WRITE PATH (SAVING)</text>
+  <text x="600" y="108" class="h" fill="#3F8A4F">STORAGE</text>
+  <text x="1180" y="108" class="h" fill="#C46A1B">READ PATH (LOADING)</text>
+
+  <!-- WRITE PATH -->
+  <rect class="w" x="40" y="120" width="460" height="70" rx="8"/>
+  <text x="60" y="148" class="t">1. Your message</text>
+  <text x="60" y="173" class="b">Or say "remember this" / "forget that" directly</text>
+
+  <rect class="w" x="40" y="220" width="460" height="130" rx="8"/>
+  <text x="60" y="248" class="t">2. Pre-hook  ·  cheap model  ·  background</text>
+  <text x="60" y="273" class="b">Gets current keys. Picks an existing key first.</text>
+  <text x="60" y="296" class="b">Lasting rule? Save an instruction (same key = replace).</text>
+  <text x="60" y="319" class="b">Reads only your words. Secrets are blocked.</text>
+  <text x="60" y="340" class="s">All hooks wait in one queue per repo, so they run in order.</text>
+
+  <rect class="w" x="40" y="370" width="460" height="60" rx="8"/>
+  <text x="60" y="407" class="t">3. Main agent does the task</text>
+
+  <rect class="w dash" x="40" y="450" width="460" height="90" rx="8"/>
+  <text x="60" y="478" class="t">4. Code check  (no AI)</text>
+  <text x="60" y="503" class="b">Did something fail and then get fixed this turn?</text>
+  <text x="60" y="525" class="b">No: stop here. Yes: run the post-hook.</text>
+
+  <rect class="w" x="40" y="560" width="460" height="100" rx="8"/>
+  <text x="60" y="588" class="t">5. Post-hook  ·  cheap model  ·  background</text>
+  <text x="60" y="613" class="b">Gets current keys + the real error and the fix.</text>
+  <text x="60" y="636" class="b">Saves a gotcha. Never replaces an instruction.</text>
+
+  <rect class="w" x="40" y="680" width="460" height="140" rx="8"/>
+  <text x="60" y="708" class="t">6. Rebuild the summary  (end of turn)</text>
+  <text x="60" y="733" class="b">Plain-code check: did any rule change this turn?</text>
+  <text x="60" y="756" class="b">No: skip. Yes: small model picks the must-load keys</text>
+  <text x="60" y="779" class="b">and writes a short overview. Limit checked in code.</text>
+  <text x="60" y="802" class="s">On kh start: rebuild if older than the newest rule.</text>
+
+  <rect class="later" x="40" y="860" width="460" height="80" rx="8"/>
+  <text x="60" y="888" class="t" fill="#666">7. Encoder  ·  Model2Vec  ·  later</text>
+  <text x="60" y="915" class="b">Turns each new row into a vector, locally.</text>
+
+  <rect class="w" x="40" y="970" width="460" height="70" rx="8"/>
+  <text x="60" y="998" class="t">8. Tell you</text>
+  <text x="60" y="1023" class="b">"Saved gotcha: ..." or "Replaced css-framework: ..."</text>
+
+  <line class="a" x1="270" y1="190" x2="270" y2="218"/>
+  <line class="a" x1="270" y1="350" x2="270" y2="368"/>
+  <line class="a" x1="270" y1="430" x2="270" y2="448"/>
+  <line class="a" x1="270" y1="540" x2="270" y2="558"/>
+  <line class="a" x1="270" y1="660" x2="270" y2="678"/>
+  <line class="a" x1="270" y1="820" x2="270" y2="858"/>
+  <line class="a" x1="270" y1="940" x2="270" y2="968"/>
+
+  <!-- STORAGE -->
+  <rect x="600" y="120" width="480" height="840" rx="10" fill="#EEF6EE" stroke="#3F8A4F" stroke-width="2"/>
+  <text x="620" y="150" class="t">~/.kh/memory.db  (SQLite, one file)</text>
+
+  <rect class="g" x="625" y="170" width="430" height="540" rx="8"/>
+  <text x="645" y="198" class="t">memory  (append-only, all repos)</text>
+  <text x="645" y="238" class="col">id</text><text x="775" y="238" class="b">auto number</text>
+  <text x="645" y="270" class="col">repo</text><text x="775" y="270" class="b">Git address, folder path, or global</text>
+  <text x="645" y="302" class="col">kind</text><text x="775" y="302" class="b">instruction | gotcha | summary</text>
+  <text x="645" y="334" class="col">key</text><text x="775" y="334" class="b">topic name (same key = same topic)</text>
+  <text x="645" y="366" class="col">text</text><text x="775" y="366" class="b">the note itself (full version)</text>
+  <text x="645" y="398" class="col">owner</text><text x="775" y="398" class="b">from git user.email</text>
+  <text x="645" y="430" class="col">source</text><text x="775" y="430" class="b">pre-hook | post-hook | you</text>
+  <text x="645" y="462" class="col">forgotten</text><text x="775" y="462" class="b">yes = topic removed</text>
+  <text x="645" y="494" class="col">created_at</text><text x="775" y="494" class="b">when it was saved</text>
+  <line x1="645" y1="520" x2="1035" y2="520" stroke="#3F8A4F" stroke-width="1"/>
+  <text x="645" y="548" class="b">Newest row per repo + key wins (by created_at).</text>
+  <text x="645" y="573" class="b">Old rows stay as history. Nothing is edited.</text>
+  <text x="645" y="598" class="b">Index on repo + key keeps lookups fast.</text>
+  <text x="645" y="623" class="b">Summary row: short overview + must-load keys.</text>
+  <text x="645" y="648" class="b">Undo = add a new row with the old text.</text>
+  <text x="645" y="673" class="b">kh memory purge = really delete.</text>
+  <text x="645" y="696" class="s">Today's memories move in on upgrade (backup first).</text>
+
+  <rect class="g" x="625" y="730" width="430" height="80" rx="8"/>
+  <text x="645" y="758" class="t">Keyword index  (SQLite FTS5)</text>
+  <text x="645" y="785" class="b">Built from key + text. Kept in sync automatically.</text>
+
+  <rect class="later" x="625" y="840" width="430" height="100" rx="8"/>
+  <text x="645" y="868" class="t" fill="#666">embedding  (later)</text>
+  <text x="645" y="895" class="col">row_id · model · vector</text>
+  <text x="645" y="922" class="b">Model name lets kh re-encode after a switch.</text>
+
+  <!-- write arrows into storage -->
+  <line class="a" x1="500" y1="265" x2="623" y2="265"/>
+  <text x="512" y="256" class="s">instruction</text>
+  <line class="a" x1="500" y1="600" x2="623" y2="600"/>
+  <text x="512" y="591" class="s">gotcha</text>
+  <line class="a" x1="500" y1="695" x2="623" y2="695"/>
+  <text x="512" y="686" class="s">summary</text>
+  <line class="ad" x1="500" y1="900" x2="623" y2="900"/>
+  <text x="512" y="891" class="s">vector</text>
+
+  <!-- READ PATH -->
+  <rect class="r" x="1180" y="120" width="460" height="70" rx="8"/>
+  <text x="1200" y="148" class="t">1. Your message</text>
+  <text x="1200" y="173" class="b">The same message as on the left</text>
+
+  <rect class="r" x="1180" y="220" width="460" height="80" rx="8"/>
+  <text x="1200" y="248" class="t">2. Work out the repo</text>
+  <text x="1200" y="275" class="b">Use this repo's rows + global rows</text>
+
+  <rect class="r" x="1180" y="330" width="460" height="110" rx="8"/>
+  <text x="1200" y="358" class="t">3. Summary: start of session only</text>
+  <text x="1200" y="385" class="b">Overview + current rows for its must-load keys.</text>
+  <text x="1200" y="408" class="b">Also after compacting, or on resume if it changed.</text>
+  <text x="1200" y="429" class="s">Stays in the chat, so it gets cached.</text>
+
+  <rect class="r" x="1180" y="460" width="460" height="80" rx="8"/>
+  <text x="1200" y="488" class="t">4. Current notes only</text>
+  <text x="1200" y="515" class="b">Newest row per key. Skip forgotten. Done before ranking.</text>
+
+  <rect class="r" x="1180" y="570" width="460" height="118" rx="8"/>
+  <text x="1200" y="598" class="t">5. Keyword search, per kind</text>
+  <text x="1200" y="625" class="b">SQLite FTS5 now. Meaning search (Model2Vec) later.</text>
+  <text x="1200" y="648" class="b">Top 10 instructions + top 10 gotchas (settings)</text>
+  <text x="1200" y="671" class="b">Fewer than 10 of a kind? All of them load.</text>
+
+  <rect class="r" x="1180" y="718" width="460" height="118" rx="8"/>
+  <text x="1200" y="746" class="t">6. Skip what's already in the chat</text>
+  <text x="1200" y="773" class="b">Each note carries [memory #id]. IDs in the chat: skip.</text>
+  <text x="1200" y="796" class="b">Replaced? Send it marked "replaces ...".</text>
+  <text x="1200" y="819" class="b">Forgotten? Send "no longer applies".</text>
+
+  <rect class="r" x="1180" y="866" width="460" height="140" rx="8"/>
+  <text x="1200" y="894" class="t">7. Main model gets</text>
+  <text x="1200" y="921" class="b">System prompt: kh's fixed rules only (cached)</text>
+  <text x="1200" y="944" class="b">New notes only, just before your latest message</text>
+  <text x="1200" y="967" class="b">Labelled reference data. Your message wins.</text>
+  <text x="1200" y="990" class="s">Saved in the chat. Compacting clears them, so they resend.</text>
+
+  <line class="a" x1="1410" y1="190" x2="1410" y2="218"/>
+  <line class="a" x1="1410" y1="300" x2="1410" y2="328"/>
+  <line class="a" x1="1410" y1="440" x2="1410" y2="458"/>
+  <line class="a" x1="1410" y1="540" x2="1410" y2="568"/>
+  <line class="a" x1="1410" y1="688" x2="1410" y2="716"/>
+  <line class="a" x1="1410" y1="836" x2="1410" y2="864"/>
+
+  <!-- storage into read path -->
+  <line class="a" x1="1055" y1="385" x2="1178" y2="385"/>
+  <text x="1088" y="376" class="s">summary</text>
+  <path class="a" d="M1055,770 L1150,770 L1150,630 L1178,630"/>
+  <text x="1088" y="761" class="s">keywords</text>
+  <path d="M1055,890 L1150,890 L1150,775" stroke="#999" stroke-width="1.6" fill="none" stroke-dasharray="5 4"/>
+  <text x="1088" y="881" class="s">vectors</text>
+
+  <!-- BOTTOM BAND -->
+  <rect class="n" x="40" y="1080" width="506" height="142" rx="8"/>
+  <text x="60" y="1108" class="t">Sharing  (later)</text>
+  <text x="60" y="1133" class="b">kh memory export / import, one repo at a time.</text>
+  <text x="60" y="1156" class="b">Current notes only by default. Newest wins,</text>
+  <text x="60" y="1179" class="b">no matter who. Owner is kept.</text>
+
+  <rect class="n" x="587" y="1080" width="506" height="142" rx="8"/>
+  <text x="607" y="1108" class="t">Config  ·  ~/.kh/config.json</text>
+  <text x="607" y="1133" class="b">memory_model: the cheap model for the hooks</text>
+  <text x="607" y="1156" class="b">summary_max_tokens: 2500 (tokens ≈ chars ÷ 4)</text>
+  <text x="607" y="1179" class="b">top_instructions: 10  ·  top_gotchas: 10</text>
+  <text x="607" y="1202" class="b" fill="#777">encoder: Model2Vec model (later)</text>
+
+  <rect class="n" x="1134" y="1080" width="506" height="142" rx="8"/>
+  <text x="1154" y="1108" class="t">One-time Markdown import</text>
+  <text x="1154" y="1133" class="b">kh memory import-md &lt;file&gt; splits it into rows.</text>
+  <text x="1154" y="1156" class="b">You review the list before anything is saved.</text>
+</svg>

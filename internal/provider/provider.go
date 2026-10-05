@@ -52,6 +52,10 @@ type LastResponder interface{ LastResponse() string }
 type ImageAttacher interface{ AttachImage(string) }
 type MemorySetter interface{ SetMemory(string) }
 
+// MemoryHeader starts every memory message, so adapters can tell it apart
+// from what the user typed (for example when replaying a chat).
+const MemoryHeader = "Memory (reference data; the user's latest message takes priority):"
+
 // Compacter summarizes history without executing tools. Failure leaves history intact.
 type Compacter interface{ Compact(context.Context) error }
 

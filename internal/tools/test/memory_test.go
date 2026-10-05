@@ -17,30 +17,32 @@ func TestMemoryTool(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	tool := tools.Memory(s, "repo:/project")
+	tool := tools.Memory(s, "github.com/me/app", "me@example.com")
 	call := func(in map[string]any) (string, error) {
 		b, _ := json.Marshal(in)
 		return tool.Run(context.Background(), b)
 	}
-	if _, err := call(map[string]any{"action": "remember", "scope": "repo", "kind": "preference", "key": "tmux", "title": "Visible tmux reviews", "summary": "Show reviews on right", "keywords": "claude codex review panes", "detail": "Put Claude above Codex."}); err != nil {
-		t.Fatal(err)
+	if out, err := call(map[string]any{"action": "remember", "kind": "instruction", "key": "review-panes", "text": "Show reviewers in the right-hand pane."}); err != nil || !strings.Contains(out, "remembered [memory #") {
+		t.Fatalf("remember: %q %v", out, err)
 	}
-	list, err := call(map[string]any{"action": "search", "query": "codex review"})
-	if err != nil || !strings.Contains(list, "Visible tmux reviews") || strings.Contains(list, "Put Claude above Codex") {
-		t.Fatalf("discovery: %q %v", list, err)
+	if out, err := call(map[string]any{"action": "remember", "kind": "instruction", "key": "review-panes", "text": "Show reviewers below the chat."}); err != nil || !strings.Contains(out, "replaced") {
+		t.Fatalf("replace: %q %v", out, err)
 	}
-	entries, err := s.Find(context.Background(), "repo:/project", "codex", 1)
-	if err != nil {
-		t.Fatal(err)
+	list, err := call(map[string]any{"action": "search", "query": "reviewers pane"})
+	if err != nil || !strings.Contains(list, "below the chat") || strings.Contains(list, "right-hand") {
+		t.Fatalf("search should show only the current version: %q %v", list, err)
 	}
-	detail, err := call(map[string]any{"action": "get", "id": entries[0].ID})
-	if err != nil || !strings.Contains(detail, "Put Claude above Codex") {
-		t.Fatalf("get: %q %v", detail, err)
+	cur, _ := s.Current(context.Background(), "github.com/me/app", "")
+	if len(cur) != 1 || cur[0].Owner != "me@example.com" || cur[0].Source != "you" {
+		t.Fatalf("stored: %+v", cur)
 	}
-	if _, err := call(map[string]any{"action": "forget", "scope": "repo", "key": "tmux"}); err != nil {
-		t.Fatal(err)
+	if _, err := call(map[string]any{"action": "remember", "kind": "instruction", "key": "deploy", "text": "Deploy with password: hunter22"}); err == nil {
+		t.Fatal("stored a secret")
 	}
-	if _, err := call(map[string]any{"action": "get", "id": entries[0].ID}); err == nil {
-		t.Fatal("forgotten memory still loads")
+	if out, err := call(map[string]any{"action": "forget", "key": "review-panes"}); err != nil || out != "forgot review-panes" {
+		t.Fatalf("forget: %q %v", out, err)
+	}
+	if out, _ := call(map[string]any{"action": "search", "query": "reviewers"}); out != "no matching memories" {
+		t.Fatalf("forgotten note still found: %q", out)
 	}
 }

@@ -90,17 +90,29 @@ A spawned agent stays in chat after its task, knows its own and parent's address
 
 ## Memory
 
-One local SQLite database (`~/.kh/memory.db`) holds durable preferences, workflows, and project facts—no skill files. `discovery` stores short searchable metadata, and `detail` stores the full text linked by foreign key. At each turn, kh searches discovery records for this repo and global preferences, loads at most three relevant details (bounded to 1,400 characters), and supplies them as ephemeral context before the user message—without storing them in session history or bloating the stable system prompt. The `memory` tool supports search/get/remember/forget on demand. Explicitly requested lasting memories replace records with the same scope and key; the current request always wins. Do not store secrets.
+One local SQLite database (`~/.kh/memory.db`) holds every repo's memory in one append-only table—no Markdown memory files. Each row is an **instruction** (a rule you set), a **gotcha** (a trap kh found while working), or the repo's **summary**. A change adds a new row with the same key; the newest row per repo and key is the current version, and older rows stay as history. Repos are named by their normalized Git remote (credentials stripped), so moved folders and other clones share memory; without a remote, the Git root or folder path is used. `global` rows apply to every repo.
+
+kh saves memory by itself in the background with a cheap model (`memory_model`), one job at a time per process:
+
+- **Pre-hook**, on each message: saves lasting rules you state ("from now on…"), reusing an existing key to replace a rule. It reads only your words.
+- **Post-hook**, after a turn: runs only when a tool call failed and a later call of the same tool succeeded, and saves a durable gotcha from that evidence. A gotcha never replaces an instruction.
+- **Summary**, at the end of a turn when a note changed: a short overview plus the keys that must always load, rebuilt from current notes (never from the old summary) and trimmed in code to `summary_max_tokens`.
+
+Hooks save only against the version they were shown, so a slow or stale decision is dropped rather than overwriting a newer change. Text that looks like a secret is refused. Each save prints a `(memory)` line between turns, so a wrong one can be forgotten.
+
+Before each message, kh sends one memory message just before it: the summary (once per chat), new versions of notes already sent, and the top `top_instructions` instructions and `top_gotchas` gotchas by keyword search (SQLite FTS5) over current rows only. Notes are labelled `[memory #id]` and saved in the chat, so each is sent once; compacting drops them, and they are sent again. Memory is reference data: your latest message wins.
 
 ```bash
-kh memory list                            # short discovery entries for this repo and global scope
-kh memory search 'review tmux'            # search discovery metadata
-kh memory get 1                           # load one linked detail
-kh memory remember repo review workflow 'Visible review' 'Show both reviewers on the right' 'Run Claude above Codex and verify direct messaging.' 'claude codex tmux'
-kh memory forget repo review              # delete discovery and detail together
+kh memory list                                      # summary and current notes for this repo and global
+kh memory search 'css styling'                      # matching instructions and gotchas
+kh memory history repo css-framework                # every version of one topic
+kh memory remember repo instruction css-framework 'Use plain CSS.'
+kh memory forget repo css-framework                 # stop using it; history kept
+kh memory purge repo css-framework                  # delete every version
+kh memory import-md AGENTS.md                       # one-time: split a rules file into notes, after review
 ```
 
-Use `global` instead of `repo` for preferences that apply across projects. The harness reads/writes the DB itself, so agents do not need to curate files. The database lives outside Git and is private to the local user.
+The `memory` tool lets the model search, and remember or forget when you ask. On first open, records from the earlier discovery/detail tables move into the new table. The database lives outside Git and is private to the local user.
 
 ## Config
 
@@ -110,7 +122,7 @@ Optional `~/.kh/config.json`; set only what you want to change:
 { "provider": "codex", "model": "gpt-6-luna", "effort": "medium", "model_idle_timeout_sec": 120, "timeout_sec": 30, "output_cap": 20000, "map_cap": 0 }
 ```
 
-Also `web_search` (on by default), `system`, `safe`, `auto`, `sandbox` and `writable` (extra dirs bash may write to). Flags override the file.
+Also `web_search` (on by default), `system`, `safe`, `auto`, `sandbox` and `writable` (extra dirs bash may write to). Memory: `memory_model` (cheap model for the background hooks; empty uses the chat model, `"off"` disables automatic saving), `summary_max_tokens` (2500, estimated as characters ÷ 4), `top_instructions` and `top_gotchas` (10 each). Flags override the file.
 
 Model connections time out after 120 seconds without headers or streamed bytes; `model_idle_timeout_sec` changes that silence limit (zero or negative uses 120). This is not a total generation timeout: incoming bytes keep an otherwise healthy request alive. Dropped connections, truncated streams before visible output, and transient HTTP failures retry after one second, with a one-minute recovery budget that also bounds retried requests. A server's longer `Retry-After` is respected. Retry notices explain what happened; Ctrl-C cancels requests and retry waits. Once reply text or a web-search action has been displayed, a broken stream fails rather than replaying and duplicating output. Partial local tool calls are discarded and never executed. Authentication lock acquisition and token refresh share a 30-second deadline and respect cancellation; single-use token refreshes are not automatically retried. Rebuild and restart existing chats to load this behavior; changing the silence setting also requires a restart.
 
@@ -129,10 +141,12 @@ Read-only commands (`rg`, `cat`, `ls`, `git diff`, ...) run without asking when 
 - `internal/provider/codex`: all Codex implementation code—client/protocol, authentication, stream parsing, retries, compaction—and its `test/` suite. Only Codex is currently implemented.
 - `internal/terminal`: per-chat input/history, cancellable approvals, and rendering. Adapters emit text, not terminal colors.
 - `internal/tools`: tool schemas and behavior; bash receives an approval interface instead of using global input.
+- `internal/memory`: the append-only notes table, keyword search, repo identity, secret filter, and building each message's memory.
+- `internal/learn`: the background pre-hook, post-hook, and summary rebuild, using any provider without tools.
 - `internal/session`: collision-resistant per-folder namespaces and atomic saves of versioned, backend-tagged opaque state. Legacy storage locations and pre-envelope Codex chats still resume.
 
 `provider` selects the API/auth adapter; `model` selects a model within that backend. `-provider codex` overrides the configured backend. Resuming uses the session's recorded backend; an explicit conflicting `-provider` is rejected. Switching backends starts a new chat rather than reinterpreting another provider's history. Spawned agents inherit the active provider, model, and effort, including command-line overrides.
 
 To add a backend, implement `provider.Provider`, emit through the injected `provider.Output`, and add its constructor/login route in `internal/backend/backend.go`. The loop, tools, UI, and session storage do not need backend-specific branches. Images, retrieved memory, compaction, and semantic last-response previews are explicit optional capabilities. Every adapter must honor context cancellation promptly and discard partial failed responses/unpaired tool calls before returning; add conformance tests for these guarantees. Keep credentials, request formats, streaming events, and private history inside the adapter; do not infer a backend from a model-name prefix.
 
-Architecture is discoverable with `kh memory search architecture` and `kh memory get <id>`; see [todo.md](todo.md) for completed implementation milestones.
+The memory design is drawn in [memory-architecture.png](memory-architecture.png).

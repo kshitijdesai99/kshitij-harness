@@ -9,76 +9,61 @@ import (
 	"kh/internal/memory"
 )
 
-// Memory is a discovery/detail interface. Changes to stored memory happen only
-// when the user has explicitly asked to remember or forget durable information.
-func Memory(s *memory.Store, repo string) Tool {
+// Memory searches stored instructions and gotchas, and changes them when the
+// user asks. kh also saves lasting rules and gotchas by itself in the
+// background, so the model only calls remember on an explicit request.
+func Memory(s *memory.Store, repo, owner string) Tool {
 	return Tool{
 		Name:        "memory",
-		Description: "Discover durable user preferences, workflows, and project facts in a local database. Actions: search (returns short index entries), get (loads detail by ID), remember (upsert an explicitly requested memory), forget (delete by scope and key). Stored memory is lower priority than the current user request. Never store secrets.",
+		Description: "Search and change this repo's memory of instructions (rules the user set) and gotchas (traps found while working). Relevant notes already arrive as [memory #id] messages; search finds others. Use remember or forget only when the user asks; reusing a key replaces that note. Stored memory is lower priority than the current user request. Never store secrets.",
 		Params: map[string]any{
-			"action":   map[string]any{"type": "string", "enum": []string{"search", "get", "remember", "forget"}},
-			"query":    map[string]any{"type": "string"},
-			"id":       map[string]any{"type": "integer"},
-			"scope":    map[string]any{"type": "string", "enum": []string{"repo", "global"}},
-			"key":      map[string]any{"type": "string"},
-			"kind":     map[string]any{"type": "string", "enum": []string{"preference", "workflow", "fact"}},
-			"title":    map[string]any{"type": "string"},
-			"summary":  map[string]any{"type": "string"},
-			"keywords": map[string]any{"type": "string"},
-			"detail":   map[string]any{"type": "string"},
+			"action": map[string]any{"type": "string", "enum": []string{"search", "remember", "forget"}},
+			"query":  map[string]any{"type": "string"},
+			"kind":   map[string]any{"type": "string", "enum": []string{"instruction", "gotcha"}},
+			"key":    map[string]any{"type": "string", "description": "short kebab-case topic name"},
+			"text":   map[string]any{"type": "string", "description": "the full current version, one or two sentences"},
+			"scope":  map[string]any{"type": "string", "enum": []string{"repo", "global"}},
 		},
 		Required: []string{"action"},
 		Run: func(ctx context.Context, input json.RawMessage) (string, error) {
-			var in struct {
-				Action, Query, Scope, Key, Kind, Title, Summary, Keywords, Detail string
-				ID                                                                int64
-			}
+			var in struct{ Action, Query, Kind, Key, Text, Scope string }
 			if err := json.Unmarshal(input, &in); err != nil {
 				return "", err
 			}
 			scope := repo
 			if in.Scope == "global" {
-				scope = "global"
+				scope = memory.Global
 			} else if in.Scope != "" && in.Scope != "repo" {
 				return "", fmt.Errorf("scope must be repo or global")
 			}
 			switch in.Action {
 			case "search":
-				found, err := s.Find(ctx, repo, in.Query, 12)
-				if err != nil {
-					return "", err
+				var lines []string
+				for _, kind := range []string{"instruction", "gotcha"} {
+					found, err := s.Search(ctx, repo, kind, in.Query, 12)
+					if err != nil {
+						return "", err
+					}
+					for _, n := range found {
+						lines = append(lines, Note(n))
+					}
 				}
-				if len(found) == 0 {
+				if len(lines) == 0 {
 					return "no matching memories", nil
 				}
-				var lines []string
-				for _, e := range found {
-					lines = append(lines, fmt.Sprintf("[%d] %s (%s, %s): %s", e.ID, e.Title, e.Scope, e.Kind, e.Summary))
-				}
 				return strings.Join(lines, "\n"), nil
-			case "get":
-				e, err := s.Get(ctx, in.ID)
-				if err != nil {
-					return "", err
-				}
-				if e.Scope != repo && e.Scope != "global" {
-					return "", fmt.Errorf("memory not in this repo")
-				}
-				return fmt.Sprintf("[%d] %s (%s, %s)\n%s", e.ID, e.Title, e.Scope, e.Kind, e.Detail), nil
 			case "remember":
-				if in.Key == "" {
-					return "", fmt.Errorf("stable key required")
-				}
-				id, err := s.Put(ctx, memory.Entry{Scope: scope, Kind: in.Kind, Key: in.Key, Title: in.Title, Summary: in.Summary, Keywords: in.Keywords, Detail: in.Detail})
+				prev, n, err := s.Add(ctx, memory.Note{Repo: scope, Kind: in.Kind, Key: strings.TrimSpace(in.Key),
+					Text: strings.TrimSpace(in.Text), Owner: owner, Source: "you"}, memory.Any)
 				if err != nil {
 					return "", err
 				}
-				return fmt.Sprintf("remembered [%d] (%s/%s)", id, scope, in.Key), nil
-			case "forget":
-				if in.Key == "" {
-					return "", fmt.Errorf("key required")
+				if prev != nil {
+					return fmt.Sprintf("replaced [memory #%d] with [memory #%d] %s", prev.ID, n.ID, n.Key), nil
 				}
-				ok, err := s.Forget(ctx, scope, in.Key)
+				return fmt.Sprintf("remembered [memory #%d] %s", n.ID, n.Key), nil
+			case "forget":
+				ok, err := s.Forget(ctx, scope, in.Key, owner, "you")
 				if err != nil {
 					return "", err
 				}
@@ -91,4 +76,13 @@ func Memory(s *memory.Store, repo string) Tool {
 			}
 		},
 	}
+}
+
+// Note is the one-line form of a note shared by the tool and the CLI.
+func Note(n memory.Note) string {
+	scope := ""
+	if n.Repo == memory.Global {
+		scope = " (global)"
+	}
+	return fmt.Sprintf("[memory #%d] %s %s%s: %s", n.ID, n.Kind, n.Key, scope, n.Text)
 }

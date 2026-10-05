@@ -9,11 +9,13 @@ import (
 	"os/signal"
 	"runtime"
 	"strings"
+	"time"
 
 	"kh/internal/backend"
 	"kh/internal/config"
 	"kh/internal/help"
 	"kh/internal/image"
+	"kh/internal/learn"
 	"kh/internal/memory"
 	"kh/internal/provider"
 	"kh/internal/repomap"
@@ -119,7 +121,7 @@ func main() {
 			exit(agentCommand(args, cfg))
 			return
 		case "memory":
-			exit(memoryCommand(args[1:]))
+			exit(memoryCommand(args[1:], cfg))
 			return
 		}
 	}
@@ -141,7 +143,17 @@ func main() {
 	defer db.Close()
 	cwd, err := os.Getwd()
 	exit(err)
-	repoScope := memory.RepoScope(cwd)
+	repoScope, owner := memory.RepoScope(cwd), memory.Owner(cwd)
+	var learner *learn.Learner
+	if cfg.MemoryModel != "off" {
+		learner = learn.New(db, repoScope, owner, hookModel(cfg), cfg.SummaryMaxTokens*4)
+		// Give queued hooks time to finish so a one-shot task's lesson is kept.
+		defer func() {
+			for _, n := range learner.Close(30 * time.Second) {
+				fmt.Fprintln(os.Stderr, terminal.Color(os.Stderr, terminal.Muted, "(memory) "+n))
+			}
+		}()
+	}
 	console := terminal.NewConsole(os.Stdin, os.Stdout, os.Stderr)
 	defer console.Close()
 	ui := terminal.Renderer{Out: os.Stdout, Err: os.Stderr}
@@ -158,7 +170,7 @@ func main() {
 	if cfg.Sandbox && runtime.GOOS != "darwin" {
 		fmt.Fprintln(os.Stderr, "warning: kh's bash sandbox is macOS-only; shell commands are not OS-sandboxed on this platform. Approval checks still apply.")
 	}
-	ts := []tools.Tool{tools.Bash(cfg, console), tools.Edit, tools.Memory(db, repoScope), agentTool(cfg, ui.Action)}
+	ts := []tools.Tool{tools.Bash(cfg, console), tools.Edit, tools.Memory(db, repoScope, owner), agentTool(cfg, ui.Action)}
 	if *resume {
 		*id, err = session.Latest()
 		exit(err)
@@ -192,7 +204,8 @@ func main() {
 
 	exportModel(p, cfg.Provider)
 	c := chat{model: p, backend: cfg.Provider, id: *id, repo: repoScope,
-		memory: db, input: console, ui: ui, tools: ts, seen: fromFile}
+		memory: db, learn: learner, input: console, ui: ui, tools: ts, seen: fromFile,
+		budget: memory.Budget{SummaryChars: cfg.SummaryMaxTokens * 4, TopInstructions: cfg.TopInstructions, TopGotchas: cfg.TopGotchas}}
 	turn := func(msg string) error { return c.turn(ctx, msg) }
 
 	setAgentState("waiting")

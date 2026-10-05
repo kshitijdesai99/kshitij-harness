@@ -1,48 +1,58 @@
-// Package memory stores small discovery records and separately loaded details.
+// Package memory keeps instructions, gotchas and a summary per repo in one
+// append-only SQLite table. A change adds a row; the newest row for a
+// repo+key is the current version and older rows are history.
 package memory
 
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
-	"unicode"
+	"time"
+	"unicode/utf8"
 
 	_ "modernc.org/sqlite"
 )
 
-type Store struct{ db *sql.DB }
+const (
+	Global     = "global"                         // repo value for rules that apply everywhere
+	SummaryKey = "summary"                        // the one summary topic per repo
+	MaxText    = 800                              // notes stay short so loading them stays cheap
+	timeLayout = "2006-01-02T15:04:05.000000000Z" // fixed width, so text order is time order
+)
 
-type Entry struct {
-	ID       int64
-	Scope    string // "global" or repo:<absolute path>
-	Kind     string // preference, workflow, fact
-	Key      string // stable identity for replacing an outdated memory
-	Title    string
-	Summary  string
-	Keywords string
-	Detail   string
+var (
+	Kinds   = []string{"instruction", "gotcha", "summary"}
+	Sources = []string{"you", "pre-hook", "post-hook", "summary", "import"}
+	// ErrStale means the topic changed after a hook read it; the hook's
+	// decision was made on old state, so it is dropped rather than saved.
+	ErrStale = errors.New("memory: topic changed since it was read")
+)
+
+// Any skips the expected-revision check in Add.
+const Any int64 = -1
+
+type Note struct {
+	ID        int64
+	Repo      string // Global, a normalized Git remote, or an absolute path
+	Kind      string // instruction, gotcha, summary
+	Key       string
+	Text      string
+	Refs      []string // summary only: keys that are always loaded
+	Owner     string
+	Source    string
+	Forgotten bool
+	CreatedAt time.Time
 }
+
+type Store struct{ db *sql.DB }
 
 func Path() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".kh", "memory.db")
-}
-
-// RepoScope is stable across subdirectories of the same Git project.
-func RepoScope(dir string) string {
-	if root, err := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel").Output(); err == nil {
-		dir = strings.TrimSpace(string(root))
-	}
-	abs, err := filepath.Abs(dir)
-	if err != nil {
-		return "repo:" + dir
-	}
-	return "repo:" + abs
 }
 
 func Open(path string) (*Store, error) {
@@ -53,173 +63,306 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1) // connection-local foreign_keys setting, and one writer per process
+	db.SetMaxOpenConns(1) // one writer per process; other kh processes wait on busy_timeout
 	for _, stmt := range []string{
 		"PRAGMA busy_timeout=5000",
-		"PRAGMA foreign_keys=ON",
-		`CREATE TABLE IF NOT EXISTS discovery (
+		"PRAGMA journal_mode=WAL", // spawned agents read while another writes
+		"PRAGMA secure_delete=ON", // purge overwrites deleted text instead of leaving it in free pages
+		`CREATE TABLE IF NOT EXISTS notes (
             id INTEGER PRIMARY KEY,
-            scope TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL,
-            title TEXT NOT NULL, summary TEXT NOT NULL, keywords TEXT NOT NULL DEFAULT '',
-            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-            UNIQUE(scope, key))`,
-		`CREATE INDEX IF NOT EXISTS discovery_scope ON discovery(scope, kind)`,
-		`CREATE TABLE IF NOT EXISTS detail (
-            discovery_id INTEGER PRIMARY KEY REFERENCES discovery(id) ON DELETE CASCADE,
-            body TEXT NOT NULL)`,
+            repo TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, text TEXT NOT NULL,
+            refs TEXT NOT NULL DEFAULT '', owner TEXT NOT NULL DEFAULT '', source TEXT NOT NULL,
+            forgotten INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)`,
+		`CREATE INDEX IF NOT EXISTS notes_topic ON notes(repo, key, created_at, id)`,
+		`CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(key, text, content='notes', content_rowid='id')`,
+		// Rows are never updated, so insert and delete (purge) keep the index in step.
+		`CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
+            INSERT INTO notes_fts(rowid, key, text) VALUES (new.id, new.key, new.text); END`,
+		`CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
+            INSERT INTO notes_fts(notes_fts, rowid, key, text) VALUES ('delete', old.id, old.key, old.text); END`,
 	} {
 		if _, err = db.Exec(stmt); err != nil {
 			db.Close()
 			return nil, fmt.Errorf("memory: %w", err)
 		}
 	}
+	s := &Store{db}
+	if err = s.migrate(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("memory: migrate: %w", err)
+	}
 	if err = os.Chmod(path, 0600); err != nil {
 		db.Close()
 		return nil, err
 	}
-	return &Store{db}, nil
+	return s, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
 
-func (s *Store) Put(ctx context.Context, e Entry) (int64, error) {
-	if e.Scope != "global" && !strings.HasPrefix(e.Scope, "repo:") {
-		return 0, fmt.Errorf("memory: scope must be global or repo:<path>")
+// latest selects the newest row per topic for one repo plus global.
+const latest = `WITH latest AS (
+    SELECT n.* FROM notes n WHERE n.repo IN (?, 'global') AND n.id = (
+        SELECT m.id FROM notes m WHERE m.repo = n.repo AND m.key = n.key
+        ORDER BY m.created_at DESC, m.id DESC LIMIT 1))`
+
+const columns = `id, repo, kind, key, text, refs, owner, source, forgotten, created_at`
+
+func scan(rows *sql.Rows) ([]Note, error) {
+	defer rows.Close()
+	var out []Note
+	for rows.Next() {
+		var n Note
+		var refs, at string
+		if err := rows.Scan(&n.ID, &n.Repo, &n.Kind, &n.Key, &n.Text, &refs, &n.Owner, &n.Source, &n.Forgotten, &at); err != nil {
+			return nil, err
+		}
+		if refs != "" {
+			n.Refs = strings.Split(refs, "\n")
+		}
+		n.CreatedAt, _ = time.Parse(timeLayout, at)
+		out = append(out, n)
 	}
-	if e.Kind != "preference" && e.Kind != "workflow" && e.Kind != "fact" {
-		return 0, fmt.Errorf("memory: kind must be preference, workflow, or fact")
+	return out, rows.Err()
+}
+
+func valid(n Note) error {
+	if n.Repo == "" || !one(n.Kind, Kinds) || !one(n.Source, Sources) {
+		return fmt.Errorf("memory: repo, kind (instruction|gotcha|summary) and source are required")
 	}
-	if strings.TrimSpace(e.Key) == "" || strings.TrimSpace(e.Title) == "" || strings.TrimSpace(e.Summary) == "" || strings.TrimSpace(e.Detail) == "" {
-		return 0, fmt.Errorf("memory: key, title, summary, and detail are required")
+	if strings.TrimSpace(n.Key) == "" || len(n.Key) > 100 || strings.ContainsAny(n.Key, "\n\r") {
+		return fmt.Errorf("memory: key must be one short line")
 	}
-	if len(e.Summary) > 240 || len(e.Detail) > 6000 || len(e.Key) > 100 || len(e.Title) > 100 || len(e.Keywords) > 400 {
-		return 0, fmt.Errorf("memory: record too large; keep memories short")
+	if (n.Kind == "summary") != (n.Key == SummaryKey) {
+		return fmt.Errorf("memory: only the summary uses the %q key", SummaryKey)
+	}
+	if !n.Forgotten && strings.TrimSpace(n.Text) == "" {
+		return fmt.Errorf("memory: text is required")
+	}
+	if n.Kind != "summary" && utf8.RuneCountInString(n.Text) > MaxText {
+		return fmt.Errorf("memory: keep notes under %d characters", MaxText)
+	}
+	if Secret(n.Text) || Secret(n.Key) {
+		return fmt.Errorf("memory: refusing to store what looks like a secret")
+	}
+	return nil
+}
+
+func one(v string, set []string) bool {
+	for _, s := range set {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// Add appends a new version of a topic and returns the version it replaced,
+// if any. expect is the current row id the caller decided against (0 = the
+// topic did not exist); a mismatch returns ErrStale. Only the user may move
+// a topic to a different kind, so a gotcha can never overwrite an instruction.
+func (s *Store) Add(ctx context.Context, n Note, expect int64) (prev *Note, saved Note, err error) {
+	if err = valid(n); err != nil {
+		return nil, n, err
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, err
+		return nil, n, err
 	}
 	defer tx.Rollback()
-	var id int64
-	err = tx.QueryRowContext(ctx, `INSERT INTO discovery(scope,kind,key,title,summary,keywords)
-        VALUES(?,?,?,?,?,?) ON CONFLICT(scope,key) DO UPDATE SET kind=excluded.kind,
-        title=excluded.title, summary=excluded.summary, keywords=excluded.keywords,
-        updated_at=datetime('now') RETURNING id`, e.Scope, e.Kind, e.Key, e.Title, e.Summary, e.Keywords).Scan(&id)
+	rows, err := tx.QueryContext(ctx, `SELECT `+columns+` FROM notes WHERE repo = ? AND key = ?
+        ORDER BY created_at DESC, id DESC LIMIT 1`, n.Repo, n.Key)
+	if err != nil {
+		return nil, n, err
+	}
+	cur, err := scan(rows)
+	if err != nil {
+		return nil, n, err
+	}
+	var curID int64
+	if len(cur) == 1 {
+		curID = cur[0].ID
+		if !cur[0].Forgotten {
+			prev = &cur[0]
+		}
+	}
+	if expect != Any && expect != curID {
+		return nil, n, ErrStale
+	}
+	if prev != nil && prev.Kind != n.Kind && n.Source != "you" {
+		return nil, n, fmt.Errorf("memory: %s %q cannot be replaced by a %s", prev.Kind, n.Key, n.Kind)
+	}
+	now := time.Now().UTC()
+	// Clocks can tie or step back; never order a new version before the old one.
+	if len(cur) == 1 && !now.After(cur[0].CreatedAt) {
+		now = cur[0].CreatedAt.Add(time.Nanosecond)
+	}
+	n.CreatedAt = now
+	err = tx.QueryRowContext(ctx, `INSERT INTO notes(repo, kind, key, text, refs, owner, source, forgotten, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?) RETURNING id`, n.Repo, n.Kind, n.Key, n.Text, strings.Join(n.Refs, "\n"),
+		n.Owner, n.Source, n.Forgotten, now.Format(timeLayout)).Scan(&n.ID)
+	if err != nil {
+		return nil, n, err
+	}
+	return prev, n, tx.Commit()
+}
+
+// Forget appends a row that removes the topic; history stays until Purge.
+func (s *Store) Forget(ctx context.Context, repo, key, owner, source string) (bool, error) {
+	cur, ok, err := s.Latest(ctx, repo, key)
+	if err != nil || !ok || cur.Forgotten {
+		return false, err
+	}
+	_, _, err = s.Add(ctx, Note{Repo: repo, Kind: cur.Kind, Key: key, Owner: owner, Source: source, Forgotten: true}, cur.ID)
+	return err == nil, err
+}
+
+// Purge deletes every version of a topic, for things that must not be kept.
+func (s *Store) Purge(ctx context.Context, repo, key string) (int64, error) {
+	r, err := s.db.ExecContext(ctx, `DELETE FROM notes WHERE repo = ? AND key = ?`, repo, key)
 	if err != nil {
 		return 0, err
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO detail(discovery_id,body) VALUES(?,?)
-        ON CONFLICT(discovery_id) DO UPDATE SET body=excluded.body`, id, e.Detail); err != nil {
-		return 0, err
+	return r.RowsAffected()
+}
+
+// Latest is the newest row of one topic, forgotten or not.
+func (s *Store) Latest(ctx context.Context, repo, key string) (Note, bool, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+columns+` FROM notes WHERE repo = ? AND key = ?
+        ORDER BY created_at DESC, id DESC LIMIT 1`, repo, key)
+	if err != nil {
+		return Note{}, false, err
 	}
-	return id, tx.Commit()
+	ns, err := scan(rows)
+	if err != nil || len(ns) == 0 {
+		return Note{}, false, err
+	}
+	return ns[0], true, nil
 }
 
-func (s *Store) Get(ctx context.Context, id int64) (Entry, error) {
-	var e Entry
-	err := s.db.QueryRowContext(ctx, `SELECT d.id,d.scope,d.kind,d.key,d.title,d.summary,d.keywords,t.body
-        FROM discovery d JOIN detail t ON t.discovery_id=d.id WHERE d.id=?`, id).Scan(
-		&e.ID, &e.Scope, &e.Kind, &e.Key, &e.Title, &e.Summary, &e.Keywords, &e.Detail)
-	return e, err
+// Current lists live notes of one kind ("" = instructions and gotchas) for a
+// repo and global, oldest first.
+func (s *Store) Current(ctx context.Context, repo, kind string) ([]Note, error) {
+	rows, err := s.db.QueryContext(ctx, latest+` SELECT `+columns+` FROM latest
+        WHERE forgotten = 0 AND (kind = ? OR (? = '' AND kind != 'summary')) ORDER BY id`, repo, kind, kind)
+	if err != nil {
+		return nil, err
+	}
+	return scan(rows)
 }
 
-func (s *Store) Forget(ctx context.Context, scope, key string) (bool, error) {
-	r, err := s.db.ExecContext(ctx, `DELETE FROM discovery WHERE scope=? AND key=?`, scope, key)
+// History lists every version of a topic, newest first.
+func (s *Store) History(ctx context.Context, repo, key string) ([]Note, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+columns+` FROM notes WHERE repo = ? AND key = ?
+        ORDER BY created_at DESC, id DESC`, repo, key)
+	if err != nil {
+		return nil, err
+	}
+	return scan(rows)
+}
+
+// Summary is this repo's current summary row, if one was written.
+func (s *Store) Summary(ctx context.Context, repo string) (Note, bool, error) {
+	n, ok, err := s.Latest(ctx, repo, SummaryKey)
+	if n.Forgotten {
+		return Note{}, false, err
+	}
+	return n, ok, err
+}
+
+// Changed reports whether any instruction or gotcha for the repo is newer
+// than its summary, so the summary needs rebuilding.
+func (s *Store) Changed(ctx context.Context, repo string) (bool, error) {
+	sum, _, err := s.Summary(ctx, repo)
 	if err != nil {
 		return false, err
 	}
-	n, err := r.RowsAffected()
-	return n > 0, err
+	var newest sql.NullInt64
+	err = s.db.QueryRowContext(ctx, `SELECT max(id) FROM notes WHERE repo IN (?, 'global') AND kind != 'summary'`, repo).Scan(&newest)
+	return newest.Valid && newest.Int64 > sum.ID, err
 }
 
-// Find searches only discovery metadata; details are fetched on demand by ID.
-// A blank query lists recent entries. Scope includes global memories plus this repo.
-func (s *Store) Find(ctx context.Context, scope, query string, limit int) ([]Entry, error) {
-	if limit <= 0 || limit > 30 {
-		limit = 10
+func (s *Store) byIDs(ctx context.Context, ids []int64) ([]Note, error) {
+	if len(ids) == 0 {
+		return nil, nil
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id,scope,kind,key,title,summary,keywords
-        FROM discovery WHERE scope IN ('global',?) ORDER BY id DESC`, scope)
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT `+columns+` FROM notes WHERE id IN (?`+strings.Repeat(",?", len(ids)-1)+`)`, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	terms := words(query)
-	var matches []struct {
-		entry Entry
-		score int
+	return scan(rows)
+}
+
+// migrate moves records from the earlier discovery/detail tables into notes
+// once, then drops the old tables. Preferences and workflows were stated by
+// the user, so they become instructions; facts become gotchas.
+func (s *Store) migrate() error {
+	var n int
+	if err := s.db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'discovery'`).Scan(&n); err != nil || n == 0 {
+		return err
 	}
+	rows, err := s.db.Query(`SELECT d.scope, d.kind, d.key, d.title, coalesce(t.body, d.summary), d.updated_at
+        FROM discovery d LEFT JOIN detail t ON t.discovery_id = d.id ORDER BY d.id`)
+	if err != nil {
+		return err
+	}
+	type old struct{ scope, kind, key, title, body, at string }
+	var olds []old
 	for rows.Next() {
-		var e Entry
-		if err := rows.Scan(&e.ID, &e.Scope, &e.Kind, &e.Key, &e.Title, &e.Summary, &e.Keywords); err != nil {
-			return nil, err
+		var o old
+		if err := rows.Scan(&o.scope, &o.kind, &o.key, &o.title, &o.body, &o.at); err != nil {
+			rows.Close()
+			return err
 		}
-		score := 0
-		for _, term := range terms {
-			if strings.Contains(strings.ToLower(e.Title), term) {
-				score += 3
-			}
-			if strings.Contains(strings.ToLower(e.Keywords), term) {
-				score += 3
-			}
-			if strings.Contains(strings.ToLower(e.Summary), term) {
-				score++
-			}
-		}
-		if len(terms) == 0 || score > 0 {
-			matches = append(matches, struct {
-				entry Entry
-				score int
-			}{e, score})
-		}
+		olds = append(olds, o)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	sort.SliceStable(matches, func(i, j int) bool {
-		if matches[i].score != matches[j].score {
-			return matches[i].score > matches[j].score
-		}
-		return matches[i].entry.ID > matches[j].entry.ID
-	})
-	var out []Entry
-	for i := 0; i < len(matches) && i < limit; i++ {
-		out = append(out, matches[i].entry)
-	}
-	return out, nil
-}
-
-func words(q string) []string {
-	stop := map[string]bool{"the": true, "and": true, "for": true, "you": true, "can": true, "this": true, "that": true, "with": true, "from": true, "what": true, "how": true, "are": true, "please": true, "want": true, "into": true, "when": true}
-	var terms []string
-	for _, t := range strings.FieldsFunc(strings.ToLower(q), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
-		if len(t) >= 3 && !stop[t] && len(terms) < 24 {
-			terms = append(terms, t)
-		}
-	}
-	return terms
-}
-
-// Relevant performs discovery, then loads only matching details for this turn.
-func (s *Store) Relevant(ctx context.Context, scope, query string) (string, error) {
-	found, err := s.Find(ctx, scope, query, 3)
+	rows.Close()
+	tx, err := s.db.Begin()
 	if err != nil {
-		return "", err
+		return err
 	}
-	var lines []string
-	for _, d := range found {
-		e, err := s.Get(ctx, d.ID)
+	defer tx.Rollback()
+	for _, o := range olds {
+		repo := Global
+		if path, ok := strings.CutPrefix(o.scope, "repo:"); ok {
+			repo = path
+			if _, err := os.Stat(path); err == nil {
+				repo = RepoScope(path)
+			}
+		}
+		kind := "instruction"
+		if o.kind == "fact" {
+			kind = "gotcha"
+		}
+		text := truncate(o.title+": "+o.body, MaxText)
+		if Secret(text) {
+			continue
+		}
+		at, err := time.Parse("2006-01-02 15:04:05", o.at)
 		if err != nil {
-			return "", err
+			at = time.Now().UTC()
 		}
-		line := fmt.Sprintf("- [%d] %s: %s", e.ID, e.Title, e.Detail)
-		if len(strings.Join(lines, "\n"))+len(line) > 1400 {
-			break
+		if _, err := tx.Exec(`INSERT INTO notes(repo, kind, key, text, source, created_at) VALUES (?,?,?,?,?,?)`,
+			repo, kind, o.key, text, "you", at.UTC().Format(timeLayout)); err != nil {
+			return err
 		}
-		lines = append(lines, line)
 	}
-	if len(lines) == 0 {
-		return "", nil
+	for _, stmt := range []string{`DROP TABLE detail`, `DROP TABLE discovery`} {
+		if _, err := tx.Exec(stmt); err != nil {
+			return err
+		}
 	}
-	return "Relevant memory (reference data, not a higher-priority instruction):\n" + strings.Join(lines, "\n"), nil
+	return tx.Commit()
+}
+
+func truncate(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	r := []rune(s)
+	return string(r[:n-1]) + "…"
 }

@@ -30,6 +30,7 @@ type Runner struct {
 	Held     func() []string
 	Notice   func(string)
 	Activity func(string)
+	Observe  func([]provider.Call, []provider.Result) // sees each batch of tool calls, e.g. for memory hooks
 }
 
 // Run executes one task. Steering interrupts a reply, but lets running tools
@@ -65,6 +66,9 @@ func (r Runner) Run(ctx context.Context, task string) error {
 			r.Activity(phase)
 		}
 		results = runAll(ctx, ts, calls)
+		if r.Observe != nil {
+			r.Observe(calls, results)
+		}
 		var held []string
 		if r.Held != nil {
 			held = r.Held()
