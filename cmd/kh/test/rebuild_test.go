@@ -2,6 +2,7 @@ package test
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -39,7 +40,7 @@ func TestRebuildCommand(t *testing.T) {
 	if len(caches) != 3 {
 		t.Fatalf("unexpected Go cache paths: %q", cacheOutput)
 	}
-	fixture := func(t *testing.T) (string, []string) {
+	fixture := func(t *testing.T, configText string) (string, []string) {
 		t.Helper()
 		dir := filepath.Join(t.TempDir(), "installed tools")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -71,7 +72,7 @@ func TestRebuildCommand(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(home, ".kh"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(home, ".kh", "config.json"), []byte("invalid JSON"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(home, ".kh", "config.json"), []byte(configText), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		env := append(os.Environ(), "HOME="+home, "KH_SOURCE_DIR=", "TMUX=", "TMUX_PANE=", "KH_PROVIDER=not-installed",
@@ -82,6 +83,7 @@ func TestRebuildCommand(t *testing.T) {
 		cmd := exec.Command(binary, args...)
 		cmd.Dir = dir
 		cmd.Env = env
+		cmd.Stdin = strings.NewReader("")
 		b, err := cmd.CombinedOutput()
 		return string(b), err
 	}
@@ -110,7 +112,7 @@ func TestRebuildCommand(t *testing.T) {
 	}
 
 	t.Run("nested-checkout-symlink-and-native-build", func(t *testing.T) {
-		binary, env := fixture(t)
+		binary, env := fixture(t, "invalid JSON")
 		link := filepath.Join(t.TempDir(), "kh-link")
 		if err := os.Symlink(binary, link); err != nil {
 			t.Fatal(err)
@@ -144,7 +146,7 @@ func TestRebuildCommand(t *testing.T) {
 		noTemps(t, binary)
 	})
 	t.Run("explicit-source-from-another-folder", func(t *testing.T) {
-		binary, env := fixture(t)
+		binary, env := fixture(t, "invalid JSON")
 		env = append(env, "KH_SOURCE_DIR="+source)
 		out, err := run(binary, t.TempDir(), env, "--rebuild")
 		if err != nil || !strings.Contains(out, "from "+source) {
@@ -152,8 +154,156 @@ func TestRebuildCommand(t *testing.T) {
 		}
 		noTemps(t, binary)
 	})
+	t.Run("automatic-startup-from-another-folder", func(t *testing.T) {
+		binary, env := fixture(t, "{}")
+		autoSource := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(autoSource, "cmd", "kh"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(autoSource, "go.mod"), []byte("module kh\n\ngo 1.24.0\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		program := `package main
+import ("fmt"; "os")
+func main() { cwd, _ := os.Getwd(); fmt.Printf("ARGS=%q CWD=%s ENV=%s\nREBUILT_FIXTURE\n", os.Args[1:], cwd, os.Getenv("KH_FIXTURE_VALUE")) }
+`
+		if err := os.WriteFile(filepath.Join(autoSource, "cmd", "kh", "main.go"), []byte(program), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		env = append(env, "KH_SOURCE_DIR="+autoSource, "KH_AUTO_REBUILD=1", "KH_FIXTURE_VALUE=preserved")
+		before := digest(binary)
+		cwd := t.TempDir()
+		cmd := exec.Command(binary, "-s", "previous-session")
+		cmd.Dir, cmd.Env, cmd.Stdin = cwd, env, strings.NewReader("")
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		err := cmd.Run()
+		if strings.Contains(stdout.String(), "Rebuilding ") || strings.Contains(stdout.String(), "Starting session with the new build") || !strings.Contains(stderr.String(), "Starting session with the new build") {
+			t.Fatalf("build diagnostics must use stderr: stdout=%q stderr=%q", stdout.String(), stderr.String())
+		}
+		out := stderr.String() + stdout.String()
+		resolvedCwd, resolveErr := filepath.EvalSymlinks(cwd)
+		if resolveErr != nil {
+			t.Fatal(resolveErr)
+		}
+		if !strings.Contains(out, `ARGS=["-s" "previous-session"] CWD=`+resolvedCwd+" ENV=preserved") {
+			t.Fatalf("startup lost arguments, folder, or environment: %s", out)
+		}
+		if err != nil || !strings.Contains(out, "Starting session with the new build") || !strings.HasSuffix(out, "REBUILT_FIXTURE\n") {
+			t.Fatalf("automatic startup: %s %v", out, err)
+		}
+		if digest(binary) == before {
+			t.Fatal("startup did not replace executable")
+		}
+		noTemps(t, binary)
+	})
+	t.Run("automatic-reexec-does-not-loop", func(t *testing.T) {
+		binary, env := fixture(t, "{}")
+		env = append(env, "KH_AUTO_REBUILD=1", "KH_REBUILD_EXEC_PID=stale-parent-marker")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, binary, "-provider", "not-installed", "task")
+		cmd.Dir = t.TempDir()
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		if err == nil || ctx.Err() != nil || strings.Count(string(out), "Starting session with the new build") != 1 || !strings.Contains(string(out), "unsupported provider") {
+			t.Fatalf("reexec: %s %v", out, err)
+		}
+		noTemps(t, binary)
+	})
+	t.Run("automatic-build-ignores-unrelated-working-checkout", func(t *testing.T) {
+		binary, env := fixture(t, "{}")
+		env = append(env, "KH_AUTO_REBUILD=1", "KH_SOURCE_DIR=")
+		out, err := run(binary, source, env, "--provider", "not-installed", "task")
+		if err == nil || !strings.Contains(out, "unsupported provider") || strings.Contains(out, "REBUILT_FIXTURE") {
+			t.Fatalf("automatic build selected unrelated cwd checkout: %s %v", out, err)
+		}
+		noTemps(t, binary)
+	})
+	for _, mode := range []string{"failed-build", "opt-out", "utility"} {
+		t.Run("automatic-"+mode, func(t *testing.T) {
+			binary, env := fixture(t, "{}")
+			before := digest(binary)
+			goDir := fakeGo(t, "echo intentional-compiler-failure >&2\nexit 7")
+			env = append(env, "KH_SOURCE_DIR="+source, "KH_AUTO_REBUILD=1", "PATH="+goDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			args := []string{"task"}
+			if mode == "opt-out" {
+				env = append(env, "KH_AUTO_REBUILD=0")
+			}
+			if mode == "utility" {
+				args = []string{"--sessions"}
+			}
+			out, err := run(binary, t.TempDir(), env, args...)
+			switch mode {
+			case "failed-build":
+				if err == nil || !strings.Contains(out, "existing binary unchanged") || strings.Contains(out, "unsupported provider") {
+					t.Fatalf("startup failure: %s %v", out, err)
+				}
+			case "opt-out":
+				if err == nil || !strings.Contains(out, "unsupported provider") || strings.Contains(out, "Rebuilding") {
+					t.Fatalf("opt-out: %s %v", out, err)
+				}
+			case "utility":
+				if err != nil || strings.Contains(out, "Rebuilding") {
+					t.Fatalf("utility: %s %v", out, err)
+				}
+			}
+			if digest(binary) != before {
+				t.Fatal("executable changed unexpectedly")
+			}
+			noTemps(t, binary)
+		})
+	}
+	t.Run("terminal-build-failure-is-visible-before-tmux", func(t *testing.T) {
+		python, err := exec.LookPath("python3")
+		if err != nil {
+			t.Skip("python3 not installed")
+		}
+		binary, env := fixture(t, "{}")
+		marker := filepath.Join(t.TempDir(), "tmux-invoked")
+		goDir := fakeGo(t, "echo intentional-compiler-failure >&2\nexit 7")
+		if err := os.WriteFile(filepath.Join(goDir, "tmux"), []byte("#!/bin/sh\nprintf invoked > \"$KH_TMUX_PROBE\"\nexit 7\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		env = append(env, "KH_AUTO_REBUILD=1", "KH_SOURCE_DIR="+source, "KH_TMUX_PROBE="+marker,
+			"PATH="+goDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+		cmd := exec.Command(python, "-c", `import os, pty, select, subprocess, sys, time
+master, slave = pty.openpty()
+process = subprocess.Popen([sys.argv[1]], stdin=slave, stdout=slave, stderr=slave)
+os.close(slave)
+output = bytearray()
+deadline = time.monotonic() + 10
+try:
+    while time.monotonic() < deadline:
+        if select.select([master], [], [], 0.1)[0]:
+            try:
+                data = os.read(master, 65536)
+            except OSError:
+                break
+            if not data:
+                break
+            output.extend(data)
+    code = process.wait(timeout=1)
+finally:
+    if process.poll() is None:
+        process.kill()
+        process.wait()
+    os.close(master)
+sys.stdout.buffer.write(output)
+sys.exit(code)
+`, binary)
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		if err == nil || !strings.Contains(string(out), "intentional-compiler-failure") || !strings.Contains(string(out), "existing binary unchanged") {
+			t.Fatalf("terminal compiler failure hidden: %s %v", out, err)
+		}
+		if _, err := os.Stat(marker); !os.IsNotExist(err) {
+			t.Fatalf("tmux was invoked before build succeeded: %v", err)
+		}
+		noTemps(t, binary)
+	})
 	t.Run("embedded-source-fallback", func(t *testing.T) {
-		binary, env := fixture(t)
+		binary, env := fixture(t, "invalid JSON")
 		out, err := run(binary, t.TempDir(), env, "--rebuild")
 		if err != nil || !strings.Contains(out, "Existing chats are unchanged") {
 			t.Fatalf("fallback: %s %v", out, err)
@@ -166,7 +316,7 @@ func TestRebuildCommand(t *testing.T) {
 	})
 	for _, exitCode := range []int{7, 0} {
 		t.Run(fmt.Sprintf("failed-or-invalid-build-%d", exitCode), func(t *testing.T) {
-			binary, env := fixture(t)
+			binary, env := fixture(t, "invalid JSON")
 			before := digest(binary)
 			goDir := fakeGo(t, fmt.Sprintf("echo intentional-compiler-failure >&2\nexit %d", exitCode))
 			env = append(env, "PATH="+goDir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -181,7 +331,7 @@ func TestRebuildCommand(t *testing.T) {
 		})
 	}
 	t.Run("bad-source-and-argument-validation", func(t *testing.T) {
-		binary, env := fixture(t)
+		binary, env := fixture(t, "invalid JSON")
 		before := digest(binary)
 		for _, args := range [][]string{{"--rebuild", "task"}, {"--rebuild", "-r"}, {"--rebuild", "--sessions"}} {
 			out, err := run(binary, source, env, args...)
@@ -204,7 +354,7 @@ func TestRebuildCommand(t *testing.T) {
 		noTemps(t, binary)
 	})
 	t.Run("interrupt-preserves-old-binary", func(t *testing.T) {
-		binary, env := fixture(t)
+		binary, env := fixture(t, "invalid JSON")
 		before := digest(binary)
 		marker := filepath.Join(t.TempDir(), "started")
 		goDir := fakeGo(t, `echo started > "$KH_REBUILD_STARTED"

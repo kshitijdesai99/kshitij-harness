@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -17,6 +18,35 @@ import (
 // PATH. Build beside it and rename only after success: failed builds leave the
 // old executable usable, and existing chats keep running their old image.
 func rebuild(ctx context.Context) error {
+	return rebuildBinary(ctx, false)
+}
+
+// The marker is valid only for this PID across exec, and is consumed before
+// launching any children. New sessions and agents must do their own rebuild.
+func rebuildBeforeSession(ctx context.Context) (bool, error) {
+	ready := os.Getenv("KH_REBUILD_EXEC_PID")
+	os.Unsetenv("KH_REBUILD_EXEC_PID")
+	if ready == strconv.Itoa(os.Getpid()) {
+		return true, nil
+	}
+	if os.Getenv("KH_AUTO_REBUILD") == "0" {
+		return false, nil
+	}
+	if err := rebuildBinary(ctx, true); err != nil {
+		return false, err
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return false, err
+	}
+	env := append(os.Environ(), "KH_REBUILD_EXEC_PID="+strconv.Itoa(os.Getpid()))
+	return false, syscall.Exec(exe, os.Args, env)
+}
+
+func rebuildBinary(ctx context.Context, starting bool) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -25,7 +55,7 @@ func rebuild(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	repo, err := rebuildSource(exe)
+	repo, err := rebuildSource(exe, starting)
 	if err != nil {
 		return err
 	}
@@ -42,11 +72,15 @@ func rebuild(ctx context.Context) error {
 	if err := temp.Close(); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stdout, "Rebuilding %s from %s...\n", exe, repo)
+	out := os.Stdout
+	if starting {
+		out = os.Stderr
+	}
+	fmt.Fprintf(out, "Rebuilding %s from %s...\n", exe, repo)
 	cmd := exec.CommandContext(ctx, "go", "build", "-buildmode=exe", "-o", output, "./cmd/kh")
 	cmd.Dir = repo
 	cmd.Env = append(os.Environ(), "GOOS="+runtime.GOOS, "GOARCH="+runtime.GOARCH)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	cmd.Stdout, cmd.Stderr = out, os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = time.Second
@@ -75,14 +109,18 @@ func rebuild(ctx context.Context) error {
 	if err := os.Rename(output, exe); err != nil {
 		return fmt.Errorf("install rebuilt binary: %w", err)
 	}
-	fmt.Fprintf(os.Stdout, "Rebuilt %s. Existing chats are unchanged; restart this executable with -r to load this build.\n", exe)
+	if starting {
+		fmt.Fprintf(out, "Rebuilt %s. Starting session with the new build.\n", exe)
+	} else {
+		fmt.Fprintf(os.Stdout, "Rebuilt %s. Existing chats are unchanged; restart this executable with -r to load this build.\n", exe)
+	}
 	return nil
 }
 
-// Prefer an explicit source override, then a local checkout, a repo-local
-// executable, and finally the source path embedded by a normal Go build.
-// A trimpath build or moved checkout can use KH_SOURCE_DIR instead.
-func rebuildSource(exe string) (string, error) {
+// Automatic builds belong to the invoked binary's checkout, not whichever
+// checkout happens to be the working folder. Explicit --rebuild retains the
+// current-checkout preference. A moved/trimpath install can use KH_SOURCE_DIR.
+func rebuildSource(exe string, automatic bool) (string, error) {
 	if dir := os.Getenv("KH_SOURCE_DIR"); dir != "" {
 		dir, err := filepath.Abs(dir)
 		if err != nil {
@@ -93,11 +131,22 @@ func rebuildSource(exe string) (string, error) {
 		}
 		return dir, nil
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
+	embedded := ""
+	if _, file, _, ok := runtime.Caller(0); ok && filepath.IsAbs(file) {
+		embedded = filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 	}
-	for _, start := range []string{cwd, filepath.Dir(exe)} {
+	if automatic && isHarnessSource(embedded) {
+		return embedded, nil
+	}
+	starts := []string{filepath.Dir(exe)}
+	if !automatic {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		starts = append([]string{cwd}, starts...)
+	}
+	for _, start := range starts {
 		for dir := start; ; dir = filepath.Dir(dir) {
 			if isHarnessSource(dir) {
 				return dir, nil
@@ -107,13 +156,10 @@ func rebuildSource(exe string) (string, error) {
 			}
 		}
 	}
-	if _, file, _, ok := runtime.Caller(0); ok && filepath.IsAbs(file) {
-		dir := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-		if isHarnessSource(dir) {
-			return dir, nil
-		}
+	if isHarnessSource(embedded) {
+		return embedded, nil
 	}
-	return "", fmt.Errorf("cannot locate kh sources; run kh --rebuild inside its source checkout or set KH_SOURCE_DIR")
+	return "", fmt.Errorf("cannot locate kh sources; set KH_SOURCE_DIR to its checkout (or KH_AUTO_REBUILD=0 to skip automatic builds)")
 }
 
 func isHarnessSource(dir string) bool {

@@ -19,6 +19,7 @@ import (
 // A private tmux server supplies a genuine stdout PTY without touching the
 // user's server. Conflicting COLUMNS must not override its measured pane width.
 func TestSessionsTTYWidth(t *testing.T) {
+	t.Setenv("KH_AUTO_REBUILD", "0")
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not installed")
 	}
@@ -90,6 +91,7 @@ func TestSessionsTTYWidth(t *testing.T) {
 }
 
 func TestSessionsLastResponseAndSavedOrdering(t *testing.T) {
+	t.Setenv("KH_AUTO_REBUILD", "0")
 	binary := filepath.Join(t.TempDir(), "kh")
 	build := exec.Command("go", "build", "-o", binary, "./cmd/kh")
 	build.Dir = "../../.."
@@ -131,6 +133,7 @@ func TestSessionsLastResponseAndSavedOrdering(t *testing.T) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binary, "--sessions")
 	cmd.Env = append(os.Environ(), "KH_PROVIDER=", "KH_MODEL=", "KH_EFFORT=", "COLUMNS=")
+	cmd.Stdin = strings.NewReader("")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("list: %s: %v", out, err)
@@ -172,6 +175,7 @@ func TestSessionsLastResponseAndSavedOrdering(t *testing.T) {
 	for _, width := range []int{120, 80, 30, 12, 3, 1} {
 		cmd := exec.CommandContext(ctx, binary, "--sessions")
 		cmd.Env = append(os.Environ(), "KH_PROVIDER=", "KH_MODEL=", "KH_EFFORT=", fmt.Sprintf("COLUMNS=%d", width))
+		cmd.Stdin = strings.NewReader("")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("width %d: %s: %v", width, out, err)

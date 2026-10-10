@@ -17,6 +17,10 @@ go build -o kh ./cmd/kh
 
 Rebuilding `./kh` does not update an installed `kh` elsewhere on `PATH` or an already-running chat. Launch the rebuilt executable explicitly (`./kh -s SESSION_ID` to resume), or use `go install ./cmd/kh` to update the installed command and then restart it. Check `command -v kh` if a bare `kh` still behaves like an older build.
 
+Session startup (including `-r`, `-s`, and one-shot tasks) rebuilds the invoked executable and runs the new build with the same arguments, environment, and working folder. Sources come from `KH_SOURCE_DIR`, the embedded checkout, or the executable's directory—not an unrelated current checkout. Go and a writable executable directory are required. Failed builds stop startup, leaving the old binary intact. Diagnostics go to stderr before tmux opens.
+
+The initial tmux pane skips its launcher's completed build; spawned/forked sessions build independently. New panes receive `KH_SOURCE_DIR` and `KH_AUTO_REBUILD` explicitly, overriding stale server settings. Set `KH_AUTO_REBUILD=0` to skip rebuilding. Utility commands (`--help`, `sessions`, `memory`, login, and agent management) do not rebuild. Existing chats are unchanged; older installed binaries need one manual rebuild/install to enable this behavior.
+
 Once installed, use **`kh --rebuild`** to rebuild and atomically replace the exact executable you invoked (including through a symlink). It uses local sources, first checking the current checkout and then its embedded build-source path; use `KH_SOURCE_DIR=/path/to/kshitij-harness kh --rebuild` if the checkout moved or the binary was built with `-trimpath`. Go must be installed, and the executable directory must be writable. Build failures leave the old executable untouched. The command exits without starting or restarting a chat; exit your current chat and run `kh -r` to load the new build. It does not pull changes, commit, or push.
 
 ## Use
@@ -32,8 +36,8 @@ Once installed, use **`kh --rebuild`** to rebuild and atomically replace the exa
 ./kh "fix the failing test in foo_test.go"
 ./kh -i "fix the failing test"          # do the task, then stay in chat
 ./kh --auto "run go test and fix errors"  # skip y/n prompts
-./kh -model gpt-5.5 -effort high "hi"
-./kh -nosandbox "update ~/.zshrc"      # allow writes outside the project
+./kh --model gpt-5.5 --effort high "hi"
+./kh --nosandbox "update ~/.zshrc"      # allow writes outside the project
 ```
 
 `kh --help REQUEST` (also `-h REQUEST`) streams one answer and exits. It assumes questions about sessions, models, and commands refer to kh, and includes kh's command reference and the running executable's flag usage. Explicitly unrelated questions are still supported. It uses your configured provider/model and login, but does not load or save a chat, open an interactive console/tmux pane, access stored memory, or execute local shell/edit tools. Configured built-in web search remains available. Quote the request if it contains shell-special characters; model/effort flags must come before the request. It cannot be combined with `-r`, `-s`, `-i`, or `--sessions`. Bare `kh --help` displays usage without needing valid chat configuration or login.
@@ -140,7 +144,7 @@ Use `/fork` between turns to copy the chat into a new session in a new tmux wind
 
 Type while a task runs to steer it: a reply in progress is cut off and restarted with your line; a running command finishes first. In chat, `/model gpt-5.5` and `/effort high` switch from the next message and are saved to `~/.kh/config.json`, so every session (open ones too) follows; `/model` alone shows both.
 
-Read-only commands (`rg`, `cat`, `ls`, `git diff`, ...) run without asking when their syntax and options are recognized. Write/execute options and unsupported syntax require approval. This conservative allowlist is not a shell security boundary; custom `safe` entries are trusted configuration. Everything else asks y/n unless `--auto`. On macOS, bash can only write inside the project (plus temp and cache dirs) unless `-nosandbox`. On other Unix platforms, kh warns that the OS sandbox is unavailable; approval checks still apply, but are not an OS security boundary. The implementation requires Unix process/locking APIs and `/bin/bash`; Windows is not currently supported. Interactive tmux features require tmux, and clipboard-image capture is macOS-only (local image paths remain usable). Command output is bounded while it is collected, not only when it is sent to the model; truncation drops partial UTF-8 characters at cut boundaries.
+Read-only commands (`rg`, `cat`, `ls`, `git diff`, ...) run without asking when their syntax and options are recognized. Write/execute options and unsupported syntax require approval. This conservative allowlist is not a shell security boundary; custom `safe` entries are trusted configuration. Everything else asks y/n unless `--auto`. On macOS, bash can only write inside the project (plus temp and cache dirs) unless `--nosandbox`. kh's own `~/.kh/memory.db` and its SQLite WAL/shared-memory/journal files are always writable, even with an empty `writable` configuration; this does not grant write access to the rest of `~/.kh`. On other Unix platforms, kh warns that the OS sandbox is unavailable; approval checks still apply, but are not an OS security boundary. The implementation requires Unix process/locking APIs and `/bin/bash`; Windows is not currently supported. Interactive tmux features require tmux, and clipboard-image capture is macOS-only (local image paths remain usable). Command output is bounded while it is collected, not only when it is sent to the model; truncation drops partial UTF-8 characters at cut boundaries.
 
 ## Architecture
 
@@ -155,7 +159,7 @@ Read-only commands (`rg`, `cat`, `ls`, `git diff`, ...) run without asking when 
 - `internal/learn`: the background pre-hook, post-hook, and summary rebuild, using any provider without tools.
 - `internal/session`: collision-resistant per-folder namespaces and atomic saves of versioned, backend-tagged opaque state. Legacy storage locations and pre-envelope Codex chats still resume.
 
-`provider` selects the API/auth adapter; `model` selects a model within that backend. `-provider codex` overrides the configured backend. Resuming uses the session's recorded backend; an explicit conflicting `-provider` is rejected. Switching backends starts a new chat rather than reinterpreting another provider's history. Spawned agents inherit the active provider, model, and effort, including command-line overrides.
+`provider` selects the API/auth adapter; `model` selects a model within that backend. `--provider codex` overrides the configured backend. Resuming uses the session's recorded backend; an explicit conflicting `--provider` is rejected. Switching backends starts a new chat rather than reinterpreting another provider's history. Spawned agents inherit the active provider, model, and effort, including command-line overrides.
 
 To add a backend, implement `provider.Provider`, emit through the injected `provider.Output`, and add its constructor/login route in `internal/backend/backend.go`. The loop, tools, UI, and session storage do not need backend-specific branches. Images, retrieved memory, compaction, and semantic last-response previews are explicit optional capabilities. Every adapter must honor context cancellation promptly and discard partial failed responses/unpaired tool calls before returning; add conformance tests for these guarantees. Keep credentials, request formats, streaming events, and private history inside the adapter; do not infer a backend from a model-name prefix.
 

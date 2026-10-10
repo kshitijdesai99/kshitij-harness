@@ -12,6 +12,12 @@ import (
 // Unlike the reader-only PTY test, this exercises the built CLI, startup and
 // real arrow bytes through an attached tmux client in a non-kh session.
 func TestChatTerminalHistory(t *testing.T) {
+	t.Setenv("KH_AUTO_REBUILD", "0")
+	t.Setenv("KH_PROVIDER", "")
+	t.Setenv("KH_MODEL", "")
+	t.Setenv("KH_EFFORT", "")
+	t.Setenv("KH_AGENT", "")
+	t.Setenv("KH_PARENT", "")
 	for _, tool := range []string{"tmux", "python3"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Skip(tool + " needed for terminal integration")

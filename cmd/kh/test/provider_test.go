@@ -14,6 +14,11 @@ import (
 )
 
 func TestProviderSelectionAndLegacyResume(t *testing.T) {
+	t.Setenv("KH_AUTO_REBUILD", "0")
+	t.Setenv("TMUX", "")
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("KH_AGENT", "")
+	t.Setenv("KH_PARENT", "")
 	binary := filepath.Join(t.TempDir(), "kh")
 	build := exec.Command("go", "build", "-o", binary, "./cmd/kh")
 	build.Dir = "../../.."
@@ -61,6 +66,11 @@ func TestProviderSelectionAndLegacyResume(t *testing.T) {
 }
 
 func TestSessionSaveFailureIsReportedByCLI(t *testing.T) {
+	t.Setenv("KH_AUTO_REBUILD", "0")
+	t.Setenv("TMUX", "")
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("KH_AGENT", "")
+	t.Setenv("KH_PARENT", "")
 	binary := filepath.Join(t.TempDir(), "kh")
 	build := exec.Command("go", "build", "-o", binary, "./cmd/kh")
 	build.Dir = "../../.."

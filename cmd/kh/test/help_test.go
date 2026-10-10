@@ -11,6 +11,7 @@ import (
 )
 
 func TestHelpCLIBypassesChatAndSessions(t *testing.T) {
+	t.Setenv("KH_AUTO_REBUILD", "0")
 	binary := filepath.Join(t.TempDir(), "kh")
 	build := exec.Command("go", "build", "-o", binary, "./cmd/kh")
 	build.Dir = "../../.."

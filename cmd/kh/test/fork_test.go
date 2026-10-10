@@ -15,6 +15,24 @@ import (
 // /fork copies the chat into a new session and opens it in a new window
 // directly to the right of the current one, which becomes active.
 func TestForkOpensNewWindowToTheRight(t *testing.T) {
+	for _, source := range []string{"", filepath.Join(t.TempDir(), "selected source 'quoted' \"double\"")} {
+		name := "empty-source"
+		if source != "" {
+			name = "selected-source"
+		}
+		t.Run(name, func(t *testing.T) { testForkOpensNewWindowToTheRight(t, source) })
+	}
+}
+
+func testForkOpensNewWindowToTheRight(t *testing.T, source string) {
+	t.Setenv("KH_SOURCE_DIR", source)
+	t.Setenv("KH_REBUILD_EXEC_PID", "inherited-marker")
+	t.Setenv("KH_AUTO_REBUILD", "0")
+	t.Setenv("KH_PROVIDER", "")
+	t.Setenv("KH_MODEL", "")
+	t.Setenv("KH_EFFORT", "")
+	t.Setenv("KH_AGENT", "")
+	t.Setenv("KH_PARENT", "")
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not installed")
 	}
@@ -39,7 +57,7 @@ func TestForkOpensNewWindowToTheRight(t *testing.T) {
 	name := fmt.Sprintf("kh_fork_%d", os.Getpid())
 	runTmux := func(args ...string) string {
 		t.Helper()
-		cmd := exec.Command("tmux", append([]string{"-L", name}, args...)...)
+		cmd := exec.Command("tmux", append([]string{"-L", name, "-f", "/dev/null"}, args...)...)
 		cmd.Env = append(os.Environ(), "HOME="+home)
 		b, err := cmd.CombinedOutput()
 		if err != nil {
@@ -55,6 +73,15 @@ func TestForkOpensNewWindowToTheRight(t *testing.T) {
 		return strings.Contains(runTmux("capture-pane", "-p", "-t", "kh:main"), "There are 3 files.")
 	})
 
+	// Change the already-running server, not the initiating chat's environment.
+	// A fork must not inherit these stale startup settings from the server.
+	for key, value := range map[string]string{
+		"KH_SOURCE_DIR":       "/stale/server/source",
+		"KH_AUTO_REBUILD":     "1",
+		"KH_REBUILD_EXEC_PID": "stale-server-marker",
+	} {
+		runTmux("set-environment", "-g", key, value)
+	}
 	runTmux("send-keys", "-t", "kh:main", "/fork", "Enter")
 	waitFor(t, func() bool {
 		return strings.Contains(runTmux("list-windows", "-t", "kh", "-F", "#{window_name}"), "fork")
@@ -67,6 +94,7 @@ func TestForkOpensNewWindowToTheRight(t *testing.T) {
 		t.Fatalf("fork window not selected: %q", active)
 	}
 	command := runTmux("display-message", "-p", "-t", "kh:fork", "#{pane_start_command}")
+	assertTmuxStartupEnvironment(t, command, source)
 	id := command[strings.LastIndex(command, "'-s' '")+6:]
 	id = strings.TrimSuffix(strings.TrimSuffix(id, `"`), "'")
 	copied, err := session.Load(id)

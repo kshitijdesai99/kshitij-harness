@@ -25,10 +25,11 @@ kh command reference:
 - kh: start a new interactive chat. kh "TASK": execute a task and save its session. kh -i "TASK": execute a task and stay in chat.
 - kh --help: show CLI usage. kh --help REQUEST (or -h REQUEST): answer once without opening or saving a chat. It cannot be combined with -r, -s, -i, or --sessions. Put flags before the request; quote shell-special characters.
 - kh login codex: authenticate. Configuration is in ~/.kh/config.json.
-- kh -model MODEL -effort LEVEL "TASK": override model and reasoning effort for this invocation. /model [MODEL] and /effort [low|medium|high] in chat show or change settings; changes persist in config.
+- kh --model MODEL --effort LEVEL "TASK": override model and reasoning effort for this invocation. /model [MODEL] and /effort [low|medium|high] in chat show or change settings; changes persist in config.
 - /compact summarizes chat context and saves it. /image [PATH] attaches an image for the next message. /help lists chat commands.
+- Normal session startup automatically rebuilds from local sources and runs the new executable, even from another folder. KH_SOURCE_DIR overrides source discovery; KH_AUTO_REBUILD=0 skips the automatic build. Build failures stop startup. Utility commands do not rebuild.
 - kh --rebuild: rebuild the invoked executable from local sources, then exit. Existing chats keep their running build; restart to use the new build.
-- In interactive chat, Ctrl-C stops the current task; Ctrl-D quits. Tool approval is skipped by --auto; -nosandbox disables the bash sandbox.
+- In interactive chat, Ctrl-C stops the current task; Ctrl-D quits. Tool approval is skipped by --auto; --nosandbox disables the bash sandbox.
 `
 
 // Run bypasses chat startup entirely: no console, tmux, memory DB,

@@ -14,6 +14,12 @@ import (
 // Exercise real terminal Ctrl-V bytes through an attached tmux client, not
 // send-keys (which writes directly to a pane and bypasses root bindings).
 func TestImagePasteBinding(t *testing.T) {
+	t.Setenv("KH_AUTO_REBUILD", "0")
+	t.Setenv("KH_PROVIDER", "")
+	t.Setenv("KH_MODEL", "")
+	t.Setenv("KH_EFFORT", "")
+	t.Setenv("KH_AGENT", "")
+	t.Setenv("KH_PARENT", "")
 	if runtime.GOOS != "darwin" {
 		t.Skip("clipboard images require macOS")
 	}
@@ -144,6 +150,12 @@ finally:
 }
 
 func TestImagePastePreservesUserBinding(t *testing.T) {
+	t.Setenv("KH_AUTO_REBUILD", "0")
+	t.Setenv("KH_PROVIDER", "")
+	t.Setenv("KH_MODEL", "")
+	t.Setenv("KH_EFFORT", "")
+	t.Setenv("KH_AGENT", "")
+	t.Setenv("KH_PARENT", "")
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not installed")
 	}

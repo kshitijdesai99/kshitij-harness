@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,24 @@ import (
 
 // A private tmux socket keeps this test away from the user's tmux sessions.
 func TestTmuxAgents(t *testing.T) {
+	for _, source := range []string{"", filepath.Join(t.TempDir(), "selected source 'quoted' \"double\"")} {
+		name := "empty-source"
+		if source != "" {
+			name = "selected-source"
+		}
+		t.Run(name, func(t *testing.T) { testTmuxAgents(t, source) })
+	}
+}
+
+func testTmuxAgents(t *testing.T, source string) {
+	t.Setenv("KH_SOURCE_DIR", source)
+	t.Setenv("KH_REBUILD_EXEC_PID", "inherited-marker")
+	t.Setenv("KH_AUTO_REBUILD", "0")
+	t.Setenv("KH_PROVIDER", "")
+	t.Setenv("KH_MODEL", "")
+	t.Setenv("KH_EFFORT", "")
+	t.Setenv("KH_AGENT", "")
+	t.Setenv("KH_PARENT", "")
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not installed")
 	}
@@ -25,7 +44,7 @@ func TestTmuxAgents(t *testing.T) {
 	home := t.TempDir() // spawned kh must not write to the user's real ~/.kh
 	runTmux := func(args ...string) string {
 		t.Helper()
-		cmd := exec.Command("tmux", append([]string{"-L", name}, args...)...)
+		cmd := exec.Command("tmux", append([]string{"-L", name, "-f", "/dev/null"}, args...)...)
 		cmd.Env = append(os.Environ(), "HOME="+home)
 		b, err := cmd.CombinedOutput()
 		if err != nil {
@@ -35,6 +54,15 @@ func TestTmuxAgents(t *testing.T) {
 	}
 	runTmux("new-session", "-d", "-s", "kh", "-n", "main", "-x", "240", "-y", "90", "sleep 60")
 	defer runTmux("kill-server")
+	// Simulate a server left running since another checkout/configuration.
+	// Subsequent kh invocations still have the original process environment.
+	for key, value := range map[string]string{
+		"KH_SOURCE_DIR":       "/stale/server/source",
+		"KH_AUTO_REBUILD":     "1",
+		"KH_REBUILD_EXEC_PID": "stale-server-marker",
+	} {
+		runTmux("set-environment", "-g", key, value)
+	}
 	socket := runTmux("display-message", "-p", "#{socket_path}")
 	mainPane := runTmux("display-message", "-p", "-t", "kh:main.0", "#{pane_id}")
 	runTmux("set-option", "-p", "-t", mainPane, "@kh_name", "main")
@@ -42,6 +70,7 @@ func TestTmuxAgents(t *testing.T) {
 		t.Helper()
 		cmd := exec.Command(binary, args...)
 		cmd.Env = append(os.Environ(), "TMUX="+socket+",1,0", "TMUX_PANE="+pane, "HOME="+home, "KH_PROVIDER=", "KH_MODEL=", "KH_EFFORT=")
+		cmd.Stdin = strings.NewReader("")
 		b, err := cmd.CombinedOutput()
 		return string(b), err
 	}
@@ -66,6 +95,7 @@ func TestTmuxAgents(t *testing.T) {
 	}
 	docsPane := runTmux("display-message", "-p", "-t", "kh:main.1", "#{pane_id}")
 	command := runTmux("display-message", "-p", "-t", docsPane, "#{pane_start_command}")
+	assertTmuxStartupEnvironment(t, command, source)
 	if windows := runTmux("list-windows", "-t", "kh", "-F", "#{window_name}"); windows != "main" {
 		t.Fatalf("spawn opened another tab: %s", windows)
 	}
@@ -173,7 +203,33 @@ func TestTmuxAgents(t *testing.T) {
 		t.Fatalf("keep spawn: %q %v", s, err)
 	}
 	keeper := runTmux("display-message", "-p", "-t", "work:chat.2", "#{pane_start_command}")
+	assertTmuxStartupEnvironment(t, keeper, source)
 	if !strings.Contains(keeper, "'-i'") {
 		t.Fatalf("--keep did not keep the agent in chat: %q", keeper)
+	}
+}
+
+// Check the public tmux launch command, including shell quoting for paths with
+// spaces and quotes. Explicit empty assignments must override server values.
+func assertTmuxStartupEnvironment(t *testing.T, command, source string) {
+	t.Helper()
+	// tmux quotes and escapes pane_start_command when it contains quotes.
+	if strings.HasPrefix(command, "\"") {
+		decoded, err := strconv.Unquote(command)
+		if err != nil {
+			t.Fatalf("decode tmux launch command %q: %v", command, err)
+		}
+		command = decoded
+	}
+	for _, assignment := range []string{"KH_SOURCE_DIR=" + source, "KH_AUTO_REBUILD=0", "KH_REBUILD_EXEC_PID="} {
+		quoted := "'" + strings.ReplaceAll(assignment, "'", "'\\''") + "'"
+		if !strings.Contains(command, quoted) {
+			t.Errorf("launch did not explicitly forward %q: %q", assignment, command)
+		}
+	}
+	for _, stale := range []string{"/stale/server/source", "stale-server-marker", "inherited-marker"} {
+		if strings.Contains(command, stale) {
+			t.Errorf("launch retained stale environment %q: %q", stale, command)
+		}
 	}
 }

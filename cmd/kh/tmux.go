@@ -198,13 +198,31 @@ func clearImagePastePane() {
 	}
 }
 
-func attachChat(args []string) error {
+// Explicitly forward startup settings rather than relying on a long-lived
+// tmux server's environment. Empty values also clear stale server overrides.
+func sessionCommand(rebuilt bool, args ...string) string {
+	prefix := shellCommand("env", "KH_SOURCE_DIR="+os.Getenv("KH_SOURCE_DIR"), "KH_AUTO_REBUILD="+os.Getenv("KH_AUTO_REBUILD"))
+	if rebuilt {
+		// exec preserves the shell PID, making the skip marker valid only for
+		// this new main pane, not for children it may later create.
+		prefix = "exec " + prefix + " KH_REBUILD_EXEC_PID=$$"
+	} else {
+		prefix += " " + shellQuote("KH_REBUILD_EXEC_PID=")
+	}
+	return prefix + " " + shellCommand(args...)
+}
+
+func chatTerminal() bool {
+	in, _ := os.Stdin.Stat()
+	out, _ := os.Stdout.Stat()
+	return in != nil && out != nil && in.Mode()&os.ModeCharDevice != 0 && out.Mode()&os.ModeCharDevice != 0
+}
+
+func attachChat(args []string, rebuilt bool) error {
 	if os.Getenv("TMUX") != "" {
 		return nil
 	}
-	in, _ := os.Stdin.Stat()
-	out, _ := os.Stdout.Stat()
-	if in == nil || out == nil || in.Mode()&os.ModeCharDevice == 0 || out.Mode()&os.ModeCharDevice == 0 {
+	if !chatTerminal() {
 		return nil
 	}
 	if _, err := exec.LookPath("tmux"); err != nil {
@@ -219,7 +237,7 @@ func attachChat(args []string) error {
 		if err != nil {
 			return err
 		}
-		if _, err = tmux("new-session", "-d", "-s", "kh", "-n", "main", "-c", cwd, shellCommand(append([]string{exe}, args...)...)); err != nil {
+		if _, err = tmux("new-session", "-d", "-s", "kh", "-n", "main", "-c", cwd, sessionCommand(rebuilt, append([]string{exe}, args...)...)); err != nil {
 			return err
 		}
 		if _, err = tmux("set-option", "-p", "-t", "kh:main.0", "@kh_name", "main"); err != nil {

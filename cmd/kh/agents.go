@@ -127,12 +127,12 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 		if err != nil {
 			return "", err
 		}
-		command := []string{exe, "-provider", cfg.Provider, "-model", cfg.Model, "-effort", cfg.Effort}
+		command := []string{exe, "--provider", cfg.Provider, "--model", cfg.Model, "--effort", cfg.Effort}
 		if cfg.Auto {
 			command = append(command, "--auto")
 		}
 		if !cfg.Sandbox {
-			command = append(command, "-nosandbox")
+			command = append(command, "--nosandbox")
 		}
 		// Without -i the agent exits after its task and tmux closes the pane.
 		if keep {
@@ -141,7 +141,7 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 		command = append(command, args[2])
 		pane, err := tmuxContext(ctx, "set-option", "-p", "-t", current, "@kh_name", strings.TrimPrefix(parent, "kh:"), ";",
 			"split-window", direction, "-d", "-P", "-F", "#{pane_id}", "-t", target, "-c", cwd,
-			"-e", "KH_PARENT="+parent, "-e", "KH_AGENT=kh:"+args[1], shellCommand(command...))
+			"-e", "KH_PARENT="+parent, "-e", "KH_AGENT=kh:"+args[1], sessionCommand(false, command...))
 		if err != nil {
 			return "", err
 		}
@@ -258,12 +258,12 @@ func forkChat(ctx context.Context, cfg config.Config, c *chat) (string, error) {
 	}
 	// The active model and effort, including /model switches in this chat.
 	model, effort := c.model.Use("", "")
-	command := []string{exe, "-provider", c.backend, "-model", model, "-effort", effort}
+	command := []string{exe, "--provider", c.backend, "--model", model, "--effort", effort}
 	if cfg.Auto {
 		command = append(command, "--auto")
 	}
 	if !cfg.Sandbox {
-		command = append(command, "-nosandbox")
+		command = append(command, "--nosandbox")
 	}
 	command = append(command, "-s", id)
 	window, err := tmuxContext(ctx, "display-message", "-p", "-t", current, "#{window_id}")
@@ -272,7 +272,7 @@ func forkChat(ctx context.Context, cfg config.Config, c *chat) (string, error) {
 	}
 	// -a places the window right after the current one; without -d it is selected.
 	if _, err := tmuxContext(ctx, "new-window", "-a", "-t", window, "-n", name, "-c", cwd,
-		"-e", "KH_AGENT=kh:"+name, shellCommand(command...)); err != nil {
+		"-e", "KH_AGENT=kh:"+name, sessionCommand(false, command...)); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("forked to window %s (session %s, address kh:%s)", name, id, name), nil

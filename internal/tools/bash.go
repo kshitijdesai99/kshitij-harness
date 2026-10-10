@@ -70,7 +70,7 @@ func Bash(c config.Config, approval Approver) Tool {
 			out, err := run(ctx, append(argv, in.Command), timeout, c.OutputCap)
 			// The error is the same for our sandbox and for macOS privacy, so name both.
 			if c.Sandbox && strings.Contains(out, "Operation not permitted") {
-				out += "\n(kh: if this was a write outside the project, kh's sandbox blocked it; the user can rerun with -nosandbox or add the dir to writable in ~/.kh/config.json. " +
+				out += "\n(kh: if this was a write outside the project, kh's sandbox blocked it; the user can rerun with --nosandbox or add the dir to writable in ~/.kh/config.json. " +
 					"If it was a read, macOS privacy settings are blocking this folder for the user's terminal app.)"
 			}
 			return out, err
@@ -118,6 +118,22 @@ func sandbox(dirs []string) []string {
 			d = r // the sandbox matches real paths, e.g. /tmp is /private/tmp
 		}
 		p += " (subpath " + strconv.Quote(d) + ")"
+	}
+	// Memory is harness-owned state, not a project output. Always permit its
+	// exact SQLite files, even when Writable is explicitly empty. Do not grant
+	// the entire .kh directory: it also contains config and login credentials.
+	if home != "" {
+		if resolved, err := filepath.EvalSymlinks(home); err == nil {
+			home = resolved
+		}
+		dir := filepath.Join(home, ".kh")
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			dir = resolved
+		}
+		p += ") (allow file-write-create (literal " + strconv.Quote(dir) + ")) (allow file-write*"
+		for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+			p += " (literal " + strconv.Quote(filepath.Join(dir, "memory.db")+suffix) + ")"
+		}
 	}
 	return []string{"/usr/bin/sandbox-exec", "-p", p + ")"}
 }

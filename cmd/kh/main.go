@@ -125,12 +125,16 @@ func main() {
 			return
 		}
 	}
-	if (len(args) == 0 || *stay) && strings.Join(args, " ") != "sessions" && os.Getenv("TMUX") == "" {
-		exit(attachChat(os.Args[1:]))
-		// attachChat returns immediately for redirected input (no terminal).
-		if fi, _ := os.Stdin.Stat(); fi != nil && fi.Mode()&os.ModeCharDevice != 0 {
-			return
-		}
+	// Build before handing a terminal to tmux so compiler failures remain
+	// visible. The newly created main pane consumes a one-time skip marker;
+	// other spawned/forked sessions still perform their own startup build.
+	rebuildCtx, stop := signal.NotifyContext(ctx, os.Interrupt)
+	rebuilt, err := rebuildBeforeSession(rebuildCtx)
+	stop()
+	exit(err)
+	if (len(args) == 0 || *stay) && os.Getenv("TMUX") == "" && chatTerminal() {
+		exit(attachChat(os.Args[1:], rebuilt))
+		return
 	}
 
 	if os.Getenv("TMUX") != "" && (len(args) == 0 || *stay) {
