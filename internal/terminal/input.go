@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/chzyer/readline"
@@ -91,10 +92,21 @@ func (c *Console) read() {
 		c.readPlain()
 		return
 	}
-	stdin := readline.NewCancelableStdin(newPasteReader(in, c.pastes))
+	stdin := readline.NewCancelableStdin(newTerminalReader(in, c.pastes))
+	var continuation atomic.Bool
+	prompt := Color(c.out, Query, "> ")
 	rl, err := readline.NewEx(&readline.Config{
 		Stdin: stdin, Stdout: c.out, Stderr: c.err,
-		Prompt: Color(c.out, Query, "> "), Painter: queryPainter{c.out},
+		Prompt: prompt, Painter: queryPainter{c.out},
+		FuncFilterInputRune: func(key rune) (rune, bool) {
+			if key == continuationKey {
+				continuation.Store(true)
+				// Ignoring a rune makes readline queue an extra read. A no-op
+				// Bell instead preserves its CR handoff to the next prompt.
+				return readline.CharBell, true
+			}
+			return key, true
+		},
 		HistoryLimit: 500, DisableAutoSaveHistory: true,
 		InterruptPrompt: "^C", EOFPrompt: "\n",
 	})
@@ -103,7 +115,10 @@ func (c *Console) read() {
 		c.readPlain()
 		return
 	}
-	defer rl.Close()
+	defer func() {
+		_ = stdin.Close()
+		_ = rl.Close()
+	}()
 	c.mu.Lock()
 	c.rl, c.stdin = rl, stdin
 	c.mu.Unlock()
@@ -112,23 +127,47 @@ func (c *Console) read() {
 		return
 	default:
 	}
-	// Ask the terminal (including tmux) to frame pastes. Disable the mode
-	// before leaving the editor so the next application inherits a clean tty.
-	fmt.Fprint(c.out, "\x1b[?2004h")
-	defer fmt.Fprint(c.out, "\x1b[?2004l")
+	// Frame pastes and distinguish modified Enter (Kitty / xterm protocols).
+	// Restore keyboard and paste modes before leaving the editor.
+	fmt.Fprint(c.out, "\x1b[?2004h\x1b[>1u\x1b[>4;2m")
+	defer fmt.Fprint(c.out, "\x1b[>4;0m\x1b[<u\x1b[?2004l")
 	// Raw-mode Ctrl-C is a key. Forward it to the active turn's context;
 	// an idle chat must stay alive even without an active listener.
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
+	var draft []string
 	for {
 		line, err := rl.Readline()
 		if err == readline.ErrInterrupt {
+			draft = nil
+			continuation.Store(false)
+			rl.SetPrompt(prompt)
 			_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
 			continue
 		}
 		if err != nil {
 			return
+		}
+		if continuation.Swap(false) {
+			draft = append(draft, line)
+			rl.SetPrompt(Color(c.out, Query, "... "))
+			continue
+		}
+		if len(draft) > 0 {
+			draft = append(draft, line)
+			// Reuse paste placeholders so recalling multiline history does not
+			// put literal newlines into the single-line editor.
+			line, err = c.pastes.expand(strings.TrimSpace(strings.Join(draft, "\n")))
+			if err == nil {
+				line, err = c.pastes.put(line, false)
+			}
+			draft = nil
+			rl.SetPrompt(prompt)
+			if err != nil {
+				fmt.Fprintln(c.err, "input:", err)
+				continue
+			}
 		}
 		line = strings.TrimSpace(line)
 		switch strings.ToLower(line) {

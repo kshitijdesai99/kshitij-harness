@@ -137,6 +137,61 @@ def submit(text):
 try:
     expect(b'\x1b[?2004h')
     expect(b'\x1b[36m> ')
+    # Shift+Enter (both protocols) and Ctrl-J continue without a turn.
+    for key in [b'\x1b[13;2u',b'\x1b[27;2;13~',b'\x1b[13;66u',b'\x1b[13;130u',b'\x1b[57414;2u',b'\x0a']:
+        os.write(master,b'first  '+key)
+        expect(b'... ')
+        os.write(master,key)
+        expect(b'... ')
+        os.write(master,b'  second')
+        pump(.1)
+        assert b'INPUT_JSON:' not in buf,buf
+        submit('first  \n\n  second')
+        # History must recall the entire multiline message.
+        os.write(master,b'\x1b[A')
+        submit('first  \n\n  second')
+    # Pasted text and manually continued lines compose into one message.
+    os.write(master,b'\x1b[200~pasted\ntext\x1b[201~\x1b[13;2uend')
+    pump(.1)
+    assert b'INPUT_JSON:' not in buf,buf
+    submit('pasted\ntext\nend')
+    # Cancellation discards every line, not just the active one.
+    os.write(master,b'discard\x1b[13;2u')
+    expect(b'... ')
+    os.write(master,b'this\x03')
+    expect(b'CANCELLED')
+    os.write(master,b'fresh')
+    submit('fresh')
+    # Extended modes encode other control keys too: do not swallow them.
+    for cancel_key in [b'\x1b[99;5u',b'\x1b[27;5;99~',b'\x1b[99;69u']:
+        os.write(master,b'discard\x1b[13;2u')
+        expect(b'... ')
+        os.write(master,b'this'+cancel_key)
+        expect(b'^C')
+        os.write(master,b'fresh')
+        submit('fresh')
+    for prefix in [b'\x1b[127;1u',b'\x1b[27;1;127~']:
+        os.write(master,b'abc'+prefix+b'!')
+        submit('ab!')
+    os.write(master,b'discard\x1b[117;5ukept')
+    submit('kept')
+    os.write(master,b'one\x1b[106;5utwo')
+    submit('one\ntwo')
+    os.write(master,b'\x1b'+'é'.encode())
+    submit('é')
+    os.write(master,b'keypad\x1b[57414u')
+    expect(b'INPUT_JSON:"keypad"\r\n')
+    os.write(master,b'abc\x1b[57417u!')
+    submit('ab!c')
+    # Multiple continuations in one write must not race or submit early.
+    os.write(master,b'fast\x1b[13;2umiddle\x1b[13;2ulast\r')
+    expect(b'INPUT_JSON:"fast\\nmiddle\\nlast"\r\n')
+    # Split escape sequences must also continue, without leaking bytes.
+    for byte in b'fragmented\x1b[13;2u':
+        os.write(master,bytes([byte]));time.sleep(.002)
+    expect(b'... ')
+    os.write(master,b'next')
+    submit('fragmented\nnext')
     payload='first\r\nsecond\rthird\nyes\n/model other\ncafé 日本語\x03\x04'
     frame=b'\x1b[200~'+payload.encode()+b'\x1b[201~'
     for i in range(0,len(frame),3): os.write(master,frame[i:i+3]);time.sleep(.001)
@@ -168,9 +223,13 @@ try:
     submit('ordinary')
     os.write(master,b'\x1b[A!')
     submit('ordinary!')
-    os.write(master,b'\x04')
+    os.write(master,b'\x1b[100;5u')
     expect(b'\x1b[?2004l')
-    p.wait(timeout=3)
+    end=time.monotonic()+3
+    while p.poll() is None and time.monotonic()<end:
+        try:pump(.02)
+        except OSError:break
+    p.wait(timeout=1)
     assert p.returncode==0,p.returncode
 finally:
     if p.poll() is None:p.kill();p.wait()

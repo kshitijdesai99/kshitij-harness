@@ -26,7 +26,9 @@ go build -o kh ./cmd/kh
 ./kh -s SESSION_ID              # resume a specific session
 ```
 
-**Ctrl-C** stops a task; **Ctrl-D** on an empty line quits. **Up/Down** recall and navigate input history. Type while kh works to steer it.
+**Enter** sends; **Shift+Enter** starts a new line (shown with a `... ` continuation prompt) without sending. Earlier lines stay in the draft until Enter sends the whole message. **Ctrl-J** also starts a new line if your terminal cannot distinguish Shift+Enter from Enter.
+
+**Ctrl-C** discards the draft and stops a task; **Ctrl-D** on an empty line quits. **Up/Down** recall and navigate input history. Type while kh works to steer it.
 
 Run `./kh --help` for CLI options; use `/help` in chat for commands. Attach a local image with `/image path/to/image.png`, or use `/image` for the macOS clipboard (requires Swift).
 

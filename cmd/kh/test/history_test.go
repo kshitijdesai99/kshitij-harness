@@ -55,6 +55,7 @@ try:
             if client is not None and select.select([master],[],[],.05)[0]: os.read(master,65536)
             else: time.sleep(.05)
     wait(lambda:b'kh chat, session' in screen())
+    assert tmux('show-options','-s','-v','extended-keys').strip()==b'on'
     with open(tty,'rb',buffering=0) as terminal:
         flags=termios.tcgetattr(terminal)[3]
         assert not flags & (termios.ICANON|termios.ECHO),flags
@@ -75,17 +76,28 @@ try:
     # not become a model request containing a literal escape sequence.
     os.write(master,b'\x15/model\r')
     wait(lambda:screen().count(b'(model ')>=2)
-    # Bracketed multiline paste stays a draft until Enter. Slash commands
-    # inside the block are literal message content, not CLI operations.
+    # Real Shift+Enter bytes must survive a default-config tmux server.
+    # Neither manual line is a slash command until the draft is sent.
     config=os.path.join(home,'.kh','config.json')
     assert not os.path.exists(config),config
-    os.write(master,b'\x1b[200~/effort high\n/model pasted-model\n/image missing.png\n\x1b[201~')
-    wait(lambda:b'[paste ' in screen())
-    time.sleep(.15)
+    os.write(master,b'/effort high\x1b[13;2u/model typed-model')
+    wait(lambda:screen().rstrip().endswith(b'... /model typed-model'))
     assert b'not logged in' not in screen(),screen()
     assert not os.path.exists(config),config
     os.write(master,b'\r')
     wait(lambda:b'not logged in' in screen())
+    assert not os.path.exists(config),config
+    failures=screen().count(b'not logged in')
+    # Bracketed multiline paste stays a draft until Enter. Slash commands
+    # inside the block are literal message content, not CLI operations.
+    assert not os.path.exists(config),config
+    os.write(master,b'\x1b[200~/effort high\n/model pasted-model\n/image missing.png\n\x1b[201~')
+    wait(lambda:b'[paste ' in screen())
+    time.sleep(.15)
+    assert screen().count(b'not logged in')==failures,screen()
+    assert not os.path.exists(config),config
+    os.write(master,b'\r')
+    wait(lambda:screen().count(b'not logged in')>failures)
     assert not os.path.exists(config),config
     assert b'image:' not in screen(),screen()
     # Failed model request still leaves a usable normal prompt.

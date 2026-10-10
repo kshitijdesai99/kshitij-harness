@@ -139,6 +139,11 @@ func main() {
 
 	if os.Getenv("TMUX") != "" && (len(args) == 0 || *stay) {
 		installImagePasteBinding()
+		// "on" forwards modified keys only to applications requesting them,
+		// unlike "always". Leave an existing "always" setting untouched.
+		if mode, err := tmux("show-options", "-s", "-v", "extended-keys"); err == nil && mode == "off" {
+			_, _ = tmux("set-option", "-s", "extended-keys", "on")
+		}
 		defer clearImagePastePane()
 	}
 

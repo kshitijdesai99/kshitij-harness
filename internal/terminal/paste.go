@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -16,6 +17,9 @@ const (
 	pasteEnd    = "\x1b[201~"
 	pasteLimit  = 4 << 20
 	pasteBudget = 16 << 20
+	// Internal key followed by CR: readline pauses input at CR until the
+	// next Readline call, so a continuation cannot race the following line.
+	continuationKey = '\ue000'
 )
 
 // Pasted newlines and control keys never reach readline. It edits a compact
@@ -96,14 +100,21 @@ func (s *pasteStore) expand(line string) (string, error) {
 // fragmented input. There is no timing heuristic that could eat normal Enter
 // keys or mistake a slow paste for many separate submissions.
 type pasteReader struct {
-	in      *bufio.Reader
-	store   *pasteStore
-	pending []byte
-	final   error
+	in       *bufio.Reader
+	store    *pasteStore
+	pending  []byte
+	final    error
+	terminal bool
 }
 
 func newPasteReader(in io.Reader, store *pasteStore) *pasteReader {
 	return &pasteReader{in: bufio.NewReader(in), store: store}
+}
+
+func newTerminalReader(in io.Reader, store *pasteStore) *pasteReader {
+	r := newPasteReader(in, store)
+	r.terminal = true
+	return r
 }
 
 func (r *pasteReader) Read(p []byte) (int, error) {
@@ -118,28 +129,38 @@ func (r *pasteReader) Read(p []byte) (int, error) {
 		if err != nil {
 			return 0, err
 		}
+		if r.terminal && b == '\n' { // Ctrl-J fallback for legacy terminals.
+			r.pending = []byte(string(continuationKey) + "\r")
+			break
+		}
 		if b != pasteBegin[0] {
 			r.pending = []byte{b}
 			break
 		}
-		sequence := []byte{b}
-		matched := true
-		for i := 1; i < len(pasteBegin); i++ {
+		sequence := string(b)
+		for len(sequence) < 64 {
+			if len(sequence) >= 2 && sequence[1] != '[' {
+				break
+			}
+			if len(sequence) > 2 {
+				last := sequence[len(sequence)-1]
+				if last < '0' || last > '9' && last != ';' {
+					break
+				}
+			}
 			b, err = r.in.ReadByte()
 			if err != nil {
 				r.final = err
-				matched = false
 				break
 			}
-			sequence = append(sequence, b)
-			if b != pasteBegin[i] {
-				matched = false
-				break
-			}
+			sequence += string([]byte{b})
 		}
-		if !matched {
-			r.pending = sequence
-			break
+		if sequence != pasteBegin {
+			if r.terminal {
+				sequence = decodeTerminalKey(sequence)
+			}
+			r.pending = []byte(sequence)
+			continue
 		}
 		text, rejected, err := r.readPaste()
 		if err != nil {
@@ -157,6 +178,75 @@ func (r *pasteReader) Read(p []byte) (int, error) {
 	n := copy(p, r.pending)
 	r.pending = r.pending[n:]
 	return n, nil
+}
+
+// Extended keyboard modes also encode keys such as Ctrl-C and Ctrl-D.
+// Normalize those back to the bytes readline understands, not just Enter.
+func decodeTerminalKey(sequence string) string {
+	if !strings.HasPrefix(sequence, "\x1b[") || len(sequence) < 3 {
+		return sequence
+	}
+	fields := strings.Split(sequence[2:len(sequence)-1], ";")
+	modifier := 1
+	var code int
+	var err error
+	switch {
+	case strings.HasSuffix(sequence, "u") && (len(fields) == 1 || len(fields) == 2):
+		code, err = strconv.Atoi(fields[0])
+		if len(fields) == 2 && err == nil {
+			modifier, err = strconv.Atoi(fields[1])
+		}
+	case strings.HasSuffix(sequence, "~") && len(fields) == 3 && fields[0] == "27":
+		code, err = strconv.Atoi(fields[2])
+		if err == nil {
+			modifier, err = strconv.Atoi(fields[1])
+		}
+	default:
+		return sequence
+	}
+	if err != nil || modifier < 1 || modifier > 256 {
+		return sequence
+	}
+	// Kitty disambiguation also gives keypad keys dedicated codes.
+	if code >= 57399 && code <= 57408 {
+		code = '0' + code - 57399
+	} else if code >= 57409 && code <= 57416 {
+		code = int([]rune("./*-+\r=,")[code-57409])
+	} else if code >= 57417 && code <= 57426 {
+		keys := []string{"D", "C", "A", "B", "5~", "6~", "H", "F", "2~", "3~"}
+		return "\x1b[" + keys[code-57417]
+	}
+	if code <= 0 || code > 127 {
+		return sequence
+	}
+	mods := (modifier - 1) & 63 // Caps/Num Lock do not change the shortcut.
+	if mods > 7 {
+		return sequence
+	}
+	if code == '\r' && mods == 1 {
+		return string(continuationKey) + "\r"
+	}
+	if mods&4 != 0 {
+		if code >= 'a' && code <= 'z' {
+			code -= 'a' - 'A'
+		}
+		if code >= '@' && code <= '_' {
+			code &= 31
+		}
+	} else if mods&1 != 0 && code >= 'a' && code <= 'z' {
+		code -= 'a' - 'A'
+	}
+	if code == 0 { // readline treats NUL as EOF, not Ctrl-Space.
+		return ""
+	}
+	if code == '\n' && mods&2 == 0 {
+		return string(continuationKey) + "\r"
+	}
+	key := string(rune(code))
+	if mods&2 != 0 {
+		key = "\x1b" + key
+	}
+	return key
 }
 
 func (r *pasteReader) readPaste() (string, bool, error) {
