@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"time"
 
 	"kh/internal/agent"
@@ -31,6 +32,10 @@ type chat struct {
 	ui                terminal.Renderer
 	tools             []tools.Tool
 	seen              config.Config
+	forkMu            sync.Mutex
+	forkState         []byte // last completed conversation; never read a streaming model
+	forkModel         string
+	forkEffort        string
 }
 
 func (c *chat) turn(ctx context.Context, msg string) error {
@@ -52,6 +57,9 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 		c.seen.Model, c.seen.Effort = now.Model, now.Effort
 	}
 	exportModel(c.model, c.backend)
+	if err := c.snapshotFork(); err != nil {
+		return err
+	}
 	tctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 	defer stop()
 	start := time.Now()
@@ -140,6 +148,27 @@ func (c *chat) save() error {
 	if saveErr != nil {
 		return fmt.Errorf("save session %s: %w", c.id, saveErr)
 	}
+	return c.snapshotFork()
+}
+
+// snapshotFork runs only while the provider is idle. Input can fork this
+// immutable checkpoint without racing a reply or copying unpaired tool calls.
+func (c *chat) snapshotFork() error {
+	state, err := c.model.Save()
+	if err != nil {
+		return err
+	}
+	state, err = session.Encode(c.backend, state)
+	if err != nil {
+		return err
+	}
+	if r, ok := c.model.(provider.LastResponder); ok && r.LastResponse() == "" {
+		state = nil
+	}
+	model, effort := c.model.Use("", "")
+	c.forkMu.Lock()
+	c.forkState, c.forkModel, c.forkEffort = state, model, effort
+	c.forkMu.Unlock()
 	return nil
 }
 

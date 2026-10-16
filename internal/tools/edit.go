@@ -78,7 +78,20 @@ type editFile struct {
 	create bool
 }
 
+// EditWithOutput uses the application's action renderer for live edit notices.
+func EditWithOutput(action func(string)) Tool {
+	t := Edit
+	t.Run = func(ctx context.Context, input json.RawMessage) (string, error) {
+		return editWithOutput(ctx, input, action)
+	}
+	return t
+}
+
 func runEdit(ctx context.Context, input json.RawMessage) (string, error) {
+	return editWithOutput(ctx, input, func(text string) { fmt.Fprintln(os.Stderr, text) })
+}
+
+func editWithOutput(ctx context.Context, input json.RawMessage, action func(string)) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -168,7 +181,9 @@ func runEdit(ctx context.Context, input json.RawMessage) (string, error) {
 			return "", fmt.Errorf("write %s failed (it may be partially written); completed files: %v: %w", staged.rel, completed, err)
 		}
 		completed = append(completed, staged.rel)
-		fmt.Fprintln(os.Stderr, "edit", staged.rel)
+		if action != nil {
+			action("edit " + staged.rel)
+		}
 	}
 	if !batch {
 		return "ok", nil

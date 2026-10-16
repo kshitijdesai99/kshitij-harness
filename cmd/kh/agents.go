@@ -8,7 +8,6 @@ import (
 	"unicode"
 
 	"kh/internal/config"
-	"kh/internal/provider"
 	"kh/internal/session"
 	"kh/internal/tools"
 )
@@ -213,24 +212,18 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 	return "", fmt.Errorf("unknown agent command: %s", args[0])
 }
 
-// forkChat copies this chat into a new session and opens it in a new tmux
-// window directly to the right, which becomes the active window. The fork
-// replays the chat up to its last reply and waits for input; the original
-// is unchanged.
+// forkChat opens an immutable conversation checkpoint in a pane to the right.
+// It never accesses the live provider, so the original reply keeps running.
 func forkChat(ctx context.Context, cfg config.Config, c *chat) (string, error) {
 	current, err := currentPane(ctx)
 	if err != nil {
 		return "", fmt.Errorf("fork needs tmux: %w", err)
 	}
-	if r, ok := c.model.(provider.LastResponder); ok && r.LastResponse() == "" {
+	c.forkMu.Lock()
+	state, model, effort := c.forkState, c.forkModel, c.forkEffort
+	c.forkMu.Unlock()
+	if len(state) == 0 {
 		return "", fmt.Errorf("nothing to fork yet")
-	}
-	if err := c.save(); err != nil {
-		return "", err
-	}
-	state, err := session.Load(c.id)
-	if err != nil {
-		return "", err
 	}
 	id := session.New()
 	if err := session.Save(id, state); err != nil {
@@ -256,8 +249,6 @@ func forkChat(ctx context.Context, cfg config.Config, c *chat) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// The active model and effort, including /model switches in this chat.
-	model, effort := c.model.Use("", "")
 	command := []string{exe, "--provider", c.backend, "--model", model, "--effort", effort}
 	if cfg.Auto {
 		command = append(command, "--auto")
@@ -266,16 +257,20 @@ func forkChat(ctx context.Context, cfg config.Config, c *chat) (string, error) {
 		command = append(command, "--nosandbox")
 	}
 	command = append(command, "-s", id)
-	window, err := tmuxContext(ctx, "display-message", "-p", "-t", current, "#{window_id}")
+	pane, err := tmuxContext(ctx, "split-window", "-h", "-P", "-F", "#{pane_id}", "-t", current, "-c", cwd,
+		"-e", "KH_AGENT=kh:"+name, sessionCommand(false, command...))
 	if err != nil {
 		return "", err
 	}
-	// -a places the window right after the current one; without -d it is selected.
-	if _, err := tmuxContext(ctx, "new-window", "-a", "-t", window, "-n", name, "-c", cwd,
-		"-e", "KH_AGENT=kh:"+name, sessionCommand(false, command...)); err != nil {
-		return "", err
+	// Reserve the address before accepting another /fork, even if the child
+	// is still rebuilding. Do not wait for its startup to publish the name.
+	if _, err := tmuxContext(ctx, "set-option", "-p", "-t", pane, "@kh_name", name, ";",
+		"select-pane", "-t", pane, "-T", name, ";",
+		"set-option", "-w", "-t", pane, "pane-border-status", "top", ";",
+		"set-option", "-w", "-t", pane, "pane-border-format", " #{pane_title} "); err != nil {
+		return "", fmt.Errorf("fork started in %s, but address setup failed: %w", pane, err)
 	}
-	return fmt.Sprintf("forked to window %s (session %s, address kh:%s)", name, id, name), nil
+	return fmt.Sprintf("forked to right pane %s (session %s, address kh:%s)", name, id, name), nil
 }
 
 func findAgentPane(ctx context.Context, name string) (string, error) {

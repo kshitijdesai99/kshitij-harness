@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"kh/internal/terminal"
+	"kh/internal/tools"
 )
 
 func TestMarkdownRedirectedUnchanged(t *testing.T) {
@@ -63,7 +64,17 @@ func TestMarkdownProcess(t *testing.T) {
 	if os.Getenv("KH_MARKDOWN_SCENARIO") == "commentary" {
 		copy.Commentary("Checking **files**.\n\n")
 		copy.Commentary("A second line.\n")
-		r.Reply("Final **answer**.\n") // switching phase flushes commentary
+		r.Action("$ checking files\nsecond action line") // actions flush pending commentary
+		console := terminal.NewConsole(strings.NewReader(""), os.Stdout, os.Stdout)
+		if ok, err := console.Approve(context.Background(), "live command\ncontinued command", true); err != nil || !ok {
+			t.Fatalf("approval: ok=%v err=%v", ok, err)
+		}
+		console.Close()
+		t.Chdir(t.TempDir())
+		if _, err := tools.EditWithOutput(r.Action).Run(context.Background(), []byte(`{"edits":[{"path":"first.txt","old":"","new":"one"},{"path":"second.txt","old":"","new":"two"}]}`)); err != nil {
+			t.Fatal(err)
+		}
+		r.Reply("Final **answer**.\n")
 		r.FlushReply()
 		r.Statistics("(ttft 1s, total 2s, 10 in)")
 		r.Notice("ordinary notice")
@@ -130,12 +141,19 @@ try:
    assert '$x^2$' in text and 'code stays' in text and 'Ada' in text and '42' in text,repr(text)
  elif sys.argv[4]=='commentary':
   if sys.argv[2]=='dumb':
-   assert 'Checking **files**.\n\nA second line.\nFinal **answer**.' in text,repr(text)
+   assert 'Checking **files**.\n\nA second line.\n$ checking files\nsecond action line\n$ live command\ncontinued command\nedit first.txt\nedit second.txt\nFinal **answer**.' in text,repr(text)
   else:
    assert '    Checking files.' in text and '    A second line.' in text,repr(text)
    assert '\nFinal answer.' in text,repr(text)
+   assert '\n    $ checking files\n    second action line\n' in text,repr(text)
+   assert '\n    $ live command\n    continued command\n' in text,repr(text)
+   assert '\n    edit first.txt\n    edit second.txt\n' in text,repr(text)
+  assert text.index('A second line.')<text.index('$ checking files')<text.index('Final '),repr(text)
   if not sys.argv[3] and sys.argv[2]!='dumb':
    assert '\x1b[90m    Checking files.' in raw,repr(raw)
+   assert '\x1b[90m    $ checking files\n    second action line\n\x1b[0m' in raw,repr(raw)
+   assert '\x1b[90m    $ live command\n    continued command\n\x1b[0m' in raw,repr(raw)
+   assert '\x1b[90m    edit first.txt\n\x1b[0m' in raw and '\x1b[90m    edit second.txt\n\x1b[0m' in raw,repr(raw)
    assert '\x1b[38;5;215m(ttft 1s, total 2s, 10 in)\x1b[0m' in raw,repr(raw)
    assert '\x1b[90mordinary notice\x1b[0m' in raw,repr(raw)
   assert text.index('Checking')<text.index('Final answer' if sys.argv[2]!='dumb' else 'Final **answer**')<text.index('(ttft'),repr(text)

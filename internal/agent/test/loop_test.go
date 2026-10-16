@@ -3,11 +3,14 @@ package test
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"reflect"
 	"testing"
 	"time"
 
 	"kh/internal/agent"
 	"kh/internal/provider"
+	"kh/internal/terminal"
 	"kh/internal/tools"
 )
 
@@ -41,6 +44,62 @@ func TestSteerInterruptsReply(t *testing.T) {
 	}
 	if len(f.got) != 2 || f.got[1] != "no, do it in Go" {
 		t.Errorf("model was sent %q", f.got)
+	}
+}
+
+// A local /fork is handled while a reply is active, without cancelling it or
+// entering provider history. Ordinary input keeps its existing steering path.
+func TestLocalForkDoesNotSteerReply(t *testing.T) {
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	defer writer.Close()
+	console := terminal.NewConsole(reader, io.Discard, io.Discard)
+	defer console.Close()
+	forked := make(chan struct{})
+	console.SetCommandHandler(func(line string) bool {
+		if line != "/fork" {
+			return false
+		}
+		close(forked)
+		return true
+	})
+	console.Start()
+	started, release := make(chan struct{}), make(chan struct{})
+	f := &fake{step: func(ctx context.Context, n int, _ []provider.Result) ([]provider.Call, error) {
+		if n != 1 {
+			return nil, nil
+		}
+		close(started)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-release:
+			return nil, nil
+		}
+	}}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- (agent.Runner{Model: f, Input: console.Lines}).Run(ctx, "original task") }()
+	select {
+	case <-started:
+	case <-ctx.Done():
+		t.Fatal("reply did not start")
+	}
+	if _, err := io.WriteString(writer, "/fork\n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-forked:
+	case <-ctx.Done():
+		t.Fatal("local fork was not handled during reply")
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(f.got, []string{"original task"}) {
+		t.Fatalf("model received %q", f.got)
 	}
 }
 

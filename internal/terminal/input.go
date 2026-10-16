@@ -29,6 +29,7 @@ type Console struct {
 	pastes       *pasteStore
 	approval     chan struct{}
 	activity     *Activity
+	command      func(string) bool
 }
 
 func NewConsole(in io.Reader, out, err io.Writer) *Console {
@@ -49,6 +50,10 @@ func (c *Console) activityPhase(phase string) {
 		a.Set(phase)
 	}
 }
+
+// SetCommandHandler installs a local input handler before Start. Handled lines
+// never enter the message/steering or approval queues.
+func (c *Console) SetCommandHandler(handler func(string) bool) { c.command = handler }
 
 // Start must run after the tmux launcher so it cannot steal client keystrokes.
 func (c *Console) Start() { c.start.Do(func() { go c.read() }) }
@@ -75,6 +80,9 @@ func (c *Console) send(line string) bool {
 	if err != nil {
 		fmt.Fprintln(c.err, "paste:", err)
 		return true // stay at the prompt; never submit a partial/rejected paste
+	}
+	if c.command != nil && c.command(line) {
+		return true
 	}
 	select {
 	case c.lines <- line:

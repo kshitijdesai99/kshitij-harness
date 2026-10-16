@@ -35,6 +35,45 @@ func TestConsolesHaveIndependentInput(t *testing.T) {
 	}
 }
 
+func TestLocalCommandBypassesSteering(t *testing.T) {
+	c := terminal.NewConsole(strings.NewReader("/fork\nordinary steering\n/fork\n"), io.Discard, io.Discard)
+	defer c.Close()
+	var forks int
+	c.SetCommandHandler(func(line string) bool {
+		if line != "/fork" {
+			return false
+		}
+		forks++
+		return true
+	})
+	c.Start()
+	var messages []string
+	for line := range c.Lines {
+		messages = append(messages, line)
+	}
+	if forks != 2 || !reflect.DeepEqual(messages, []string{"ordinary steering"}) {
+		t.Fatalf("forks=%d messages=%q", forks, messages)
+	}
+}
+
+func TestLocalCommandBypassesApproval(t *testing.T) {
+	c := terminal.NewConsole(strings.NewReader("/fork\nyes\n"), io.Discard, io.Discard)
+	defer c.Close()
+	forked := make(chan struct{}, 1)
+	c.SetCommandHandler(func(line string) bool {
+		if line != "/fork" {
+			return false
+		}
+		forked <- struct{}{}
+		return true
+	})
+	c.Start()
+	ok, err := c.Approve(context.Background(), "command", false)
+	if err != nil || !ok || len(forked) != 1 || len(c.Held()) != 0 {
+		t.Fatalf("ok=%v err=%v forks=%d held=%q", ok, err, len(forked), c.Held())
+	}
+}
+
 func TestApprovalKeepsSteering(t *testing.T) {
 	c := terminal.NewConsole(strings.NewReader("change direction\nyes\n"), io.Discard, io.Discard)
 	defer c.Close()

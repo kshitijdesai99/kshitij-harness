@@ -1,10 +1,12 @@
 package test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -12,19 +14,19 @@ import (
 	"kh/internal/session"
 )
 
-// /fork copies the chat into a new session and opens it in a new window
-// directly to the right of the current one, which becomes active.
-func TestForkOpensNewWindowToTheRight(t *testing.T) {
+// /fork copies the chat into a new session and splits a pane to the right
+// of the current one, selecting the new pane without creating a window.
+func TestForkOpensNewPaneToTheRight(t *testing.T) {
 	for _, source := range []string{"", filepath.Join(t.TempDir(), "selected source 'quoted' \"double\"")} {
 		name := "empty-source"
 		if source != "" {
 			name = "selected-source"
 		}
-		t.Run(name, func(t *testing.T) { testForkOpensNewWindowToTheRight(t, source) })
+		t.Run(name, func(t *testing.T) { testForkOpensNewPaneToTheRight(t, source) })
 	}
 }
 
-func testForkOpensNewWindowToTheRight(t *testing.T, source string) {
+func testForkOpensNewPaneToTheRight(t *testing.T, source string) {
 	t.Setenv("KH_SOURCE_DIR", source)
 	t.Setenv("KH_REBUILD_EXEC_PID", "inherited-marker")
 	t.Setenv("KH_AUTO_REBUILD", "0")
@@ -44,7 +46,7 @@ func testForkOpensNewWindowToTheRight(t *testing.T, source string) {
 	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	state, err := session.Encode("codex", []byte(`{"session":"s","map":"","input":[
+	state, err := session.Encode("codex", []byte(`{"session":"s","map":"test repo map","input":[
 		{"type":"message","role":"user","content":[{"type":"input_text","text":"count files"}]},
 		{"type":"message","role":"assistant","content":[{"type":"output_text","text":"There are 3 files."}]}]}`))
 	if err != nil {
@@ -69,6 +71,7 @@ func testForkOpensNewWindowToTheRight(t *testing.T, source string) {
 		"env KH_PROVIDER= KH_MODEL= KH_EFFORT= KH_AGENT= KH_PARENT= "+binary+" -s original")
 	defer runTmux("kill-server")
 	runTmux("new-window", "-d", "-t", "kh:1", "-n", "other", "sleep 60")
+	originalPane := runTmux("display-message", "-p", "-t", "kh:main", "#{pane_id}")
 	waitFor(t, func() bool {
 		return strings.Contains(runTmux("capture-pane", "-p", "-t", "kh:main"), "There are 3 files.")
 	})
@@ -82,33 +85,119 @@ func testForkOpensNewWindowToTheRight(t *testing.T, source string) {
 	} {
 		runTmux("set-environment", "-g", key, value)
 	}
-	runTmux("send-keys", "-t", "kh:main", "/fork", "Enter")
-	waitFor(t, func() bool {
-		return strings.Contains(runTmux("list-windows", "-t", "kh", "-F", "#{window_name}"), "fork")
-	})
+	// Queue both before either child starts: addresses must be reserved by the
+	// parent rather than relying on the fork's startup to register its name.
+	runTmux("send-keys", "-t", originalPane, "/fork", "Enter", "/fork", "Enter")
+	waitForFork := func(name string) string {
+		t.Helper()
+		var id string
+		waitFor(t, func() bool {
+			for _, pane := range strings.Split(runTmux("list-panes", "-t", "kh:main", "-F", "#{pane_id} #{@kh_name}"), "\n") {
+				if fields := strings.Fields(pane); len(fields) == 2 && fields[1] == name {
+					id = fields[0]
+					return true
+				}
+			}
+			return false
+		})
+		return id
+	}
+	forkPane := waitForFork("fork")
+	secondPane := waitForFork("fork-2")
 
-	if windows := runTmux("list-windows", "-t", "kh", "-F", "#{window_name}"); windows != "main\nfork\nother" {
-		t.Fatalf("fork should sit right after the current window: %q", windows)
+	if windows := runTmux("list-windows", "-t", "kh", "-F", "#{window_name}"); windows != "main\nother" {
+		t.Fatalf("fork must not create or rename windows: %q", windows)
 	}
-	if active := runTmux("display-message", "-p", "-t", "kh", "#{window_name}"); active != "fork" {
-		t.Fatalf("fork window not selected: %q", active)
+	if panes := runTmux("list-panes", "-t", "kh:main", "-F", "#{pane_id}"); len(strings.Fields(panes)) != 3 {
+		t.Fatalf("expected exactly three panes: %q", panes)
 	}
-	command := runTmux("display-message", "-p", "-t", "kh:fork", "#{pane_start_command}")
+	if active := runTmux("display-message", "-p", "-t", "kh:main", "#{pane_id}"); active != secondPane {
+		t.Fatalf("latest fork pane not selected: %q", active)
+	}
+	// Horizontal splitting places panes on the same row, with the fork's left
+	// edge immediately after the original pane and its separator.
+	originalGeometry := runTmux("display-message", "-p", "-t", originalPane, "#{pane_top}:#{pane_right}:#{pane_height}")
+	forkGeometry := runTmux("display-message", "-p", "-t", secondPane, "#{pane_top}:#{pane_left}:#{pane_height}")
+	var originalTop, originalRight, originalHeight, forkTop, forkLeft, forkHeight int
+	if _, err := fmt.Sscanf(originalGeometry, "%d:%d:%d", &originalTop, &originalRight, &originalHeight); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fmt.Sscanf(forkGeometry, "%d:%d:%d", &forkTop, &forkLeft, &forkHeight); err != nil {
+		t.Fatal(err)
+	}
+	if forkTop != originalTop || forkHeight != originalHeight || forkLeft != originalRight+2 {
+		t.Fatalf("fork not immediately to the right: original %s, fork %s", originalGeometry, forkGeometry)
+	}
+	command := runTmux("display-message", "-p", "-t", forkPane, "#{pane_start_command}")
 	assertTmuxStartupEnvironment(t, command, source)
 	id := command[strings.LastIndex(command, "'-s' '")+6:]
 	id = strings.TrimSuffix(strings.TrimSuffix(id, `"`), "'")
 	copied, err := session.Load(id)
-	original, _ := session.Load("original") // re-saved by /fork just before copying
-	if err != nil || string(copied) != string(original) || !strings.Contains(string(copied), "There are 3 files.") {
-		t.Fatalf("session %q not copied: %v", id, err)
+	if err != nil {
+		t.Fatalf("load fork session %q: %v", id, err)
+	}
+	// Provider Save normalizes JSON key ordering; compare the full state by
+	// value while checking the original file remains byte-for-byte unchanged.
+	var got, want any
+	if err := json.Unmarshal(copied, &got); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(state, &want); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("session %q not copied: %s", id, copied)
+	}
+	if original, err := session.Load("original"); err != nil || string(original) != string(state) {
+		t.Fatalf("fork changed original session: %s: %v", original, err)
 	}
 	// The fork replays the chat and ends at its last reply, waiting for input.
 	waitFor(t, func() bool {
-		screen := runTmux("capture-pane", "-p", "-t", "kh:fork")
+		screen := runTmux("capture-pane", "-p", "-t", forkPane)
 		return strings.Contains(screen, "There are 3 files.") && strings.Contains(screen, "> count files")
 	})
-	if name := runTmux("display-message", "-p", "-t", "kh:fork", "#{@kh_name}"); name != "fork" {
+	if name := runTmux("display-message", "-p", "-t", forkPane, "#{@kh_name}"); name != "fork" {
 		t.Fatalf("fork address: %q", name)
+	}
+
+	// Forking again from the original must allocate an independent session
+	// and address, without replacing the first fork or steering the original.
+	if secondPane == forkPane || secondPane == originalPane {
+		t.Fatalf("repeated fork reused pane %s", secondPane)
+	}
+	secondCommand := runTmux("display-message", "-p", "-t", secondPane, "#{pane_start_command}")
+	assertTmuxStartupEnvironment(t, secondCommand, source)
+	secondID := secondCommand[strings.LastIndex(secondCommand, "'-s' '")+6:]
+	secondID = strings.TrimSuffix(strings.TrimSuffix(secondID, `"`), "'")
+	if secondID == id {
+		t.Fatalf("repeated fork reused session %q", id)
+	}
+	if second, err := session.Load(secondID); err != nil || string(second) != string(copied) {
+		t.Fatalf("repeated fork changed checkpoint: %s: %v", second, err)
+	}
+	if panes := runTmux("list-panes", "-t", "kh:main", "-F", "#{pane_id}"); len(strings.Fields(panes)) != 3 {
+		t.Fatalf("expected three panes after repeated fork: %q", panes)
+	}
+	if original, err := session.Load("original"); err != nil || string(original) != string(state) {
+		t.Fatalf("repeated fork changed original session: %s: %v", original, err)
+	}
+	waitFor(t, func() bool {
+		return runTmux("display-message", "-p", "-t", originalPane, "#{@kh_state}") == "waiting"
+	})
+
+	// A fresh chat has no completed conversation to copy.
+	runTmux("new-window", "-t", "kh", "-n", "empty", "-c", cwd,
+		"env KH_PROVIDER= KH_MODEL= KH_EFFORT= KH_AGENT= KH_PARENT= KH_AUTO_REBUILD=0 "+binary)
+	emptyPane := runTmux("display-message", "-p", "-t", "kh:empty", "#{pane_id}")
+	waitFor(t, func() bool {
+		return strings.Contains(runTmux("capture-pane", "-p", "-t", emptyPane), "kh chat, session")
+	})
+	runTmux("send-keys", "-t", emptyPane, "/fork", "Enter")
+	waitFor(t, func() bool {
+		return strings.Contains(runTmux("capture-pane", "-p", "-t", emptyPane), "nothing to fork yet")
+	})
+	if panes := runTmux("list-panes", "-t", "kh:empty", "-F", "#{pane_id}"); len(strings.Fields(panes)) != 1 {
+		t.Fatalf("empty chat unexpectedly forked: %q", panes)
 	}
 }
 

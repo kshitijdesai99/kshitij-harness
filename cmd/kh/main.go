@@ -179,7 +179,7 @@ func main() {
 	if cfg.Sandbox && runtime.GOOS != "darwin" {
 		fmt.Fprintln(os.Stderr, "warning: kh's bash sandbox is macOS-only; shell commands are not OS-sandboxed on this platform. Approval checks still apply.")
 	}
-	ts := []tools.Tool{tools.Bash(cfg, console), tools.Edit, tools.Memory(db, repoScope, owner), agentTool(cfg, ui.Action)}
+	ts := []tools.Tool{tools.Bash(cfg, console), tools.EditWithOutput(ui.Action), tools.Memory(db, repoScope, owner), agentTool(cfg, ui.Action)}
 	if *resume {
 		*id, err = session.Latest()
 		exit(err)
@@ -199,7 +199,6 @@ func main() {
 	}
 	p, err := backend.New(cfg, repomap.Build(".", cfg.MapCap), ts, ui)
 	exit(err)
-	console.Start()
 	if *id != "" {
 		exit(p.Load(saved.State))
 		if len(args) == 0 || *stay {
@@ -215,6 +214,20 @@ func main() {
 	c := chat{model: p, backend: cfg.Provider, id: *id, repo: repoScope,
 		memory: db, learn: learner, input: console, ui: ui, tools: ts, seen: fromFile,
 		budget: memory.Budget{SummaryChars: cfg.SummaryMaxTokens * 4, TopInstructions: cfg.TopInstructions, TopGotchas: cfg.TopGotchas}}
+	exit(c.snapshotFork())
+	console.SetCommandHandler(func(line string) bool {
+		if line != "/fork" {
+			return false
+		}
+		if out, err := forkChat(ctx, cfg, &c); err != nil {
+			fmt.Fprintln(os.Stderr, "fork:", err)
+		} else {
+			// Do not flush or interrupt the original session's streaming reply.
+			fmt.Fprintln(os.Stderr, terminal.Color(os.Stderr, terminal.Muted, "("+out+")"))
+		}
+		return true
+	})
+	console.Start()
 	turn := func(msg string) error { return c.turn(ctx, msg) }
 
 	setAgentState("waiting")
@@ -263,14 +276,6 @@ func main() {
 			fmt.Println("(image attached; type your message)")
 			continue
 		}
-		if singleLine && line == "/fork" {
-			if out, err := forkChat(ctx, cfg, &c); err != nil {
-				fmt.Fprintln(os.Stderr, "fork:", err)
-			} else {
-				ui.Notice("(" + out + ")")
-			}
-			continue
-		}
 		if singleLine && line == "/compact" {
 			if err := c.compact(ctx); err != nil {
 				fmt.Fprintln(os.Stderr, "compact:", err)
@@ -279,6 +284,9 @@ func main() {
 		}
 		if singleLine && strings.HasPrefix(line, "/") {
 			command(p, line)
+			if err := c.snapshotFork(); err != nil {
+				fmt.Fprintln(os.Stderr, "fork checkpoint:", err)
+			}
 		} else if line != "" {
 			if err := turn(line); err != nil {
 				fmt.Fprintln(os.Stderr, "error:", err)
@@ -306,7 +314,7 @@ func command(p provider.Provider, line string) {
 			model, effort = p.Use("", arg)
 		}
 	default:
-		fmt.Println("/compact   summarize context and save the session\n/fork   copy this chat into a new tmux window to the right and switch to it\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message")
+		fmt.Println("/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message")
 		return
 	}
 	fmt.Println(terminal.Color(os.Stdout, terminal.Muted, fmt.Sprintf("(model %s, effort %s)", model, effort)))

@@ -65,6 +65,11 @@ func (r Renderer) Query(text string) {
 
 func (r Renderer) Action(text string) {
 	r.FlushReply()
+	if progress := newMarkdownReply(r.Err); progress != nil {
+		progress.commentary = true
+		progress.present(cleanReply(text) + "\n")
+		return
+	}
 	fmt.Fprintln(r.Err, text)
 }
 func (r Renderer) Notice(text string) {

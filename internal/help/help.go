@@ -27,6 +27,7 @@ kh command reference:
 - kh login codex: authenticate. Configuration is in ~/.kh/config.json.
 - kh --model MODEL --effort LEVEL "TASK": override model and reasoning effort for this invocation. /model [MODEL] and /effort [low|medium|high] in chat show or change settings; changes persist in config.
 - /compact summarizes chat context and saves it. /image [PATH] attaches an image for the next message. /help lists chat commands.
+- /fork opens the last completed conversation in a new tmux pane on the right and selects it. It works during a reply or tool execution without steering or cancelling the original chat; partial replies and unfinished tool calls are excluded.
 - Normal session startup automatically rebuilds from local sources and runs the new executable, even from another folder. KH_SOURCE_DIR overrides source discovery; KH_AUTO_REBUILD=0 skips the automatic build. Build failures stop startup. Utility commands do not rebuild.
 - kh --rebuild: rebuild the invoked executable from local sources, then exit. Existing chats keep their running build; restart to use the new build.
 - In interactive chat, Ctrl-C stops the current task; Ctrl-D quits. Tool approval is skipped by --auto; --nosandbox disables the bash sandbox.
