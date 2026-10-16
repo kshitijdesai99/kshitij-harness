@@ -19,7 +19,7 @@ type Config struct {
 	OutputCap           int      `json:"output_cap"`             // bytes of command output sent to the model
 	MapCap              int      `json:"map_cap"`                // bytes of repo map in the system prompt; 0 = off
 	Safe                []string `json:"safe"`                   // commands (or "cmd sub") that run without asking
-	Auto                bool     `json:"auto"`                   // run every command without asking
+	Auto                bool     `json:"auto"`                   // skip command approval, not folder-write approval
 	Sandbox             bool     `json:"sandbox"`                // macOS: bash may only write in the project + Writable
 	Writable            []string `json:"writable"`               // extra dirs bash may write to when sandboxed
 	MemoryModel         string   `json:"memory_model"`           // cheap model for background memory; "" = chat model, "off" = no automatic saving

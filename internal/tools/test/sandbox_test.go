@@ -38,7 +38,7 @@ func TestSandbox(t *testing.T) {
 	if _, err := os.Stat(probe); err == nil {
 		t.Error("write outside the project was allowed")
 	}
-	if !strings.Contains(out, "-nosandbox") {
+	if !strings.Contains(out, "write_dirs") || strings.Contains(out, "-nosandbox") {
 		t.Errorf("model is not told how to allow it: %s", out)
 	}
 

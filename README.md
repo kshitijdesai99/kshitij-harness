@@ -46,9 +46,9 @@ Optionally create `~/.kh/config.json`, specifying only overrides:
 { "effort": "high" }
 ```
 
-CLI flags override configuration. Recognized read-only shell commands run without asking; other commands require approval. `--auto` skips approvals but does not disable sandboxing.
+CLI flags override configuration. Recognized read-only shell commands run without asking; other commands require approval. `--auto` skips command approval, not new folder-write approval.
 
-Only macOS has an OS-level shell sandbox, restricting writes to the project and allowed directories. `--nosandbox` permits shell writes outside the project. On other Unix systems, approvals still apply but are not a security boundary.
+On macOS, shell reads are allowed wherever OS permissions permit; writes are sandboxed to the project, configured tool/cache directories, and folders you explicitly approve for the running session. Edits outside the project also request folder approval. Grants are not saved or inherited by new/forked chats. `--nosandbox` disables shell write restrictions. Other Unix systems have no OS-level shell sandbox; approvals alone are not a security boundary.
 
 ## Memory and agents
 

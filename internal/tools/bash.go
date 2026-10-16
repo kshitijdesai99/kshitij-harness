@@ -23,21 +23,26 @@ type Approver interface {
 
 // Bash runs one command per call.
 func Bash(c config.Config, approval Approver) Tool {
+	return BashWithAccess(c, approval, nil)
+}
+
+// BashWithAccess shares session directory permissions with edit. Commands must
+// declare outside write directories up front; commands are never parsed/retried.
+func BashWithAccess(c config.Config, approval Approver, access *WriteAccess) Tool {
 	timeout := time.Duration(c.TimeoutSec) * time.Second
-	// No profile/rc: starts in milliseconds instead of loading your shell setup.
-	argv := []string{"/bin/bash", "--noprofile", "--norc", "-c"}
-	if c.Sandbox && runtime.GOOS == "darwin" {
-		argv = append(sandbox(append([]string{"."}, c.Writable...)), argv...)
-	}
-	// Cap = len, so parallel calls appending their command each get a new array.
-	argv = argv[:len(argv):len(argv)]
 	return Tool{
 		Name:        "bash",
-		Description: "Run any shell command on the user's machine, with network and system access. Starts in the current dir. Use rg to search; read many files in one call (cat a b, sed -n 1,80p f). Output is capped.",
-		Params:      map[string]any{"command": map[string]any{"type": "string"}},
-		Required:    []string{"command"},
+		Description: "Run any shell command on the user's machine, with network and system access. Starts in the current dir. Before executing writes outside the project, declare the desired folders in write_dirs for session permission. Do not retry a blocked command without declaring its write directories. Use rg to search; read many files in one call (cat a b, sed -n 1,80p f). Output is capped.",
+		Params: map[string]any{
+			"command":    map[string]any{"type": "string"},
+			"write_dirs": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Outside folders this command needs to write; declare before executing."},
+		},
+		Required: []string{"command"},
 		Run: func(ctx context.Context, input json.RawMessage) (string, error) {
-			var in struct{ Command string }
+			var in struct {
+				Command   string
+				WriteDirs []string `json:"write_dirs"`
+			}
 			if json.Unmarshal(input, &in) != nil || strings.TrimSpace(in.Command) == "" {
 				return "", fmt.Errorf("need a command")
 			}
@@ -49,6 +54,14 @@ func Bash(c config.Config, approval Approver) Tool {
 			}
 			if c.OutputCap <= 0 {
 				return "", fmt.Errorf("output_cap must be positive")
+			}
+			if len(in.WriteDirs) != 0 {
+				if access == nil {
+					return "", fmt.Errorf("write directory approval is unavailable")
+				}
+				if err := access.requireBash(ctx, in.WriteDirs); err != nil {
+					return "", err
+				}
 			}
 			allowed := c.Auto || isSafe(in.Command, c.Safe)
 			if approval != nil {
@@ -67,10 +80,25 @@ func Bash(c config.Config, approval Approver) Tool {
 			if err := ctx.Err(); err != nil {
 				return "", err
 			}
-			out, err := run(ctx, append(argv, in.Command), timeout, c.OutputCap)
+			// No profile/rc: starts without loading the user's shell setup.
+			argv := []string{"/bin/bash", "--noprofile", "--norc", "-c", in.Command}
+			if c.Sandbox && runtime.GOOS == "darwin" {
+				dirs := append([]string{"."}, c.Writable...)
+				if access != nil {
+					var err error
+					dirs, err = access.SandboxDirectories()
+					if err != nil {
+						return "", err
+					}
+					argv = append(sandboxProfile(dirs, false), argv...)
+				} else {
+					argv = append(sandbox(dirs), argv...)
+				}
+			}
+			out, err := run(ctx, argv, timeout, c.OutputCap)
 			// The error is the same for our sandbox and for macOS privacy, so name both.
 			if c.Sandbox && strings.Contains(out, "Operation not permitted") {
-				out += "\n(kh: if this was a write outside the project, kh's sandbox blocked it; the user can rerun with --nosandbox or add the dir to writable in ~/.kh/config.json. " +
+				out += "\n(kh: if this was a write outside the project, kh's sandbox blocked it; declare the desired folder in write_dirs to request session permission before executing writes. " +
 					"If it was a read, macOS privacy settings are blocking this folder for the user's terminal app.)"
 			}
 			return out, err
@@ -107,6 +135,10 @@ func run(ctx context.Context, argv []string, timeout time.Duration, outputCap in
 // sandbox returns a sandbox-exec prefix that allows reads and network everywhere
 // but writes only under dirs (and /dev, for /dev/null and the tty).
 func sandbox(dirs []string) []string {
+	return sandboxProfile(dirs, true)
+}
+
+func sandboxProfile(dirs []string, resolve bool) []string {
 	home, _ := os.UserHomeDir()
 	p := `(version 1)(allow default)(deny file-write*)(allow file-write* (subpath "/dev")`
 	for _, d := range dirs {
@@ -114,8 +146,10 @@ func sandbox(dirs []string) []string {
 			d = filepath.Join(home, d[2:])
 		}
 		d, _ = filepath.Abs(d)
-		if r, err := filepath.EvalSymlinks(d); err == nil {
-			d = r // the sandbox matches real paths, e.g. /tmp is /private/tmp
+		if resolve {
+			if r, err := filepath.EvalSymlinks(d); err == nil {
+				d = r // the sandbox matches real paths, e.g. /tmp is /private/tmp
+			}
 		}
 		p += " (subpath " + strconv.Quote(d) + ")"
 	}

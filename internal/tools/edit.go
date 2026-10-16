@@ -76,22 +76,33 @@ type editFile struct {
 	info   os.FileInfo
 	text   string
 	create bool
+	root   *os.Root
 }
 
 // EditWithOutput uses the application's action renderer for live edit notices.
 func EditWithOutput(action func(string)) Tool {
 	t := Edit
 	t.Run = func(ctx context.Context, input json.RawMessage) (string, error) {
-		return editWithOutput(ctx, input, action)
+		return editWithOutput(ctx, input, action, nil)
+	}
+	return t
+}
+
+// EditWithAccess shares session folder grants with shell commands.
+func EditWithAccess(action func(string), access *WriteAccess) Tool {
+	t := Edit
+	t.Description = "Edit files in the project or approved folders. Outside folders require explicit session-only user approval. " + t.Description
+	t.Run = func(ctx context.Context, input json.RawMessage) (string, error) {
+		return editWithOutput(ctx, input, action, access)
 	}
 	return t
 }
 
 func runEdit(ctx context.Context, input json.RawMessage) (string, error) {
-	return editWithOutput(ctx, input, func(text string) { fmt.Fprintln(os.Stderr, text) })
+	return editWithOutput(ctx, input, func(text string) { fmt.Fprintln(os.Stderr, text) }, nil)
 }
 
-func editWithOutput(ctx context.Context, input json.RawMessage, action func(string)) (string, error) {
+func editWithOutput(ctx context.Context, input json.RawMessage, action func(string), access *WriteAccess) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -112,12 +123,15 @@ func editWithOutput(ctx context.Context, input json.RawMessage, action func(stri
 	if err != nil {
 		return "", err
 	}
-	root, err := os.OpenRoot(cwd)
-	if err != nil {
-		return "", err
+	var projectRoot *os.Root
+	if access == nil {
+		projectRoot, err = os.OpenRoot(cwd)
+		if err != nil {
+			return "", err
+		}
+		defer projectRoot.Close()
 	}
-	defer root.Close()
-	byPath := make(map[string]*editFile)
+	byRoot := make(map[*os.Root]map[string]*editFile)
 	var files []*editFile
 	defer func() {
 		for _, staged := range files {
@@ -133,9 +147,20 @@ func editWithOutput(ctx context.Context, input json.RawMessage, action func(stri
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		rel, err := editPath(cwd, change.Path)
+		root := projectRoot
+		var rel string
+		if access != nil {
+			root, rel, err = access.OpenEditRoot(ctx, change.Path)
+		} else {
+			rel, err = editPath(cwd, change.Path)
+		}
 		if err != nil {
 			return "", fmt.Errorf("edit %d: %w", i+1, err)
+		}
+		byPath := byRoot[root]
+		if byPath == nil {
+			byPath = make(map[string]*editFile)
+			byRoot[root] = byPath
 		}
 		staged := byPath[rel]
 		if change.Old == "" && staged != nil {
@@ -147,7 +172,8 @@ func editWithOutput(ctx context.Context, input json.RawMessage, action func(stri
 				return "", fmt.Errorf("edit %d (%s): %w", i+1, rel, err)
 			}
 			byPath[rel] = staged
-			if staged.rel == rel {
+			if staged.root == nil {
+				staged.root = root
 				files = append(files, staged)
 			}
 		}
@@ -162,7 +188,7 @@ func editWithOutput(ctx context.Context, input json.RawMessage, action func(stri
 	}
 	for _, staged := range files {
 		if staged.create {
-			if err := checkEditParents(root, staged.rel, byPath); err != nil {
+			if err := checkEditParents(staged.root, staged.rel, byRoot[staged.root]); err != nil {
 				return "", err
 			}
 		}
@@ -175,7 +201,7 @@ func editWithOutput(ctx context.Context, input json.RawMessage, action func(stri
 	for _, staged := range files {
 		err := ctx.Err()
 		if err == nil {
-			err = writeEditFile(root, staged)
+			err = writeEditFile(staged.root, staged)
 		}
 		if err != nil {
 			return "", fmt.Errorf("write %s failed (it may be partially written); completed files: %v: %w", staged.rel, completed, err)

@@ -42,7 +42,7 @@ func main() {
 	flag.StringVar(&cfg.Provider, "provider", cfg.Provider, "backend adapter")
 	flag.StringVar(&cfg.Model, "model", cfg.Model, "model id")
 	flag.StringVar(&cfg.Effort, "effort", cfg.Effort, "reasoning effort: low, medium, high")
-	flag.BoolVar(&cfg.Auto, "auto", cfg.Auto, "run every command without asking")
+	flag.BoolVar(&cfg.Auto, "auto", cfg.Auto, "skip command approval, not folder-write approval")
 	noSandbox := flag.Bool("nosandbox", false, "let bash write outside the project")
 	resume := flag.Bool("r", false, "resume the latest session")
 	id := flag.String("s", "", "resume a session by id (files in ~/.kh/sessions)")
@@ -179,7 +179,10 @@ func main() {
 	if cfg.Sandbox && runtime.GOOS != "darwin" {
 		fmt.Fprintln(os.Stderr, "warning: kh's bash sandbox is macOS-only; shell commands are not OS-sandboxed on this platform. Approval checks still apply.")
 	}
-	ts := []tools.Tool{tools.Bash(cfg, console), tools.EditWithOutput(ui.Action), tools.Memory(db, repoScope, owner), agentTool(cfg, ui.Action)}
+	writeAccess, err := tools.NewWriteAccess(cfg, console)
+	exit(err)
+	defer writeAccess.Close()
+	ts := []tools.Tool{tools.BashWithAccess(cfg, console, writeAccess), tools.EditWithAccess(ui.Action, writeAccess), tools.Memory(db, repoScope, owner), agentTool(cfg, ui.Action)}
 	if *resume {
 		*id, err = session.Latest()
 		exit(err)
