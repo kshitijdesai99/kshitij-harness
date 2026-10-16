@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -34,6 +35,87 @@ type retryOutput struct {
 	replies strings.Builder
 	actions []string
 	notices []string
+}
+
+func TestExpiredTokenRecovery(t *testing.T) {
+	for _, mode := range []string{"refresh", "already rotated", "still expired", "refresh rejected", "empty refresh", "detail code"} {
+		t.Run(mode, func(t *testing.T) {
+			p := mockCodex(t, "")
+			fresh := accessToken(time.Now().Add(2 * time.Hour))
+			requests, refreshes := 0, 0
+			var originalBody []byte
+			http.DefaultClient.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
+				if r.URL.Path == "/oauth/token" {
+					refreshes++
+					if err := r.ParseForm(); err != nil {
+						t.Fatal(err)
+					}
+					if r.Form.Get("refresh_token") != "test-only" || r.Form.Get("grant_type") != "refresh_token" {
+						t.Fatalf("unexpected refresh form: %v", r.Form)
+					}
+					if mode == "refresh rejected" {
+						return retryResponse(401, `{"error":"invalid_grant"}`), nil
+					}
+					if mode == "empty refresh" {
+						return retryResponse(200, `{}`), nil
+					}
+					b, _ := json.Marshal(map[string]string{"access_token": fresh, "refresh_token": "rotated"})
+					return retryResponse(200, string(b)), nil
+				}
+				requests++
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if requests == 1 {
+					originalBody = body
+					if mode == "already rotated" {
+						writeTokens(t, filepath.Join(config.Dir(), "codex.json"), fresh, "rotated")
+					}
+				} else {
+					if !bytes.Equal(originalBody, body) || r.Header.Get("Authorization") != "Bearer "+fresh || r.Header.Get("ChatGPT-Account-ID") != "account" {
+						t.Error("retry did not preserve body and use refreshed credentials")
+					}
+					if mode != "still expired" {
+						return retryResponse(200, completeEvent), nil
+					}
+				}
+				if mode == "detail code" {
+					return retryResponse(401, `{"detail":{"code":"token_expired"}}`), nil
+				}
+				return retryResponse(401, `{"error":{"code":"token_expired","message":"Your authentication token has expired. Please try refreshing it."}}`), nil
+			})
+			_, err := p.Step(retryContext(t), "question", nil)
+			wantRequests, wantRefreshes := 2, 1
+			if mode == "already rotated" {
+				wantRefreshes = 0
+			}
+			if mode == "refresh rejected" || mode == "empty refresh" {
+				wantRequests = 1
+			}
+			wantErr := mode == "still expired" || mode == "refresh rejected" || mode == "empty refresh"
+			if (err != nil) != wantErr || requests != wantRequests || refreshes != wantRefreshes {
+				t.Fatalf("requests=%d refreshes=%d err=%v", requests, refreshes, err)
+			}
+			if wantErr && !strings.Contains(err.Error(), "kh login codex") {
+				t.Fatalf("missing login guidance: %v", err)
+			}
+			state, err := p.Save()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var saved struct{ Input []map[string]any }
+			if err := json.Unmarshal(state, &saved); err != nil || len(saved.Input) != 1 {
+				t.Fatalf("retry duplicated history: %s (%v)", state, err)
+			}
+			if !wantErr {
+				access, account, err := codex.Token(context.Background())
+				if err != nil || access != fresh || account != "account" || refreshes != wantRefreshes {
+					t.Fatalf("refreshed credentials not cached: account=%q err=%v refreshes=%d", account, err, refreshes)
+				}
+			}
+		})
+	}
 }
 
 func (o *retryOutput) Reply(s string)  { o.replies.WriteString(s) }

@@ -47,11 +47,22 @@ func TestMarkdownProcess(t *testing.T) {
 	source := "# Heading\n\nA **bold** word and *italic*.\n\n1. one\n\n1. two\n\n[Docs][ref]\n\n[ref]: https://example.com\n\nMath: $x^2 + \\alpha$ and $a*b*c$. Unsupported: \\(\\unknown{x}\\).\n\n```text\n$x^2$\n\ncode stays\n```\n\n| Name | Value |\n| --- | --- |\n| Ada | 42 |\n\n"
 	switch os.Getenv("KH_MARKDOWN_SCENARIO") {
 	case "security":
-		source = "Safe &#27;[2J and &#27;]52;c;YWJj&#7; and \\u001b.\n"
+		source = "Safe &#27;[2J and &#27;]52;c;YWJj&#7; and &#27;]8;;javascript:alert(1)&#27;\\forged&#27;]8;;&#27;\\ and \\u001b.\n"
+	case "forgery":
+		source = "&#27;[777;0;104116116112115058047047101118105108046101120097109112108101mhttps://good.example&#27;[778m\n"
+	case "links":
+		source = "[Config](vscode://file/Users/example/.kh)\n\n[Web][ref]\n\n[ref]: https://example.com/a%20b?q=1&x=2\n\n<https://example.org>\n\n[Mail](mailto:dev@example.com)\n\n[Local](file:///tmp/example)\n\n[Bad](javascript:alert%281%29)\n\n[Command](vscode://command/workbench.action.terminal.new)\n\n[Relative](../folder)\n\n[Broken](https://)\n\n[Control](https://example.com/&#27;]52;c;YWJj&#7;)\n"
 	case "negative":
 		source = "$- x$\n\n$+ x$\n\n\\[1. x\\]\n"
 	case "width":
 		source = strings.Repeat("readable words αβγ ", 14) + "\n"
+	}
+	if os.Getenv("KH_MARKDOWN_SCENARIO") == "links" {
+		longURL := "https://example.com/" + strings.Repeat("long-path/", 12) + "end?q=1"
+		source += "\n[Long](" + longURL + ")\n\n> [Quoted](" + longURL + ")\n\n"
+		source += "| Link | Value |\n| --- | --- |\n| [Table](" + longURL + ") | x |\n\n"
+		source += "[Space](<file:///tmp/my file.txt>)\n\n[Unicode](vscode://file/tmp/日本語)\n"
+		source += "\n| First | Second |\n| --- | --- |\n| [A](https://first.example/" + strings.Repeat("x", 80) + ") | [B](https://b.co) |\n"
 	}
 	// Arbitrary token boundaries, including bytes inside UTF-8 and Markdown.
 	copy := r
@@ -98,6 +109,9 @@ func TestMarkdownTTY(t *testing.T) {
 		{"no-color", "xterm", "1", "normal"},
 		{"dumb", "dumb", "", "normal"},
 		{"security", "xterm", "", "security"},
+		{"links", "xterm", "", "links"},
+		{"links-no-color", "xterm", "1", "links"},
+		{"forgery", "xterm", "", "forgery"},
 		{"negative", "xterm", "1", "negative"},
 		{"width", "xterm", "1", "width"},
 	} {
@@ -124,9 +138,12 @@ try:
  p.wait(timeout=1)
  assert p.returncode==0,(p.returncode,buf)
  raw=buf.decode('utf-8').replace('\r\n','\n')
- text=re.sub(r'\x1b\[[0-9;:]*m','',raw)
+ links=re.findall(r'\x1b\]8;;([^\x1b\x07]*)\x1b\\',raw)
+ unlinked=re.sub(r'\x1b\]8;;[^\x1b\x07]*\x1b\\','',raw)
+ text=re.sub(r'\x1b\[[0-9;:]*m','',unlinked)
  assert '\x1b' not in text and '\x07' not in text,repr(raw)
- if sys.argv[3] or sys.argv[2]=='dumb':assert '\x1b' not in raw,repr(raw)
+ if sys.argv[3] or sys.argv[2]=='dumb':assert '\x1b' not in unlinked,repr(raw)
+ assert sum(bool(link) for link in links)==links.count(''),repr(links)
  assert 'partial' in text and text.index('partial')<text.index('STOPPED')<text.index('Next response'),repr(text)
  if sys.argv[2]!='dumb':
   assert text.startswith('BEFORE_FLUSH\n'),repr(text)
@@ -157,6 +174,25 @@ try:
    assert '\x1b[38;5;215m(ttft 1s, total 2s, 10 in)\x1b[0m' in raw,repr(raw)
    assert '\x1b[90mordinary notice\x1b[0m' in raw,repr(raw)
   assert text.index('Checking')<text.index('Final answer' if sys.argv[2]!='dumb' else 'Final **answer**')<text.index('(ttft'),repr(text)
+ elif sys.argv[4]=='forgery':
+  assert not links and 'https://good.example' in text,repr(raw)
+ elif sys.argv[4]=='links':
+  targets=[link for link in links if link]
+  for target in ['vscode://file/Users/example/.kh','https://example.com/a%20b?q=1&x=2','https://example.org','mailto:dev@example.com','file:///tmp/example']:
+   assert target in targets,(target,targets,raw)
+  assert all(target.startswith(('https://example.com/','https://example.org','https://first.example/','https://b.co','vscode://file/','mailto:','file:///')) for target in targets),repr(targets)
+  long_target='https://example.com/'+'long-path/'*12+'end?q=1'
+  assert targets.count(long_target)>=3,(targets,raw)
+  assert 'https://first.example/'+'x'*80 in targets and 'https://b.co' in targets,(targets,raw)
+  spans=re.findall(r'\x1b\]8;;([^\x1b]+)\x1b\\(.*?)\x1b\]8;;\x1b\\',raw,re.S)
+  for target,body in spans:
+   visible=re.sub(r'\x1b\[[0-9;:]*m','',body)
+   assert '│' not in visible,(target,visible)
+   if 'https://b.co' in visible:assert target=='https://b.co',(target,visible)
+  assert 'vscode://file/tmp/日本語' in targets,(targets,raw)
+  assert 'file:///tmp/myfile.txt' not in targets and 'file:///tmp/my file.txt' not in targets,repr(targets)
+  assert all('│' not in target and '…' not in target for target in targets),repr(targets)
+  assert 'javascript:' in text and 'Relative /folder' in text,repr(text)
  elif sys.argv[4]=='negative':
   assert '- x' in text and '+ x' in text and '1. x' in text and '•' not in text,repr(text)
  elif sys.argv[4]=='width':

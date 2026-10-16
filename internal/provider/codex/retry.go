@@ -3,6 +3,7 @@ package codex
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -29,6 +30,7 @@ func (e *streamDisconnect) Unwrap() error { return e.err }
 func (c *Client) requestWithRetry(ctx context.Context, body []byte, access, account string, historyLen int) ([]provider.Call, error) {
 	var recoveryDeadline time.Time
 	stats := c.stats
+	authRetried := false
 	for attempt := 1; ; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -55,6 +57,7 @@ func (c *Client) requestWithRetry(ctx context.Context, body []byte, access, acco
 		retry := err != nil
 		delay := retryEvery
 		var calls []provider.Call
+		expired := false
 		if err == nil {
 			watch.touch()
 			// Cancellation must interrupt a blocked body read as well as Do.
@@ -81,6 +84,7 @@ func (c *Client) requestWithRetry(ctx context.Context, body []byte, access, acco
 				diagnosticCtx, stopDiagnostic := context.WithTimeout(requestCtx, diagnosticLimit)
 				stopDiagnosticClose := context.AfterFunc(diagnosticCtx, func() { resp.Body.Close() })
 				text, readErr := io.ReadAll(io.LimitReader(reader, 4<<10))
+				expired = resp.StatusCode == http.StatusUnauthorized && readErr == nil && tokenExpired(text)
 				stopDiagnosticClose()
 				stopDiagnostic()
 				err = fmt.Errorf("codex: status %d: %s", resp.StatusCode, text)
@@ -111,6 +115,25 @@ func (c *Client) requestWithRetry(ctx context.Context, body []byte, access, acco
 		}
 		c.input = c.input[:historyLen]
 		c.stats = stats
+		if expired {
+			if authRetried {
+				return nil, fmt.Errorf("%w; run `kh login codex` to sign in again", err)
+			}
+			authRetried = true
+			// The response is closed and the idle watch stopped before refresh.
+			// Keep any existing connection recovery deadline in force.
+			refreshCtx := ctx
+			stopRefresh := func() {}
+			if !recoveryDeadline.IsZero() {
+				refreshCtx, stopRefresh = context.WithDeadline(ctx, recoveryDeadline)
+			}
+			access, account, err = token(refreshCtx, access)
+			stopRefresh()
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
 		if !retry {
 			return nil, err
 		}
@@ -133,6 +156,14 @@ func (c *Client) requestWithRetry(ctx context.Context, body []byte, access, acco
 			return nil, fmt.Errorf("codex: connection recovery exhausted after %s: %w", retryFor, err)
 		}
 	}
+}
+
+func tokenExpired(body []byte) bool {
+	var reply struct {
+		Error  struct{ Code string } `json:"error"`
+		Detail struct{ Code string } `json:"detail"`
+	}
+	return json.Unmarshal(body, &reply) == nil && (reply.Error.Code == "token_expired" || reply.Detail.Code == "token_expired")
 }
 
 // A silence deadline, not a total request deadline: streamed bytes extend it,

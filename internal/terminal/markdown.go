@@ -1,14 +1,19 @@
 package terminal
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
 
 	"github.com/charmbracelet/glamour"
+	glamouransi "github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/chzyer/readline"
 	"github.com/muesli/termenv"
@@ -26,7 +31,7 @@ const replyStyle = `{
  "enumeration": {"block_prefix":". "},
  "task": {"ticked":"[✓] ","unticked":"[ ] "},
  "hr": {"format":"────────\n","color":"240"},
- "link": {"underline":true,"color":"36"}, "link_text": {"bold":true},
+ "link": {"underline":true,"color":"36","format":"{{khLink .text \"LINK_ID\"}}"}, "link_text": {"bold":true},
  "image_text": {"format":"Image: {{.text}} →"},
  "code": {"color":"36"},
  "code_block": {"margin":2,"chroma": {
@@ -35,6 +40,23 @@ const replyStyle = `{
  }},
  "table": {"center_separator":"┼","column_separator":"│","row_separator":"─"}
 }`
+
+// Register once, before any renderer runs. Glamour's wrapper understands SGR,
+// but not OSC 8: carry the original URL as decimal bytes in a private SGR marker
+// and generate the hyperlink only after wrapping and sanitization. Fixed-width
+// byte encoding keeps this to three parameters (the table parser has a small
+// parameter limit). Never derive destinations from decorated or truncated text.
+func init() {
+	glamouransi.TemplateFuncMap["khLink"] = func(target, id string) string {
+		var out strings.Builder
+		out.WriteString("\x1b[777;" + id + ";")
+		for i := 0; i < len(target); i++ {
+			fmt.Fprintf(&out, "%03d", target[i])
+		}
+		out.WriteString("m" + target + "\x1b[778m")
+		return out.String()
+	}
+}
 
 const maxReplyBlock = 1 << 20
 
@@ -48,6 +70,7 @@ type markdownReply struct {
 	renderer   *glamour.TermRenderer
 	commentary bool
 	lineStart  bool
+	linkID     string // unpredictable marker prevents entity-decoded link forgery
 }
 
 func newMarkdownReply(out io.Writer) *markdownReply {
@@ -55,7 +78,11 @@ func newMarkdownReply(out io.Writer) *markdownReply {
 	if !ok || f == nil || os.Getenv("TERM") == "dumb" || !readline.IsTerminal(int(f.Fd())) {
 		return nil
 	}
-	return &markdownReply{out: f, lineStart: true}
+	var nonce [8]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return nil
+	}
+	return &markdownReply{out: f, lineStart: true, linkID: strconv.FormatUint(binary.BigEndian.Uint64(nonce[:]), 10)}
 }
 
 func cleanReply(text string) string {
@@ -119,16 +146,14 @@ func (r *markdownReply) render() {
 		if noColor || r.commentary {
 			profile = termenv.Ascii
 		}
-		r.renderer, _ = glamour.NewTermRenderer(glamour.WithStylesFromJSONBytes([]byte(replyStyle)),
-			glamour.WithWordWrap(width), glamour.WithColorProfile(profile))
+		style := strings.ReplaceAll(replyStyle, "LINK_ID", r.linkID)
+		r.renderer, _ = glamour.NewTermRenderer(glamour.WithStylesFromJSONBytes([]byte(style)),
+			glamour.WithWordWrap(width), glamour.WithColorProfile(profile), glamour.WithInlineTableLinks(true))
 		r.width, r.noColor = width, noColor
 	}
 	if r.renderer != nil {
 		if rendered, err := r.renderer.Render(ReadableMathMarkdown(cleanReply(source))); err == nil {
-			if noColor || r.commentary {
-				rendered = cleanReply(rendered)
-			}
-			r.present(safeRenderedReply(rendered))
+			r.present(safeRenderedReply(rendered, noColor || r.commentary, r.linkID))
 			return
 		}
 	}
@@ -157,12 +182,29 @@ func (r *markdownReply) present(text string) {
 	fmt.Fprint(r.out, text)
 }
 
-// Markdown entity decoding can introduce controls after source sanitization.
-// Permit only SGR styling, never cursor movement, title changes, or OSC clipboard
-// commands, including those introduced by entity decoding inside the renderer.
-func safeRenderedReply(text string) string {
-	var out strings.Builder
+// Glamour's wrapping does not understand OSC 8. The link format uses private
+// SGR markers (777;<nonce>;<URL bytes>/778), which survive wrapping, then replaces
+// them with validated hyperlinks. Markers and untrusted OSC never reach the terminal.
+// Entity decoding can introduce controls after source sanitization, so only SGR
+// styling is accepted from the rendered text; hyperlinks are generated here.
+func safeRenderedReply(text string, noStyle bool, linkID string) string {
+	var out, link strings.Builder
 	var state byte
+	prefix := "\x1b[777;" + linkID + ";"
+	inLink, valid := false, true
+	target := ""
+	finishLink := func(complete bool) {
+		body := link.String()
+		if complete && valid && safeLinkTarget(target) {
+			out.WriteString("\x1b]8;;" + target + "\x1b\\")
+			out.WriteString(body)
+			out.WriteString("\x1b]8;;\x1b\\")
+		} else {
+			out.WriteString(body)
+		}
+		link.Reset()
+		inLink = false
+	}
 	for len(text) > 0 {
 		seq, _, n, next := ansi.DecodeSequence(text, state, nil)
 		if n == 0 {
@@ -170,11 +212,90 @@ func safeRenderedReply(text string) string {
 		}
 		state = next
 		text = text[n:]
+		if strings.HasPrefix(seq, prefix) && strings.HasSuffix(seq, "m") {
+			var decoded strings.Builder
+			encoded := seq[len(prefix) : len(seq)-1]
+			if len(encoded)%3 != 0 {
+				encoded = ""
+			}
+			for i := 0; i < len(encoded); i += 3 {
+				b, err := strconv.ParseUint(encoded[i:i+3], 10, 8)
+				if err != nil {
+					decoded.Reset()
+					break
+				}
+				decoded.WriteByte(byte(b))
+			}
+			// Wrapping repeats active markers; table rows can interleave
+			// different cells. Never let one destination swallow another.
+			if inLink && target != decoded.String() {
+				finishLink(true)
+			}
+			target = decoded.String()
+			if !inLink {
+				inLink, valid = true, true
+			}
+			continue
+		}
+		if strings.HasPrefix(seq, "\x1b[777") {
+			// Drop forged or malformed private markers too.
+			continue
+		}
+		if seq == "\x1b[778m" {
+			if inLink {
+				finishLink(true)
+			}
+			continue
+		}
 		if strings.HasPrefix(seq, "\x1b[") && strings.HasSuffix(seq, "m") && strings.Trim(seq[2:len(seq)-1], "0123456789;:") == "" {
-			out.WriteString(seq)
+			// Close before padding, borders or another cell. Repeated markers
+			// reopen wrapped links where the layout preserves them. Glamour
+			// drops markers on table continuations: only their first fragment
+			// is linked, rather than risking a link across adjacent cells.
+			if inLink && (seq == "\x1b[0m" || seq == "\x1b[m") {
+				finishLink(true)
+			}
+			if noStyle {
+				continue
+			}
 		} else {
-			out.WriteString(cleanReply(seq))
+			clean := cleanReply(seq)
+			if clean != seq {
+				valid = false
+			}
+			seq = clean
+		}
+		if inLink {
+			link.WriteString(seq)
+		} else {
+			out.WriteString(seq)
 		}
 	}
+	if inLink {
+		finishLink(false)
+	}
 	return out.String()
+}
+
+func safeLinkTarget(target string) bool {
+	if strings.ContainsAny(target, "\\") || strings.ContainsFunc(target, func(r rune) bool {
+		return unicode.IsControl(r) || unicode.IsSpace(r) || unicode.Is(unicode.Cf, r)
+	}) {
+		return false
+	}
+	u, err := url.Parse(target)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		return u.Hostname() != ""
+	case "mailto":
+		return u.Opaque != ""
+	case "vscode":
+		return u.Host == "file" && strings.HasPrefix(u.Path, "/")
+	case "file":
+		return (u.Host == "" || u.Host == "localhost") && strings.HasPrefix(u.Path, "/")
+	}
+	return false
 }

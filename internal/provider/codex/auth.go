@@ -80,6 +80,12 @@ func Login(ctx context.Context) error {
 
 // Token returns a fresh access token and the ChatGPT account ID.
 func Token(ctx context.Context) (access, account string, err error) {
+	return token(ctx, "")
+}
+
+// rejected is the access token the server reported expired. Reuse newer
+// credentials if another process already refreshed it while we waited.
+func token(ctx context.Context, rejected string) (access, account string, err error) {
 	// Bound lock acquisition and refresh together, even without a parent deadline.
 	ctx, cancel := context.WithTimeout(ctx, tokenTimeout)
 	defer cancel()
@@ -90,7 +96,7 @@ func Token(ctx context.Context) (access, account string, err error) {
 		}
 		// We read inside the lock, so if another kh
 		// already refreshed we see its new tokens and never reuse a spent one.
-		if exp, _ := claims(t.Access)["exp"].(float64); time.Until(time.Unix(int64(exp), 0)) < refreshEarly {
+		if exp, _ := claims(t.Access)["exp"].(float64); t.Access == rejected || time.Until(time.Unix(int64(exp), 0)) < refreshEarly {
 			var n tokens
 			// The Token deadline also bounds reading the refresh response body.
 			// Never retry: refresh tokens may already have been spent.
@@ -100,7 +106,10 @@ func Token(ctx context.Context) (access, account string, err error) {
 				"client_id":     {clientID},
 			}, &n)
 			if err != nil {
-				return err
+				return fmt.Errorf("codex: token refresh failed; run `kh login codex` to sign in again: %w", err)
+			}
+			if n.Access == "" {
+				return fmt.Errorf("codex: token refresh returned no access token; run `kh login codex` to sign in again")
 			}
 			if n.Refresh == "" {
 				n.Refresh = t.Refresh
