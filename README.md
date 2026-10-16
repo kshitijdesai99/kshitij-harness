@@ -32,7 +32,7 @@ Outside tmux, interactive launches create a fresh, uniquely named tmux session; 
 
 **Ctrl-C** discards the draft and stops a task; **Ctrl-D** on an empty line quits. **Up/Down** recall and navigate input history. Type while kh works to steer it.
 
-Run `./kh --help` for CLI options; use `/help` in chat for commands. Attach a local image with `/image path/to/image.png`, or use `/image` for the macOS clipboard (requires Swift).
+Run `./kh --help` for CLI options; use `/help` in chat for commands. Ask kh to inspect a local image with the `view_image` tool (PNG, JPEG, WebP or GIF, up to 10 MB), including files outside the repository. It sends the image itself to the active model. You can also attach a local image with `/image path/to/image.png`, or use `/image` for the macOS clipboard (requires Swift).
 
 ## Updates
 

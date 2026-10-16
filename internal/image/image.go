@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -138,8 +140,33 @@ else {
 			return "", fmt.Errorf("decode clipboard image: %w", errDecode)
 		}
 	} else {
-		var err error
-		data, err = os.ReadFile(path)
+		// Check before opening: opening a FIFO can block indefinitely and devices
+		// are not image files. Check the opened file too in case it changed.
+		info, err := os.Stat(path)
+		if err != nil {
+			return "", err
+		}
+		if !info.Mode().IsRegular() {
+			return "", fmt.Errorf("image must be a regular file: %s", path)
+		}
+		if info.Size() > MaxBytes {
+			return "", fmt.Errorf("image exceeds %d MB", MaxBytes>>20)
+		}
+		// The path can change after Stat. O_NONBLOCK prevents a replacement
+		// FIFO from hanging Open before the descriptor can be checked.
+		f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+		if err != nil {
+			return "", err
+		}
+		defer f.Close()
+		info, err = f.Stat()
+		if err != nil {
+			return "", err
+		}
+		if !info.Mode().IsRegular() {
+			return "", fmt.Errorf("image must be a regular file: %s", path)
+		}
+		data, err = io.ReadAll(io.LimitReader(f, MaxBytes+1))
 		if err != nil {
 			return "", err
 		}

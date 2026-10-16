@@ -185,7 +185,7 @@ func main() {
 	writeAccess, err := tools.NewWriteAccess(cfg, console)
 	exit(err)
 	defer writeAccess.Close()
-	ts := []tools.Tool{tools.BashWithAccess(cfg, console, writeAccess), tools.EditWithAccess(ui.Action, writeAccess), tools.Memory(db, repoScope, owner), agentTool(cfg, ui.Action)}
+	ts := []tools.Tool{tools.BashWithAccess(cfg, console, writeAccess), tools.EditWithAccess(ui.Action, writeAccess), tools.Memory(db, repoScope, owner), tools.ViewImage(ui.Action), agentTool(cfg, ui.Action)}
 	if *resume {
 		*id, err = session.Latest()
 		exit(err)

@@ -83,7 +83,15 @@ func (c *Client) Step(ctx context.Context, user string, results []provider.Resul
 	}
 	// Outputs must directly follow their calls; a steering message goes after.
 	for _, r := range results {
-		c.input = append(c.input, map[string]any{"type": "function_call_output", "call_id": r.ID, "output": r.Output})
+		var output any = r.Output
+		if !r.IsError && len(r.Images) > 0 {
+			parts := []map[string]any{{"type": "input_text", "text": r.Output}}
+			for _, image := range r.Images {
+				parts = append(parts, map[string]any{"type": "input_image", "image_url": image})
+			}
+			output = parts
+		}
+		c.input = append(c.input, map[string]any{"type": "function_call_output", "call_id": r.ID, "output": output})
 	}
 	if user != "" {
 		// Memory goes just before the message it was retrieved for, so it
@@ -253,6 +261,7 @@ func (c *Client) Replay(out provider.Output) {
 			Type, Role, Name, Arguments, Phase string
 			Content                            []struct{ Type, Text string }
 			Action                             map[string]any
+			Output                             json.RawMessage
 		}
 		b, _ := json.Marshal(it)
 		json.Unmarshal(b, &m)
@@ -270,6 +279,15 @@ func (c *Client) Replay(out provider.Output) {
 				}
 			}
 			provider.FlushReply(out)
+		case "function_call_output":
+			var parts []struct{ Type string }
+			if json.Unmarshal(m.Output, &parts) == nil {
+				for _, part := range parts {
+					if part.Type == "input_image" {
+						out.Action("[image loaded]")
+					}
+				}
+			}
 		case "function_call":
 			for _, action := range tools.DescribeCall(m.Name, json.RawMessage(m.Arguments)) {
 				out.Action(action)

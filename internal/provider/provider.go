@@ -18,6 +18,7 @@ type Result struct {
 	ID      string
 	Output  string
 	IsError bool
+	Images  []string // validated image data URLs; never embed these in text logs
 }
 
 // Output separates presentation from provider protocol handling. Reply accepts

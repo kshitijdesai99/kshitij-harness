@@ -39,6 +39,10 @@ func DescribeCall(name string, input json.RawMessage) []string {
 		if args.Path != "" {
 			return []string{"edit " + args.Path}
 		}
+	case "view_image":
+		if args.Path != "" {
+			return []string{"view_image " + args.Path}
+		}
 	case "memory":
 		return []string{strings.TrimSpace("memory " + args.Action)}
 	case "agents":

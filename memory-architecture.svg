@@ -1,10 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1400" viewBox="0 0 1600 1400" font-family="Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1480" viewBox="0 0 1600 1480" font-family="Helvetica, Arial, sans-serif">
   <title>kh memory architecture</title>
   <desc>Selective memory hooks, append-only provenance, scoped hybrid retrieval and bounded chat context.</desc>
   <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
-    </marker>
     <style>
       .title { font-size: 34px; font-weight: 700; fill: #0f172a; }
       .sub { font-size: 19px; fill: #475569; }
@@ -20,9 +17,9 @@
       .foot { fill: #f1f5f9; stroke: #cbd5e1; stroke-width: 1.5; }
     </style>
   </defs>
-  <rect width="1600" height="1400" fill="#f8fafc"/>
+  <rect width="1600" height="1480" fill="#f8fafc"/>
   <text x="55" y="62" class="title">kh memory architecture</text>
-  <text x="55" y="94" class="sub">Selective, append-only, local SQLite memory. Arrows show the direction of data flow.</text>
+  <text x="55" y="94" class="sub">Selective, append-only, local SQLite memory. Arrows show the direction of data flow; a two-headed arrow is a call and its result.</text>
 
   <!-- Card 1: chat turn -->
   <rect x="55" y="120" width="430" height="480" rx="16" class="card"/>
@@ -84,89 +81,113 @@
   <text x="1135" y="552" class="b">current notes, never the old summary</text>
 
   <!-- Card 4: hybrid search -->
-  <rect x="1115" y="670" width="430" height="480" rx="16" class="card"/>
-  <circle cx="1151" cy="712" r="18" fill="#c2410c"/>
-  <text x="1151" y="719" class="num" text-anchor="middle">4</text>
-  <text x="1185" y="720" class="h">Hybrid search</text>
-  <line x1="1135" y1="742" x2="1525" y2="742" class="rule"/>
-  <text x="1135" y="778" class="s">FTS5 BM25 keyword search, always on</text>
-  <text x="1135" y="805" class="b">+ optional Ollama embeddings,</text>
-  <text x="1135" y="832" class="b">cosine ≥ 0.35, fused by RRF k = 60</text>
-  <text x="1135" y="859" class="b">4s semantic budget, 3s HTTP timeout;</text>
-  <text x="1135" y="886" class="b">embedding failure → keyword only</text>
-  <text x="1135" y="913" class="b">Vector cache notes_vectors:</text>
-  <text x="1135" y="940" class="m">note_id model content_hash vector</text>
-  <text x="1135" y="967" class="s">Opt-in: BOTH memory_embedding_url</text>
-  <text x="1135" y="994" class="b">(explicit /api/embed) and</text>
-  <text x="1135" y="1021" class="s">memory_embedding_model. Default: off</text>
-  <text x="1135" y="1048" class="b">A configured endpoint receives query,</text>
-  <text x="1135" y="1075" class="b">note and context text. No model</text>
-  <text x="1135" y="1102" class="b">download, no chat credentials sent</text>
+  <rect x="1115" y="720" width="430" height="480" rx="16" class="card"/>
+  <circle cx="1151" cy="762" r="18" fill="#c2410c"/>
+  <text x="1151" y="769" class="num" text-anchor="middle">4</text>
+  <text x="1185" y="770" class="h">Hybrid search</text>
+  <line x1="1135" y1="792" x2="1525" y2="792" class="rule"/>
+  <text x="1135" y="828" class="s">FTS5 BM25 keyword search, always on</text>
+  <text x="1135" y="855" class="b">+ optional Ollama embeddings,</text>
+  <text x="1135" y="882" class="b">cosine ≥ 0.35, fused by RRF k = 60</text>
+  <text x="1135" y="909" class="b">4s semantic budget, 3s HTTP timeout;</text>
+  <text x="1135" y="936" class="b">embedding failure → keyword only</text>
+  <text x="1135" y="963" class="b">Vector cache notes_vectors:</text>
+  <text x="1135" y="990" class="m">note_id model content_hash vector</text>
+  <text x="1135" y="1017" class="s">Opt-in: BOTH memory_embedding_url</text>
+  <text x="1135" y="1044" class="b">(explicit /api/embed) and</text>
+  <text x="1135" y="1071" class="s">memory_embedding_model. Default: off</text>
+  <text x="1135" y="1098" class="b">A configured endpoint receives query,</text>
+  <text x="1135" y="1125" class="b">note and context text. No model</text>
+  <text x="1135" y="1152" class="b">download, no chat credentials sent</text>
 
   <!-- Card 5: recall message -->
-  <rect x="585" y="670" width="430" height="480" rx="16" class="card"/>
-  <circle cx="621" cy="712" r="18" fill="#be185d"/>
-  <text x="621" y="719" class="num" text-anchor="middle">5</text>
-  <text x="655" y="720" class="h">Recall message</text>
-  <line x1="605" y1="742" x2="995" y2="742" class="rule"/>
-  <text x="605" y="778" class="b">Built per query; only what is new</text>
-  <text x="605" y="805" class="s">1. Correction notices first:</text>
-  <text x="605" y="832" class="b">replaced, or "no longer applies"</text>
-  <text x="605" y="859" class="s">2. Unseen summary + must-load refs</text>
-  <text x="605" y="886" class="b">within summary_max_tokens</text>
-  <text x="605" y="913" class="s">3. Matched notes, default maxima:</text>
-  <text x="605" y="940" class="b">10 instructions, 10 gotchas, 5 per fact/decision</text>
-  <text x="605" y="967" class="s">TOTAL: memory_max_tokens (4000),</text>
-  <text x="605" y="994" class="b">≈ chars/4, header included</text>
-  <text x="605" y="1048" class="b">Seen IDs: [memory #id] markers in</text>
-  <text x="605" y="1075" class="b">saved provider history. Compaction</text>
-  <text x="605" y="1102" class="b">drops them, so notes are resent</text>
+  <rect x="585" y="720" width="430" height="480" rx="16" class="card"/>
+  <circle cx="621" cy="762" r="18" fill="#be185d"/>
+  <text x="621" y="769" class="num" text-anchor="middle">5</text>
+  <text x="655" y="770" class="h">Recall message</text>
+  <line x1="605" y1="792" x2="995" y2="792" class="rule"/>
+  <text x="605" y="828" class="b">Built per query; only what is new</text>
+  <text x="605" y="855" class="s">1. Correction notices first:</text>
+  <text x="605" y="882" class="b">replaced, or "no longer applies"</text>
+  <text x="605" y="909" class="s">2. Unseen summary + must-load refs</text>
+  <text x="605" y="936" class="b">within summary_max_tokens</text>
+  <text x="605" y="963" class="s">3. Matched notes, default maxima:</text>
+  <text x="605" y="990" class="b">10 instructions, 10 gotchas, 5 per fact/decision</text>
+  <text x="605" y="1017" class="s">TOTAL: memory_max_tokens (4000),</text>
+  <text x="605" y="1044" class="b">≈ chars/4, header included</text>
+  <text x="605" y="1098" class="b">Seen IDs: [memory #id] markers in</text>
+  <text x="605" y="1125" class="b">saved provider history. Compaction</text>
+  <text x="605" y="1152" class="b">drops them, so notes are resent</text>
 
   <!-- Card 6: memory tool -->
-  <rect x="55" y="670" width="430" height="480" rx="16" class="card"/>
-  <circle cx="91" cy="712" r="18" fill="#475569"/>
-  <text x="91" y="719" class="num" text-anchor="middle">6</text>
-  <text x="125" y="720" class="h">memory tool (agent)</text>
-  <line x1="75" y1="742" x2="465" y2="742" class="rule"/>
-  <text x="75" y="778" class="s">search · get · history · forget</text>
-  <text x="75" y="805" class="b">No save action; hooks handle saving</text>
-  <text x="75" y="832" class="b">Scope repo: repo + global notes</text>
-  <text x="75" y="859" class="b">Scope global: global notes only</text>
-  <text x="75" y="886" class="b">History and forget use the exact scope</text>
-  <text x="75" y="913" class="b">get: one version, full provenance,</text>
-  <text x="75" y="940" class="b">current or superseded state</text>
-  <text x="75" y="967" class="b">history: full versions, newest first,</text>
-  <text x="75" y="994" class="b">default 20, max 50; truncation shown</text>
-  <text x="75" y="1021" class="b">since / until: inclusive RFC3339</text>
-  <text x="75" y="1048" class="b">bounds on stated_at</text>
-  <text x="75" y="1075" class="b">order: relevance · newest · oldest</text>
-  <text x="75" y="1102" class="b">forget only when the user asks</text>
+  <rect x="55" y="720" width="430" height="480" rx="16" class="card"/>
+  <circle cx="91" cy="762" r="18" fill="#475569"/>
+  <text x="91" y="769" class="num" text-anchor="middle">6</text>
+  <text x="125" y="770" class="h">memory tool (agent)</text>
+  <line x1="75" y1="792" x2="465" y2="792" class="rule"/>
+  <text x="75" y="828" class="s">search · get · history · forget</text>
+  <text x="75" y="855" class="b">No save action; hooks handle saving</text>
+  <text x="75" y="882" class="b">Scope repo: repo + global notes</text>
+  <text x="75" y="909" class="b">Scope global: global notes only</text>
+  <text x="75" y="936" class="b">History and forget use the exact scope</text>
+  <text x="75" y="963" class="b">get: one version, full provenance,</text>
+  <text x="75" y="990" class="b">current or superseded state</text>
+  <text x="75" y="1017" class="b">history: full versions, newest first,</text>
+  <text x="75" y="1044" class="b">default 20, max 50; truncation shown</text>
+  <text x="75" y="1071" class="b">since / until: inclusive RFC3339</text>
+  <text x="75" y="1098" class="b">bounds on stated_at</text>
+  <text x="75" y="1125" class="b">order: relevance · newest · oldest</text>
+  <text x="75" y="1152" class="b">forget only when the user asks</text>
 
   <!-- Data flow -->
-  <line x1="487" y1="340" x2="581" y2="340" class="flow" marker-end="url(#arrow)"/>
-  <text x="535" y="306" class="l" text-anchor="middle">query</text>
-  <text x="535" y="328" class="l" text-anchor="middle">+ reply</text>
-  <line x1="1017" y1="340" x2="1111" y2="340" class="flow" marker-end="url(#arrow)"/>
-  <text x="1065" y="306" class="l" text-anchor="middle">durable</text>
-  <text x="1065" y="328" class="l" text-anchor="middle">notes</text>
-  <line x1="1330" y1="602" x2="1330" y2="666" class="flow" marker-end="url(#arrow)"/>
-  <text x="1345" y="641" class="l">current notes</text>
-  <line x1="1113" y1="920" x2="1019" y2="920" class="flow" marker-end="url(#arrow)"/>
-  <text x="1065" y="886" class="l" text-anchor="middle">ranked</text>
-  <text x="1065" y="908" class="l" text-anchor="middle">matches</text>
-  <path d="M700,668 L700,630 L380,630 L380,604" class="flow" marker-end="url(#arrow)"/>
-  <text x="650" y="656" class="l" text-anchor="middle">SetMemory, then provider.Step</text>
-  <line x1="150" y1="602" x2="150" y2="666" class="flow" marker-end="url(#arrow)"/>
-  <text x="164" y="641" class="l">tool calls</text>
-  <path d="M270,1152 L270,1180 L1330,1180 L1330,1154" class="flow" marker-end="url(#arrow)"/>
-  <rect x="680" y="1168" width="240" height="24" fill="#f8fafc"/>
-  <text x="800" y="1186" class="l" text-anchor="middle">search ranks via card 4</text>
+  <path d="M487,330 L573,330" class="flow"/>
+  <polygon points="583,330 569.0,337.0 569.0,323.0" fill="#475569"/>
+  <text x="535" y="296" class="l" text-anchor="middle">query</text>
+  <text x="535" y="318" class="l" text-anchor="middle">+ reply</text>
+  <path d="M1017,300 L1103,300" class="flow"/>
+  <polygon points="1113,300 1099.0,307.0 1099.0,293.0" fill="#475569"/>
+  <text x="1065" y="266" class="l" text-anchor="middle">new</text>
+  <text x="1065" y="288" class="l" text-anchor="middle">notes</text>
+  <path d="M1113,400 L1027,400" class="flow"/>
+  <polygon points="1017,400 1031.0,393.0 1031.0,407.0" fill="#475569"/>
+  <text x="1065" y="430" class="l" text-anchor="middle">existing</text>
+  <text x="1065" y="452" class="l" text-anchor="middle">notes</text>
+  <path d="M1400,602 L1400,706" class="flow"/>
+  <polygon points="1400,716 1393.0,702.0 1407.0,702.0" fill="#475569"/>
+  <text x="1414" y="666" class="l" text-anchor="start">current notes</text>
+  <path d="M1180,602 L1180,680 L930,680 L930,706" class="flow"/>
+  <polygon points="930,716 923.0,702.0 937.0,702.0" fill="#475569"/>
+  <rect x="957" y="653" width="197" height="24" fill="#f8fafc"/>
+  <text x="1055" y="670" class="l" text-anchor="middle">corrections + summary</text>
+  <path d="M1113,980 L1027,980" class="flow"/>
+  <polygon points="1017,980 1031.0,973.0 1031.0,987.0" fill="#475569"/>
+  <text x="1065" y="946" class="l" text-anchor="middle">ranked</text>
+  <text x="1065" y="968" class="l" text-anchor="middle">matches</text>
+  <path d="M340,602 L340,680 L650,680 L650,706" class="flow"/>
+  <polygon points="650,716 643.0,702.0 657.0,702.0" fill="#475569"/>
+  <rect x="466" y="653" width="59" height="24" fill="#f8fafc"/>
+  <text x="495" y="670" class="l" text-anchor="middle">query</text>
+  <path d="M800,716 L800,640 L420,640 L420,614" class="flow"/>
+  <polygon points="420,604 427.0,618.0 413.0,618.0" fill="#475569"/>
+  <rect x="490" y="613" width="240" height="24" fill="#f8fafc"/>
+  <text x="610" y="630" class="l" text-anchor="middle">memory message (SetMemory)</text>
+  <path d="M150,612 L150,706" class="flow"/>
+  <polygon points="150,716 143.0,702.0 157.0,702.0" fill="#475569"/><polygon points="150,602 157.0,616.0 143.0,616.0" fill="#475569"/>
+  <text x="164" y="666" class="l" text-anchor="start">tool call ⇄ result</text>
+  <path d="M230,1212 L230,1232 L1290,1232 L1290,1212" class="flow"/>
+  <polygon points="1290,1202 1297.0,1216.0 1283.0,1216.0" fill="#475569"/><polygon points="230,1202 237.0,1216.0 223.0,1216.0" fill="#475569"/>
+  <rect x="597" y="1223" width="326" height="24" fill="#f8fafc"/>
+  <text x="760" y="1240" class="l" text-anchor="middle">search ⇄ ranked matches (via card 4)</text>
+  <path d="M110,1212 L110,1268 L1575,1268 L1575,360 L1557,360" class="flow"/>
+  <polygon points="1547,360 1561.0,353.0 1561.0,367.0" fill="#475569"/><polygon points="110,1202 117.0,1216.0 103.0,1216.0" fill="#475569"/>
+  <rect x="477" y="1259" width="566" height="24" fill="#f8fafc"/>
+  <text x="760" y="1276" class="l" text-anchor="middle">get · history read, forget appends a tombstone (card 3 directly)</text>
 
   <!-- Control surface -->
-  <rect x="55" y="1210" width="1490" height="166" rx="14" class="foot"/>
-  <text x="80" y="1246" class="h">Control surface</text>
-  <text x="80" y="1280" class="b">~/.kh/config.json: memory_model ("" = chat model, "off" = no automatic saving) · summary_max_tokens 2500 · memory_max_tokens 4000</text>
-  <text x="80" y="1307" class="b">top_instructions 10 · top_gotchas 10 · top_knowledge 5 · memory_embedding_url + memory_embedding_model (set both, or neither)</text>
-  <text x="80" y="1334" class="b">CLI: kh memory list | search | explain | status | get | history | remember | forget | purge | import-md</text>
-  <text x="80" y="1361" class="b">forget appends a tombstone row and keeps history · purge deletes every version and its cached vectors</text>
+  <rect x="55" y="1294" width="1490" height="166" rx="14" class="foot"/>
+  <text x="80" y="1330" class="h">Control surface</text>
+  <text x="80" y="1364" class="b">~/.kh/config.json: memory_model ("" = chat model, "off" = no automatic saving) · summary_max_tokens 2500 · memory_max_tokens 4000</text>
+  <text x="80" y="1391" class="b">top_instructions 10 · top_gotchas 10 · top_knowledge 5 · memory_embedding_url + memory_embedding_model (set both, or neither)</text>
+  <text x="80" y="1418" class="b">CLI: kh memory list | search | explain | status | get | history | remember | forget | purge | import-md</text>
+  <text x="80" y="1445" class="b">forget appends a tombstone row and keeps history · purge deletes every version and its cached vectors</text>
 </svg>

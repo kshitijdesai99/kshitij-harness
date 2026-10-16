@@ -211,11 +211,24 @@ func runAll(ctx context.Context, ts []tools.Tool, calls []provider.Call) []provi
 			defer wg.Done()
 			out[i] = provider.Result{ID: c.ID, Output: "unknown tool: " + c.Name, IsError: true}
 			if t, ok := byName[c.Name]; ok {
-				s, err := t.Run(ctx, c.Input)
-				if err != nil {
-					s = err.Error()
+				var result provider.Result
+				var err error
+				switch {
+				case t.RunResult != nil:
+					result, err = t.RunResult(ctx, c.Input)
+				case t.Run != nil:
+					result.Output, err = t.Run(ctx, c.Input)
+				default:
+					err = fmt.Errorf("tool %s has no implementation", c.Name)
 				}
-				out[i] = provider.Result{ID: c.ID, Output: s, IsError: err != nil}
+				if err != nil {
+					result = provider.Result{Output: err.Error(), IsError: true}
+				}
+				if result.IsError {
+					result.Images = nil
+				}
+				result.ID = c.ID
+				out[i] = result
 			}
 		}()
 	}

@@ -17,6 +17,7 @@ func TestDescribeCallUsesToolIdentity(t *testing.T) {
 		{"edit", `{"path":"a.go"}`, []string{"edit a.go"}},
 		{"edit", `{"edits":[{"path":"a.go"},{"path":"a.go"},{"path":"b.go"}]}`, []string{"edit a.go", "edit b.go"}},
 		{"memory", `{"action":"search","query":"private","path":"not-edit"}`, []string{"memory search"}},
+		{"view_image", `{"path":"photo.png"}`, []string{"view_image photo.png"}},
 		{"agents", `{"action":"send","address":"kh:main","message":"private"}`, []string{"agents send kh:main"}},
 		{"agents", `{"action":"spawn","name":"review"}`, []string{"agents spawn review"}},
 		{"custom", `{"path":"not-edit","command":"not-bash","secret":"private"}`, []string{"tool custom"}},
