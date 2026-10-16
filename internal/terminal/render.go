@@ -35,10 +35,27 @@ func (r Renderer) Reply(text string) {
 		r.Activity.Set("responding")
 	}
 	if r.reply != nil {
-		r.reply.write(text)
+		r.reply.write(text, false)
 		return
 	}
 	fmt.Fprint(r.Out, Color(r.Out, Response, text))
+}
+
+// Commentary distinguishes intermediate progress from the final answer.
+func (r Renderer) Commentary(text string) {
+	if r.Activity != nil && strings.TrimSpace(text) != "" {
+		r.Activity.Set("responding")
+	}
+	if r.reply != nil {
+		r.reply.write(text, true)
+		return
+	}
+	fmt.Fprint(r.Out, text)
+}
+
+func (r Renderer) Statistics(text string) {
+	r.FlushReply()
+	fmt.Fprintln(r.Err, Color(r.Err, LightOrange, text))
 }
 
 func (r Renderer) Query(text string) {

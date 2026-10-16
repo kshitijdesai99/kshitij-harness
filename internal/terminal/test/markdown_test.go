@@ -60,6 +60,14 @@ func TestMarkdownProcess(t *testing.T) {
 	fmt.Println("BEFORE_FLUSH")
 	r.FlushReply()
 	fmt.Println("AFTER_FLUSH")
+	if os.Getenv("KH_MARKDOWN_SCENARIO") == "commentary" {
+		copy.Commentary("Checking **files**.\n\n")
+		copy.Commentary("A second line.\n")
+		r.Reply("Final **answer**.\n") // switching phase flushes commentary
+		r.FlushReply()
+		r.Statistics("(ttft 1s, total 2s, 10 in)")
+		r.Notice("ordinary notice")
+	}
 	r.Reply("**partial")
 	r.Notice("STOPPED") // status/cancellation ordering flushes incomplete replies
 	r.Reply("Next response")
@@ -73,6 +81,9 @@ func TestMarkdownTTY(t *testing.T) {
 	}
 	for _, c := range []struct{ name, term, noColor, scenario string }{
 		{"color", "xterm", "", "normal"},
+		{"commentary", "xterm", "", "commentary"},
+		{"commentary-no-color", "xterm", "1", "commentary"},
+		{"commentary-dumb", "dumb", "", "commentary"},
 		{"no-color", "xterm", "1", "normal"},
 		{"dumb", "dumb", "", "normal"},
 		{"security", "xterm", "", "security"},
@@ -117,6 +128,17 @@ try:
    assert 'https://example.com' in text,repr(text)
    assert 'x² + α' in text and 'a*b*c' in text and r'\(\unknown{x}\)' in text,repr(text)
    assert '$x^2$' in text and 'code stays' in text and 'Ada' in text and '42' in text,repr(text)
+ elif sys.argv[4]=='commentary':
+  if sys.argv[2]=='dumb':
+   assert 'Checking **files**.\n\nA second line.\nFinal **answer**.' in text,repr(text)
+  else:
+   assert '    Checking files.' in text and '    A second line.' in text,repr(text)
+   assert '\nFinal answer.' in text,repr(text)
+  if not sys.argv[3] and sys.argv[2]!='dumb':
+   assert '\x1b[90m    Checking files.' in raw,repr(raw)
+   assert '\x1b[38;5;215m(ttft 1s, total 2s, 10 in)\x1b[0m' in raw,repr(raw)
+   assert '\x1b[90mordinary notice\x1b[0m' in raw,repr(raw)
+  assert text.index('Checking')<text.index('Final answer' if sys.argv[2]!='dumb' else 'Final **answer**')<text.index('(ttft'),repr(text)
  elif sys.argv[4]=='negative':
   assert '- x' in text and '+ x' in text and '1. x' in text and '•' not in text,repr(text)
  elif sys.argv[4]=='width':

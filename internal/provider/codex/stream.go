@@ -17,9 +17,10 @@ func (c *Client) readStream(r io.Reader) ([]provider.Call, error) {
 	sc.Buffer(nil, 16<<20)
 	var calls []provider.Call
 	displayed, completed := false, false
+	phase := ""
 	defer func() {
 		if displayed || completed {
-			c.out.Reply("\n")
+			provider.Reply(c.out, "\n", phase)
 		}
 		provider.FlushReply(c.out)
 	}()
@@ -55,6 +56,9 @@ func (c *Client) readStream(r io.Reader) ([]provider.Call, error) {
 		}
 		switch ev.Type {
 		case "response.output_item.added":
+			if ev.Item["type"] == "message" {
+				phase, _ = ev.Item["phase"].(string)
+			}
 			if c.stats.TTFT == 0 {
 				c.stats.TTFT = time.Since(c.start)
 			}
@@ -62,7 +66,7 @@ func (c *Client) readStream(r io.Reader) ([]provider.Call, error) {
 			if ev.Delta != "" {
 				displayed = true
 			}
-			c.out.Reply(ev.Delta)
+			provider.Reply(c.out, ev.Delta, phase)
 		case "response.output_item.done":
 			if ev.Item == nil {
 				return nil, fmt.Errorf("codex: missing output item")

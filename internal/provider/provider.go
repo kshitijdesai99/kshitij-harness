@@ -29,6 +29,18 @@ type Output interface {
 	Notice(string)
 }
 
+// Reply preserves assistant message phases when the presenter supports them.
+// Plain outputs continue to receive the same text through Reply.
+func Reply(out Output, text, phase string) {
+	if phase == "commentary" {
+		if c, ok := out.(interface{ Commentary(string) }); ok {
+			c.Commentary(text)
+			return
+		}
+	}
+	out.Reply(text)
+}
+
 // FlushReply signals an optional presentation boundary without requiring
 // captures and other plain Outputs to implement buffering.
 func FlushReply(out Output) {

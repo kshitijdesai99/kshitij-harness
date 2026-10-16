@@ -39,13 +39,15 @@ const replyStyle = `{
 const maxReplyBlock = 1 << 20
 
 type markdownReply struct {
-	mu       sync.Mutex // tool actions may flush concurrently after a step
-	out      *os.File
-	block    strings.Builder
-	plain    bool // oversized replies fall back to raw output until message end
-	width    int
-	noColor  bool
-	renderer *glamour.TermRenderer
+	mu         sync.Mutex // tool actions may flush concurrently after a step
+	out        *os.File
+	block      strings.Builder
+	plain      bool // oversized replies fall back to raw output until message end
+	width      int
+	noColor    bool
+	renderer   *glamour.TermRenderer
+	commentary bool
+	lineStart  bool
 }
 
 func newMarkdownReply(out io.Writer) *markdownReply {
@@ -53,7 +55,7 @@ func newMarkdownReply(out io.Writer) *markdownReply {
 	if !ok || f == nil || os.Getenv("TERM") == "dumb" || !readline.IsTerminal(int(f.Fd())) {
 		return nil
 	}
-	return &markdownReply{out: f}
+	return &markdownReply{out: f, lineStart: true}
 }
 
 func cleanReply(text string) string {
@@ -65,15 +67,23 @@ func cleanReply(text string) string {
 	}, ansi.Strip(text))
 }
 
-func (r *markdownReply) write(text string) {
+func (r *markdownReply) write(text string, commentary bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.commentary != commentary {
+		if !r.plain {
+			r.render()
+		}
+		r.plain = false
+		r.commentary = commentary
+		r.renderer = nil
+	}
 	if r.plain {
-		fmt.Fprint(r.out, cleanReply(text))
+		r.present(cleanReply(text))
 		return
 	}
 	if len(text)+r.block.Len() > maxReplyBlock {
-		fmt.Fprint(r.out, cleanReply(r.block.String()+text))
+		r.present(cleanReply(r.block.String() + text))
 		r.block.Reset()
 		r.plain = true
 		return
@@ -100,10 +110,13 @@ func (r *markdownReply) render() {
 		return
 	}
 	width := max(1, SessionWidth(r.out))
+	if r.commentary {
+		width = max(1, width-4)
+	}
 	noColor := os.Getenv("NO_COLOR") != ""
 	if r.renderer == nil || r.width != width || r.noColor != noColor {
 		profile := termenv.ANSI256
-		if noColor {
+		if noColor || r.commentary {
 			profile = termenv.Ascii
 		}
 		r.renderer, _ = glamour.NewTermRenderer(glamour.WithStylesFromJSONBytes([]byte(replyStyle)),
@@ -112,14 +125,36 @@ func (r *markdownReply) render() {
 	}
 	if r.renderer != nil {
 		if rendered, err := r.renderer.Render(ReadableMathMarkdown(cleanReply(source))); err == nil {
-			if noColor {
+			if noColor || r.commentary {
 				rendered = cleanReply(rendered)
 			}
-			fmt.Fprint(r.out, safeRenderedReply(rendered))
+			r.present(safeRenderedReply(rendered))
 			return
 		}
 	}
-	fmt.Fprint(r.out, cleanReply(source))
+	r.present(cleanReply(source))
+}
+
+// Four spaces provide a stable tab-width indent without terminal tab stops.
+func (r *markdownReply) present(text string) {
+	if r.commentary {
+		var indented strings.Builder
+		for _, part := range strings.SplitAfter(text, "\n") {
+			if part == "" {
+				continue
+			}
+			if r.lineStart && part != "\n" {
+				indented.WriteString("    ")
+			}
+			indented.WriteString(part)
+			r.lineStart = strings.HasSuffix(part, "\n")
+		}
+		text = Color(r.out, Muted, indented.String())
+	}
+	if !r.commentary && text != "" {
+		r.lineStart = strings.HasSuffix(text, "\n")
+	}
+	fmt.Fprint(r.out, text)
 }
 
 // Markdown entity decoding can introduce controls after source sanitization.

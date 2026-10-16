@@ -98,6 +98,44 @@ func TestCompletedStreamReturnsToolCalls(t *testing.T) {
 	}
 }
 
+type phaseOutput struct {
+	terminal.Renderer
+	commentary, final strings.Builder
+}
+
+func (o *phaseOutput) Commentary(text string) { o.commentary.WriteString(text) }
+func (o *phaseOutput) Reply(text string)      { o.final.WriteString(text) }
+
+func TestAssistantPhasesStreamAndReplay(t *testing.T) {
+	stream := `data: {"type":"response.output_item.added","item":{"type":"message","phase":"commentary"}}` + "\n\n" +
+		`data: {"type":"response.output_text.delta","delta":"Checking files."}` + "\n\n" +
+		`data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","phase":"commentary","content":[{"type":"output_text","text":"Checking files."}]}}` + "\n\n" +
+		`data: {"type":"response.output_item.added","item":{"type":"message","phase":"final_answer"}}` + "\n\n" +
+		`data: {"type":"response.output_text.delta","delta":"Final answer."}` + "\n\n" +
+		`data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"Final answer."}]}}` + "\n\n" + completeEvent
+	mockCodex(t, stream)
+	out := &phaseOutput{}
+	p := codex.New(config.Defaults, "", nil, out)
+	if _, err := p.Step(context.Background(), "question", nil); err != nil {
+		t.Fatal(err)
+	}
+	if out.commentary.String() != "Checking files." || out.final.String() != "Final answer.\n" {
+		t.Fatalf("commentary=%q final=%q", out.commentary.String(), out.final.String())
+	}
+	var replayText strings.Builder
+	replay := &phaseOutput{Renderer: terminal.Renderer{Out: &replayText, Err: &replayText}}
+	p.Replay(replay)
+	if replay.commentary.String() != "Checking files.\n" || replay.final.String() != "Final answer.\n" {
+		t.Fatalf("replay commentary=%q final=%q", replay.commentary.String(), replay.final.String())
+	}
+	// Outputs without the optional phase hook still receive commentary text.
+	plain := &retryOutput{}
+	p.Replay(plain)
+	if plain.replies.String() != "Checking files.\nFinal answer.\n" {
+		t.Fatalf("plain replay=%q", plain.replies.String())
+	}
+}
+
 func TestAdapterStreamsThroughInjectedRenderer(t *testing.T) {
 	_ = mockCodex(t, `data: {"type":"response.output_text.delta","delta":"hello"}`+"\n\n"+completeEvent)
 	var out strings.Builder

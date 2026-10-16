@@ -97,7 +97,7 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 	}
 	c.showMemory()
 	if s := c.model.Stats(); s.In > 0 {
-		c.ui.Notice(fmt.Sprintf("(ttft %s, total %s, %s in, %s cached %d%%, %s out, %s thinking, %s)",
+		c.ui.Statistics(fmt.Sprintf("(ttft %s, total %s, %s in, %s cached %d%%, %s out, %s thinking, %s)",
 			secs(s.TTFT), secs(time.Since(start)), k(s.In), k(s.Cached), s.Cached*100/s.In, k(s.Out), k(s.Think), contextUsed(s)))
 	}
 	if c.ui.Activity != nil {

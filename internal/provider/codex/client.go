@@ -250,9 +250,9 @@ func (c *Client) Replay(out provider.Output) {
 		// Round-trip through JSON: loaded items are generic maps, so this
 		// is the shortest way to read their fields.
 		var m struct {
-			Type, Role, Name, Arguments string
-			Content                     []struct{ Type, Text string }
-			Action                      map[string]any
+			Type, Role, Name, Arguments, Phase string
+			Content                            []struct{ Type, Text string }
+			Action                             map[string]any
 		}
 		b, _ := json.Marshal(it)
 		json.Unmarshal(b, &m)
@@ -266,7 +266,7 @@ func (c *Client) Replay(out provider.Output) {
 				} else if m.Role == "user" {
 					out.Query(part.Text)
 				} else {
-					out.Reply(part.Text + "\n")
+					provider.Reply(out, part.Text+"\n", m.Phase)
 				}
 			}
 			provider.FlushReply(out)

@@ -9,10 +9,11 @@ import (
 )
 
 const (
-	Muted    = "\033[90m"
-	Query    = "\033[36m"
-	Response = "\033[32m"
-	Reset    = "\033[0m"
+	Muted       = "\033[90m"
+	LightOrange = "\033[38;5;215m"
+	Query       = "\033[36m"
+	Response    = "\033[32m"
+	Reset       = "\033[0m"
 )
 
 func Color(w io.Writer, color, text string) string {
