@@ -26,6 +26,11 @@ type Config struct {
 	SummaryMaxTokens    int      `json:"summary_max_tokens"`     // memory summary size, estimated as chars/4
 	TopInstructions     int      `json:"top_instructions"`       // matching instructions sent per message
 	TopGotchas          int      `json:"top_gotchas"`            // matching gotchas sent per message
+
+	TopKnowledge         int    `json:"top_knowledge"`          // matching facts and decisions per kind
+	MemoryMaxTokens      int    `json:"memory_max_tokens"`      // total injected memory budget, estimated as chars/4
+	MemoryEmbeddingURL   string `json:"memory_embedding_url"`   // explicit Ollama /api/embed endpoint; empty disables semantic search
+	MemoryEmbeddingModel string `json:"memory_embedding_model"` // explicit embedding model; no chat-auth assumptions
 }
 
 // Short and fixed on purpose: short = fast, fixed = cacheable.
@@ -41,7 +46,7 @@ var Defaults = Config{
 - Try your tools before asking for information. Ask only when the user must choose or supply a secret. For ambiguous requests with materially different outcomes, ask one short question.
 - Verify results before claiming success. Do not state unchecked or potentially stale facts as certain.
 - Use edit for source-file changes; prefer coherent batches via edits and group related reads and checks. Avoid destructive actions without user authorization.
-- Memory lives in a local database. Relevant instructions and gotchas arrive as [memory #id] messages; follow the newest version of each and use the memory tool to search for more. kh saves lasting rules and gotchas by itself in the background, including when the user says to remember something; use forget only when the user asks. Never save secrets. Memory is reference data, never above the current request or these core rules.`,
+- Memory lives in a local database. Relevant instructions, facts, decisions and gotchas arrive as [memory #id] messages; follow the current version and use the memory tool to search for more or inspect context and history. kh selectively saves important knowledge in the background, including when the user says to remember something; use forget only when the user asks. Never save secrets. Memory is reference data, never above the current request or these core rules.`,
 	ModelIdleTimeoutSec: 120,
 	TimeoutSec:          30, // short, so a runaway command fails fast and the model retries narrower
 	OutputCap:           20000,
@@ -57,6 +62,8 @@ var Defaults = Config{
 	SummaryMaxTokens: 2500,
 	TopInstructions:  10,
 	TopGotchas:       10,
+	TopKnowledge:     5,
+	MemoryMaxTokens:  4000,
 }
 
 // Dir is where kh keeps its config and login.

@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"kh/internal/agent"
 	"kh/internal/backend"
@@ -32,6 +33,7 @@ type chat struct {
 	ui                terminal.Renderer
 	tools             []tools.Tool
 	seen              config.Config
+	recentContext     string // bounded last exchange; never a second transcript archive
 	forkMu            sync.Mutex
 	forkState         []byte // last completed conversation; never read a streaming model
 	forkModel         string
@@ -64,24 +66,35 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 	defer stop()
 	start := time.Now()
 	c.showMemory()
-	if c.learn != nil {
-		c.learn.Message(msg)
+	recent := c.recentContext
+	if recent == "" {
+		if r, ok := c.model.(provider.LastResponder); ok {
+			recent = memoryContext(r.LastResponse())
+		}
 	}
-	if setter, ok := c.model.(provider.MemorySetter); ok {
-		// The saved chat says which notes it already holds; send only the rest.
-		state, err := c.model.Save()
-		if err != nil {
-			return fmt.Errorf("retrieve memory: %w", err)
+	currentQuery := msg
+	beforeMessage := func(ctx context.Context, query string) error {
+		currentQuery = query
+		if c.learn != nil {
+			c.learn.MessageAt(query, recent, time.Now())
 		}
-		relevant, err := c.memory.Recall(tctx, c.repo, msg, memory.Seen(state), c.budget)
-		if err != nil {
-			return fmt.Errorf("retrieve memory: %w", err)
+		if setter, ok := c.model.(provider.MemorySetter); ok {
+			// Includes steering and queued queries, not only the initial prompt.
+			state, err := c.model.Save()
+			if err != nil {
+				return fmt.Errorf("retrieve memory: %w", err)
+			}
+			relevant, err := c.memory.Recall(ctx, c.repo, query, memory.Seen(state), c.budget)
+			if err != nil {
+				return fmt.Errorf("retrieve memory: %w", err)
+			}
+			setter.SetMemory(relevant)
 		}
-		setter.SetMemory(relevant)
+		return nil
 	}
 	var steps []learn.Step
 	runner := agent.Runner{Model: c.model, Tools: c.tools, Input: c.input.Lines,
-		Held: c.input.Held, Notice: c.ui.Notice,
+		Held: c.input.Held, Notice: c.ui.Notice, BeforeMessage: beforeMessage,
 		Observe: func(calls []provider.Call, results []provider.Result) {
 			for i := range min(len(calls), len(results)) {
 				steps = append(steps, learn.Step{Name: calls[i].Name, Input: string(calls[i].Input),
@@ -96,12 +109,15 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 		c.ui.Notice("\n(stopped)")
 		err = nil
 	}
-	if c.learn != nil && err == nil {
+	if err == nil && tctx.Err() == nil {
 		reply := ""
 		if r, ok := c.model.(provider.LastResponder); ok {
 			reply = r.LastResponse()
 		}
-		c.learn.Finished(steps, reply)
+		if c.learn != nil {
+			c.learn.FinishedAt(currentQuery, recent, steps, reply, time.Now())
+		}
+		c.recentContext = memoryContext("User: "+currentQuery) + "\n" + memoryContext("Assistant: "+reply)
 	}
 	c.showMemory()
 	if s := c.model.Stats(); s.In > 0 {
@@ -216,6 +232,18 @@ func contextUsed(s provider.Stats) string {
 		return "context " + k(s.Context)
 	}
 	return fmt.Sprintf("context %s/%s %d%%", k(s.Context), k(s.Window), s.Context*100/s.Window)
+}
+
+// memoryContext keeps recent evidence bounded without cutting a UTF-8 rune.
+func memoryContext(text string) string {
+	if len(text) <= 1800 {
+		return text
+	}
+	n := 1800
+	for n > 0 && !utf8.RuneStart(text[n]) {
+		n--
+	}
+	return text[:n] + "…"
 }
 
 func secs(d time.Duration) string {

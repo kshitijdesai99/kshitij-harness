@@ -153,8 +153,11 @@ func main() {
 	cwd, err := os.Getwd()
 	exit(err)
 	repoScope, owner := memory.RepoScope(cwd), memory.Owner(cwd)
+	exit(configureMemory(db, cfg))
 	var learner *learn.Learner
-	if cfg.MemoryModel != "off" {
+	// Delegated task prompts are not user preferences. Workers read shared
+	// memory, but only user-facing chats learn durable knowledge.
+	if cfg.MemoryModel != "off" && os.Getenv("KH_PARENT") == "" {
 		learner = learn.New(db, repoScope, owner, hookModel(cfg), cfg.SummaryMaxTokens*4)
 		// Give queued hooks time to finish so a one-shot task's lesson is kept.
 		defer func() {
@@ -216,7 +219,8 @@ func main() {
 	exportModel(p, cfg.Provider)
 	c := chat{model: p, backend: cfg.Provider, id: *id, repo: repoScope,
 		memory: db, learn: learner, input: console, ui: ui, tools: ts, seen: fromFile,
-		budget: memory.Budget{SummaryChars: cfg.SummaryMaxTokens * 4, TopInstructions: cfg.TopInstructions, TopGotchas: cfg.TopGotchas}}
+		budget: memory.Budget{SummaryChars: cfg.SummaryMaxTokens * 4, TopInstructions: cfg.TopInstructions, TopGotchas: cfg.TopGotchas,
+			TopKnowledge: cfg.TopKnowledge, TotalChars: cfg.MemoryMaxTokens * 4}}
 	exit(c.snapshotFork())
 	console.SetCommandHandler(func(line string) bool {
 		if line != "/fork" && line != "/new" {

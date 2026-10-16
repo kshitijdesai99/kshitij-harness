@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -25,10 +26,10 @@ const (
 )
 
 var (
-	Kinds   = []string{"instruction", "gotcha", "summary"}
+	Kinds   = []string{"instruction", "gotcha", "summary", "fact", "decision"}
 	Sources = []string{"you", "pre-hook", "post-hook", "summary", "import"}
-	// ErrStale means the topic changed after a hook read it; the hook's
-	// decision was made on old state, so it is dropped rather than saved.
+	// ErrStale means the topic changed after a hook read it, or the incoming
+	// statement predates its current version; stale decisions are not saved.
 	ErrStale = errors.New("memory: topic changed since it was read")
 )
 
@@ -36,19 +37,26 @@ var (
 const Any int64 = -1
 
 type Note struct {
-	ID        int64
-	Repo      string // Global, a normalized Git remote, or an absolute path
-	Kind      string // instruction, gotcha, summary
-	Key       string
-	Text      string
-	Refs      []string // summary only: keys that are always loaded
-	Owner     string
-	Source    string
-	Forgotten bool
-	CreatedAt time.Time
+	ID             int64
+	Repo           string // Global, a normalized Git remote, or an absolute path
+	Kind           string // instruction, gotcha, summary, fact, decision
+	Key            string
+	Text           string
+	Refs           []string // summary only: keys that are always loaded
+	Owner          string
+	Source         string
+	Forgotten      bool
+	CreatedAt      time.Time
+	ContextSummary string    // discussion context explaining when and why this was stated
+	StatedAt       time.Time // time of the original statement, independent of insertion
+	Overridden     int64     // previous version of this topic, or zero
 }
 
-type Store struct{ db *sql.DB }
+type Store struct {
+	db         *sql.DB
+	semantic   *semanticState
+	semanticMu sync.Mutex
+}
 
 func Path() string {
 	home, _ := os.UserHomeDir()
@@ -86,7 +94,11 @@ func Open(path string) (*Store, error) {
 			return nil, fmt.Errorf("memory: %w", err)
 		}
 	}
-	s := &Store{db}
+	s := &Store{db: db}
+	if err = s.migrateProvenance(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("memory: migrate provenance: %w", err)
+	}
 	if err = s.migrate(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("memory: migrate: %w", err)
@@ -106,21 +118,22 @@ const latest = `WITH latest AS (
         SELECT m.id FROM notes m WHERE m.repo = n.repo AND m.key = n.key
         ORDER BY m.created_at DESC, m.id DESC LIMIT 1))`
 
-const columns = `id, repo, kind, key, text, refs, owner, source, forgotten, created_at`
+const columns = `id, repo, kind, key, text, refs, owner, source, forgotten, created_at, context_summary, stated_at, overridden`
 
 func scan(rows *sql.Rows) ([]Note, error) {
 	defer rows.Close()
 	var out []Note
 	for rows.Next() {
 		var n Note
-		var refs, at string
-		if err := rows.Scan(&n.ID, &n.Repo, &n.Kind, &n.Key, &n.Text, &refs, &n.Owner, &n.Source, &n.Forgotten, &at); err != nil {
+		var refs, at, stated string
+		if err := rows.Scan(&n.ID, &n.Repo, &n.Kind, &n.Key, &n.Text, &refs, &n.Owner, &n.Source, &n.Forgotten, &at, &n.ContextSummary, &stated, &n.Overridden); err != nil {
 			return nil, err
 		}
 		if refs != "" {
 			n.Refs = strings.Split(refs, "\n")
 		}
 		n.CreatedAt, _ = time.Parse(timeLayout, at)
+		n.StatedAt, _ = time.Parse(timeLayout, stated)
 		out = append(out, n)
 	}
 	return out, rows.Err()
@@ -128,7 +141,7 @@ func scan(rows *sql.Rows) ([]Note, error) {
 
 func valid(n Note) error {
 	if n.Repo == "" || !one(n.Kind, Kinds) || !one(n.Source, Sources) {
-		return fmt.Errorf("memory: repo, kind (instruction|gotcha|summary) and source are required")
+		return fmt.Errorf("memory: repo, kind (instruction|gotcha|summary|fact|decision) and source are required")
 	}
 	if strings.TrimSpace(n.Key) == "" || len(n.Key) > 100 || strings.ContainsAny(n.Key, "\n\r") {
 		return fmt.Errorf("memory: key must be one short line")
@@ -142,7 +155,10 @@ func valid(n Note) error {
 	if n.Kind != "summary" && utf8.RuneCountInString(n.Text) > MaxText {
 		return fmt.Errorf("memory: keep notes under %d characters", MaxText)
 	}
-	if Secret(n.Text) || Secret(n.Key) {
+	if utf8.RuneCountInString(n.ContextSummary) > MaxText {
+		return fmt.Errorf("memory: keep context summaries under %d characters", MaxText)
+	}
+	if Secret(n.Text) || Secret(n.Key) || Secret(n.ContextSummary) {
 		return fmt.Errorf("memory: refusing to store what looks like a secret")
 	}
 	return nil
@@ -161,6 +177,8 @@ func one(v string, set []string) bool {
 // if any. expect is the current row id the caller decided against (0 = the
 // topic did not exist); a mismatch returns ErrStale. Only the user may move
 // a topic to a different kind, so a gotcha can never overwrite an instruction.
+// A zero StatedAt defaults to insertion time; explicit older statements return
+// ErrStale. Overridden is always assigned from the current topic revision.
 func (s *Store) Add(ctx context.Context, n Note, expect int64) (prev *Note, saved Note, err error) {
 	if err = valid(n); err != nil {
 		return nil, n, err
@@ -193,14 +211,27 @@ func (s *Store) Add(ctx context.Context, n Note, expect int64) (prev *Note, save
 		return nil, n, fmt.Errorf("memory: %s %q cannot be replaced by a %s", prev.Kind, n.Key, n.Kind)
 	}
 	now := time.Now().UTC()
+	if n.StatedAt.IsZero() {
+		n.StatedAt = now
+		// Unspecified statement times must not regress if the clock steps back.
+		if len(cur) == 1 && n.StatedAt.Before(cur[0].StatedAt) {
+			n.StatedAt = cur[0].StatedAt
+		}
+	} else {
+		n.StatedAt = n.StatedAt.UTC()
+		if len(cur) == 1 && n.StatedAt.Before(cur[0].StatedAt) {
+			return nil, n, ErrStale
+		}
+	}
+	n.Overridden = curID
 	// Clocks can tie or step back; never order a new version before the old one.
 	if len(cur) == 1 && !now.After(cur[0].CreatedAt) {
 		now = cur[0].CreatedAt.Add(time.Nanosecond)
 	}
 	n.CreatedAt = now
-	err = tx.QueryRowContext(ctx, `INSERT INTO notes(repo, kind, key, text, refs, owner, source, forgotten, created_at)
-        VALUES (?,?,?,?,?,?,?,?,?) RETURNING id`, n.Repo, n.Kind, n.Key, n.Text, strings.Join(n.Refs, "\n"),
-		n.Owner, n.Source, n.Forgotten, now.Format(timeLayout)).Scan(&n.ID)
+	err = tx.QueryRowContext(ctx, `INSERT INTO notes(repo, kind, key, text, refs, owner, source, forgotten, created_at, context_summary, stated_at, overridden)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`, n.Repo, n.Kind, n.Key, n.Text, strings.Join(n.Refs, "\n"),
+		n.Owner, n.Source, n.Forgotten, now.Format(timeLayout), n.ContextSummary, n.StatedAt.Format(timeLayout), n.Overridden).Scan(&n.ID)
 	if err != nil {
 		return nil, n, err
 	}
@@ -240,7 +271,20 @@ func (s *Store) Latest(ctx context.Context, repo, key string) (Note, bool, error
 	return ns[0], true, nil
 }
 
-// Current lists live notes of one kind ("" = instructions and gotchas) for a
+// Get fetches a version by ID, including superseded and forgotten notes.
+func (s *Store) Get(ctx context.Context, id int64) (Note, bool, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+columns+` FROM notes WHERE id = ?`, id)
+	if err != nil {
+		return Note{}, false, err
+	}
+	ns, err := scan(rows)
+	if err != nil || len(ns) == 0 {
+		return Note{}, false, err
+	}
+	return ns[0], true, nil
+}
+
+// Current lists live notes of one kind ("" = all non-summary kinds) for a
 // repo and global, oldest first.
 func (s *Store) Current(ctx context.Context, repo, kind string) ([]Note, error) {
 	rows, err := s.db.QueryContext(ctx, latest+` SELECT `+columns+` FROM latest
@@ -251,10 +295,10 @@ func (s *Store) Current(ctx context.Context, repo, kind string) ([]Note, error) 
 	return scan(rows)
 }
 
-// History lists every version of a topic, newest first.
+// History lists every version of a topic by statement time, newest first.
 func (s *Store) History(ctx context.Context, repo, key string) ([]Note, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+columns+` FROM notes WHERE repo = ? AND key = ?
-        ORDER BY created_at DESC, id DESC`, repo, key)
+        ORDER BY stated_at DESC, id DESC`, repo, key)
 	if err != nil {
 		return nil, err
 	}
@@ -295,6 +339,75 @@ func (s *Store) byIDs(ctx context.Context, ids []int64) ([]Note, error) {
 		return nil, err
 	}
 	return scan(rows)
+}
+
+// migrateProvenance adds metadata without rewriting or deleting historical rows.
+func (s *Store) migrateProvenance() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// Acquire the write reservation before reading schema state. Concurrent
+	// startups must not both read the old schema then race a lock upgrade.
+	if _, err := tx.Exec(`UPDATE notes SET id = id WHERE 0`); err != nil {
+		return err
+	}
+	rows, err := tx.Query(`PRAGMA table_info(notes)`)
+	if err != nil {
+		return err
+	}
+	present := make(map[string]bool)
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var def sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &def, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		present[name] = true
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, col := range []struct{ name, definition string }{
+		{"context_summary", "TEXT DEFAULT ''"},
+		{"stated_at", "TEXT DEFAULT ''"},
+		{"overridden", "INTEGER DEFAULT 0"},
+	} {
+		if !present[col.name] {
+			if _, err := tx.Exec(`ALTER TABLE notes ADD COLUMN ` + col.name + ` ` + col.definition); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := tx.Exec(`UPDATE notes SET stated_at = created_at WHERE stated_at = ''`); err != nil {
+		return err
+	}
+	// Only initialize links when introducing the column. Zero is meaningful for
+	// new topics; reopening must not reconstruct links removed by a purge.
+	if !present["overridden"] {
+		if _, err := tx.Exec(`UPDATE notes SET overridden = coalesce((
+            SELECT p.id FROM notes p WHERE p.repo = notes.repo AND p.key = notes.key
+            AND (p.created_at < notes.created_at OR (p.created_at = notes.created_at AND p.id < notes.id))
+            ORDER BY p.created_at DESC, p.id DESC LIMIT 1), 0)`); err != nil {
+			return err
+		}
+	}
+	// Older running kh processes can still insert without the new fields.
+	// Fill only that legacy form; explicit event timestamps are never changed.
+	if _, err := tx.Exec(`CREATE TRIGGER IF NOT EXISTS notes_provenance_ai AFTER INSERT ON notes
+        WHEN new.stated_at = '' BEGIN
+        UPDATE notes SET stated_at = new.created_at, overridden = coalesce((
+            SELECT p.id FROM notes p WHERE p.repo = new.repo AND p.key = new.key AND p.id != new.id
+            ORDER BY p.created_at DESC, p.id DESC LIMIT 1), 0) WHERE id = new.id;
+        END`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // migrate moves records from the earlier discovery/detail tables into notes
@@ -346,8 +459,19 @@ func (s *Store) migrate() error {
 		if err != nil {
 			at = time.Now().UTC()
 		}
-		if _, err := tx.Exec(`INSERT INTO notes(repo, kind, key, text, source, created_at) VALUES (?,?,?,?,?,?)`,
-			repo, kind, o.key, text, "you", at.UTC().Format(timeLayout)); err != nil {
+		var previous int64
+		var created string
+		err = tx.QueryRow(`SELECT id, created_at FROM notes WHERE repo = ? AND key = ?
+            ORDER BY created_at DESC, id DESC LIMIT 1`, repo, o.key).Scan(&previous, &created)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		now := time.Now().UTC()
+		if last, err := time.Parse(timeLayout, created); err == nil && !now.After(last) {
+			now = last.Add(time.Nanosecond)
+		}
+		if _, err := tx.Exec(`INSERT INTO notes(repo, kind, key, text, source, created_at, stated_at, overridden) VALUES (?,?,?,?,?,?,?,?)`,
+			repo, kind, o.key, text, "you", now.Format(timeLayout), at.UTC().Format(timeLayout), previous); err != nil {
 			return err
 		}
 	}

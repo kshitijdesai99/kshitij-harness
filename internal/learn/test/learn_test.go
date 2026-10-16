@@ -87,7 +87,7 @@ func TestPreHookSavesThenReplacesARule(t *testing.T) {
 	}
 }
 
-func TestPostHookRunsOnlyWhenAFailureWasFixed(t *testing.T) {
+func TestPostHookRunsForEveryNonemptyResponse(t *testing.T) {
 	s, c := open(t), &calls{}
 	answer := func(system, prompt string) string {
 		if is(system, "gotchas") {
@@ -98,16 +98,19 @@ func TestPostHookRunsOnlyWhenAFailureWasFixed(t *testing.T) {
 	l := learn.New(s, repo, "", model(c, answer), 10000)
 	l.Finished([]learn.Step{{Name: "bash", Output: "ok"}}, "done")
 	l.Finished([]learn.Step{{Name: "bash", Output: "boom\nexit status 1", Failed: true}, {Name: "edit"}}, "gave up")
-	l.Close(5 * time.Second)
+	notes := strings.Join(l.Close(5*time.Second), "\n")
+	count := 0
 	for _, p := range c.prompts {
 		if is(p, "gotchas") {
-			t.Fatal("post-hook ran without a fixed failure")
+			count++
 		}
 	}
-	l = learn.New(s, repo, "", model(c, answer), 10000)
-	l.Finished([]learn.Step{{Name: "bash", Output: "connection refused\nexit status 1", Failed: true}, {Name: "bash", Output: "PASS"}}, "fixed")
-	if notes := strings.Join(l.Close(5*time.Second), "\n"); !strings.Contains(notes, "Saved gotcha test-db") {
-		t.Fatalf("notices: %q", notes)
+	if count != 2 || !strings.Contains(notes, "Saved gotcha test-db") {
+		t.Fatalf("post-hook calls: %d; notices: %q", count, notes)
+	}
+	cur, _ := s.Current(context.Background(), repo, "gotcha")
+	if len(cur) != 1 {
+		t.Fatalf("unchanged notes were not deduplicated: %+v", cur)
 	}
 }
 

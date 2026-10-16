@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"kh/internal/config"
@@ -15,9 +16,12 @@ import (
 
 const memoryUsage = `usage: kh memory <command>
   list                                          current notes and summary for this repo
-  search <query>                                matching instructions and gotchas
+  search <query>                                matching current knowledge (hybrid when configured)
+  explain <query>                               candidate IDs, semantic fallback, and selected notes
+  status                                        memory counts and retrieval configuration
+  get <id>                                      one memory with context and timestamps
   history <repo|global> <key>                   every version of one topic
-  remember <repo|global> <instruction|gotcha> <key> <text>
+  remember <repo|global> <instruction|fact|decision|gotcha> <key> <text> [context]
   forget <repo|global> <key>                    stop using a topic (history kept)
   purge <repo|global> <key>                     delete every version of a topic
   import-md <file>                              split a Markdown rules file into notes, after review`
@@ -73,18 +77,76 @@ func memoryCommand(args []string, cfg config.Config) error {
 			fmt.Println(tools.Note(n))
 		}
 		return nil
-	case "search":
+	case "status":
+		if err := need(1); err != nil {
+			return err
+		}
+		notes, err := s.Current(ctx, repo, "")
+		if err != nil {
+			return err
+		}
+		counts := map[string]int{}
+		for _, n := range notes {
+			counts[n.Kind]++
+		}
+		fmt.Println("repo:", repo)
+		for _, kind := range []string{"instruction", "fact", "decision", "gotcha"} {
+			fmt.Printf("%s: %d\n", kind, counts[kind])
+		}
+		mode := "keyword only (embeddings not configured)"
+		if cfg.MemoryEmbeddingURL != "" && cfg.MemoryEmbeddingModel != "" {
+			mode = "hybrid configured (keyword fallback on embedding failure)"
+		}
+		fmt.Println("retrieval:", mode)
+		fmt.Printf("memory budget: approximately %d tokens\n", cfg.MemoryMaxTokens)
+		return nil
+	case "get":
 		if err := need(2); err != nil {
 			return err
 		}
-		for _, kind := range []string{"instruction", "gotcha"} {
-			found, err := s.Search(ctx, repo, kind, args[1], 30)
-			if err != nil {
-				return err
+		id, err := strconv.ParseInt(args[1], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid memory id")
+		}
+		n, ok, err := s.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		if !ok || (n.Repo != repo && n.Repo != memory.Global) {
+			return fmt.Errorf("memory not found")
+		}
+		fmt.Println(tools.NoteDetails(n))
+		current, ok, err := s.Latest(ctx, n.Repo, n.Key)
+		if err != nil {
+			return err
+		}
+		if ok {
+			state := "current"
+			if current.ID != n.ID {
+				state = "superseded"
 			}
-			for _, n := range found {
-				fmt.Println(tools.Note(n))
-			}
+			fmt.Printf("state: %s; current id: #%d; current forgotten: %t\n", state, current.ID, current.Forgotten)
+		}
+		return nil
+	case "search", "explain":
+		if err := need(2); err != nil {
+			return err
+		}
+		if err := configureMemory(s, cfg); err != nil {
+			return err
+		}
+		found, trace, err := s.SearchWithTrace(ctx, repo, "", args[1], 30, memory.SearchOptions{})
+		if err != nil {
+			return err
+		}
+		if args[0] == "explain" {
+			fmt.Printf("lexical candidates: %v\nsemantic enabled: %t; fallback: %t\nsemantic candidates: %v\nselected: %v\n", trace.LexicalIDs, trace.SemanticEnabled, trace.SemanticFallback, trace.SemanticIDs, trace.SelectedIDs)
+		}
+		for _, n := range found {
+			fmt.Println(tools.Note(n))
+		}
+		if len(found) == 0 {
+			fmt.Println("no matching memories")
 		}
 		return nil
 	case "history":
@@ -104,18 +166,28 @@ func memoryCommand(args []string, cfg config.Config) error {
 			if n.Forgotten {
 				text = "(forgotten)"
 			}
-			fmt.Printf("#%d %s %s by %s via %s: %s\n", n.ID, n.CreatedAt.Local().Format("02/01/2006 15:04"), n.Kind, or(n.Owner, "?"), n.Source, text)
+			fmt.Printf("#%d %s %s by %s via %s: %s\n", n.ID, n.StatedAt.Local().Format("2006-01-02 15:04:05 MST"), n.Kind, or(n.Owner, "?"), n.Source, text)
+			if n.Overridden != 0 {
+				fmt.Printf("  overrides: #%d\n", n.Overridden)
+			}
+			if n.ContextSummary != "" {
+				fmt.Println("  context:", n.ContextSummary)
+			}
 		}
 		return nil
 	case "remember":
-		if err := need(5); err != nil {
-			return err
+		if len(args) != 5 && len(args) != 6 {
+			return fmt.Errorf("%s", memoryUsage)
 		}
 		sc, err := scope(args[1])
 		if err != nil {
 			return err
 		}
-		prev, n, err := s.Add(ctx, memory.Note{Repo: sc, Kind: args[2], Key: args[3], Text: args[4], Owner: owner, Source: "you"}, memory.Any)
+		contextSummary := "Manually recorded using kh memory remember; no discussion context supplied."
+		if len(args) == 6 {
+			contextSummary = args[5]
+		}
+		prev, n, err := s.Add(ctx, memory.Note{Repo: sc, Kind: args[2], Key: args[3], Text: args[4], ContextSummary: contextSummary, Owner: owner, Source: "you"}, memory.Any)
 		if err != nil {
 			return err
 		}
@@ -158,6 +230,22 @@ func memoryCommand(args []string, cfg config.Config) error {
 	default:
 		return fmt.Errorf("unknown memory command %q\n%s", args[0], memoryUsage)
 	}
+}
+
+// Semantic search is opt-in: no model download or external transmission occurs
+// until both an embedding endpoint and model have been explicitly configured.
+func configureMemory(s *memory.Store, cfg config.Config) error {
+	if cfg.MemoryEmbeddingURL == "" && cfg.MemoryEmbeddingModel == "" {
+		return nil
+	}
+	if cfg.MemoryEmbeddingURL == "" || cfg.MemoryEmbeddingModel == "" {
+		return fmt.Errorf("set both memory_embedding_url and memory_embedding_model to enable semantic retrieval")
+	}
+	e, err := memory.NewOllamaEmbedder(cfg.MemoryEmbeddingURL, cfg.MemoryEmbeddingModel)
+	if err != nil {
+		return err
+	}
+	return s.ConfigureSemantic(e, func(message string) { fmt.Fprintln(os.Stderr, "(memory) "+message) })
 }
 
 func or(s, fallback string) string {

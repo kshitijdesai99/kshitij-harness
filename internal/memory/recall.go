@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"kh/internal/provider"
 )
@@ -23,6 +24,8 @@ type Budget struct {
 	SummaryChars    int // summary overview plus its must-load notes
 	TopInstructions int
 	TopGotchas      int
+	TopKnowledge    int // facts and decisions
+	TotalChars      int // entire injected message, including header and updates
 }
 
 // Seen collects the note ids already in a chat from the provider's saved
@@ -54,14 +57,30 @@ func Seen(state []byte) map[int64]bool {
 // topics already sent, and the top matching instructions and gotchas.
 // It returns "" when there is nothing new.
 func (s *Store) Recall(ctx context.Context, repo, query string, seen map[int64]bool, b Budget) (string, error) {
+	if seen == nil {
+		seen = map[int64]bool{}
+	}
+	total := b.TotalChars
+	if total <= 0 {
+		total = 16000
+	}
+	used := len(Header)
 	var lines []string
-	add := func(n Note, note string) {
+	appendLine := func(id int64, line string) bool {
+		if used+len(line)+1 > total {
+			return false
+		}
+		lines = append(lines, line)
+		used += len(line) + 1
+		seen[id] = true
+		return true
+	}
+	add := func(n Note, note string) bool {
 		scope := ""
 		if n.Repo == Global {
 			scope = " (global)"
 		}
-		lines = append(lines, fmt.Sprintf("[memory #%d] %s %s%s%s: %s", n.ID, n.Kind, n.Key, scope, note, n.Text))
-		seen[n.ID] = true
+		return appendLine(n.ID, fmt.Sprintf("[memory #%d] %s %s%s%s: %s [stated %s]", n.ID, n.Kind, n.Key, scope, note, n.Text, n.StatedAt.UTC().Format(time.RFC3339Nano)))
 	}
 	ids := make([]int64, 0, len(seen))
 	for id := range seen {
@@ -72,32 +91,8 @@ func (s *Store) Recall(ctx context.Context, repo, query string, seen map[int64]b
 		return "", err
 	}
 
-	if sum, ok, err := s.Summary(ctx, repo); err != nil {
-		return "", err
-	} else if ok && !seen[sum.ID] {
-		lines = append(lines, fmt.Sprintf("[memory summary #%d] %s", sum.ID, sum.Text))
-		seen[sum.ID] = true
-		used := len(sum.Text)
-		for _, key := range sum.Refs {
-			n, ok, err := s.Latest(ctx, repo, key)
-			if err == nil && !ok {
-				n, ok, err = s.Latest(ctx, Global, key)
-			}
-			if err != nil {
-				return "", err
-			}
-			if !ok || n.Forgotten || seen[n.ID] {
-				continue
-			}
-			if used += len(n.Text) + len(n.Key) + 30; used > b.SummaryChars {
-				break
-			}
-			add(n, "")
-		}
-	}
-
-	// A topic already in the chat may have changed since; send the change so
-	// the model does not keep following the old version.
+	// Corrections take priority over summaries and new matches. Never mark a
+	// skipped note seen: it must remain eligible on the next turn.
 	sort.Slice(sent, func(i, j int) bool { return sent[i].ID < sent[j].ID })
 	done := map[string]bool{}
 	for _, old := range sent {
@@ -114,26 +109,49 @@ func (s *Store) Recall(ctx context.Context, repo, query string, seen map[int64]b
 			continue
 		}
 		if cur.Forgotten {
-			lines = append(lines, fmt.Sprintf("[memory #%d] %s %s: no longer applies.", cur.ID, old.Kind, old.Key))
-			seen[cur.ID] = true
+			appendLine(cur.ID, fmt.Sprintf("[memory #%d] %s %s: no longer applies.", cur.ID, old.Kind, old.Key))
 		} else {
 			add(cur, " (replaces earlier note)")
 		}
 	}
-
-	for _, k := range []struct {
-		kind  string
-		limit int
-	}{{"instruction", b.TopInstructions}, {"gotcha", b.TopGotchas}} {
-		found, err := s.Search(ctx, repo, k.kind, query, k.limit)
-		if err != nil {
-			return "", err
-		}
-		for _, n := range found {
-			if !seen[n.ID] {
-				add(n, "")
+	if sum, ok, err := s.Summary(ctx, repo); err != nil {
+		return "", err
+	} else if ok {
+		summaryUsed := 0
+		if !seen[sum.ID] {
+			line := fmt.Sprintf("[memory summary #%d] %s", sum.ID, sum.Text)
+			if len(sum.Text) <= b.SummaryChars && appendLine(sum.ID, line) {
+				summaryUsed += len(sum.Text)
 			}
 		}
+		for _, key := range sum.Refs {
+			n, ok, err := s.Latest(ctx, repo, key)
+			if err == nil && !ok {
+				n, ok, err = s.Latest(ctx, Global, key)
+			}
+			if err != nil {
+				return "", err
+			}
+			if !ok || n.Forgotten || seen[n.ID] {
+				continue
+			}
+			cost := len(n.Text) + len(n.Key) + 30
+			if summaryUsed+cost > b.SummaryChars {
+				continue
+			}
+			if add(n, "") {
+				summaryUsed += cost
+			}
+		}
+	}
+	// One hybrid search across all kinds avoids repeating query embeddings.
+	limits := map[string]int{"instruction": b.TopInstructions, "gotcha": b.TopGotchas, "fact": b.TopKnowledge, "decision": b.TopKnowledge}
+	found, err := s.search(ctx, repo, "", query, b.TopInstructions+b.TopGotchas+2*b.TopKnowledge, SearchOptions{}, limits, seen, nil)
+	if err != nil {
+		return "", err
+	}
+	for _, n := range found {
+		add(n, "")
 	}
 	if len(lines) == 0 {
 		return "", nil

@@ -123,7 +123,7 @@ func TestReposAreIsolatedAndGlobalIsShared(t *testing.T) {
 func TestValidation(t *testing.T) {
 	s, ctx := open(t), context.Background()
 	for _, n := range []memory.Note{
-		{Repo: repo, Kind: "fact", Key: "a", Text: "a", Source: "you"},
+		{Repo: repo, Kind: "unknown", Key: "a", Text: "a", Source: "you"},
 		{Repo: repo, Kind: "instruction", Key: "", Text: "a", Source: "you"},
 		{Repo: repo, Kind: "instruction", Key: "summary", Text: "a", Source: "you"},
 		{Repo: repo, Kind: "instruction", Key: "a", Text: strings.Repeat("x", memory.MaxText+1), Source: "you"},
@@ -136,11 +136,11 @@ func TestValidation(t *testing.T) {
 	}
 }
 
-func TestSearchSkipsOldVersionsAndReturnsAllWhenFew(t *testing.T) {
+func TestSearchSkipsOldVersionsAndUnrelatedNotes(t *testing.T) {
 	s, ctx := open(t), context.Background()
 	add(t, s, memory.Note{Kind: "gotcha", Key: "build", Text: "The build needs Node 20 installed."})
-	if found, _ := s.Search(ctx, repo, "gotcha", "unrelated words", 10); len(found) != 1 {
-		t.Fatalf("few notes should all load: %+v", found)
+	if found, _ := s.Search(ctx, repo, "gotcha", "unrelated words", 10); len(found) != 0 {
+		t.Fatalf("unrelated notes should not load: %+v", found)
 	}
 	for _, k := range []string{"a", "b", "c"} {
 		add(t, s, memory.Note{Kind: "gotcha", Key: "filler-" + k, Text: "Something about " + k + " things."})
@@ -171,7 +171,7 @@ func TestRecallSendsEachNoteOncePerChat(t *testing.T) {
 	main := add(t, s, memory.Note{Kind: "instruction", Key: "main-branch", Text: "Never commit to main."})
 	sum := add(t, s, memory.Note{Kind: "summary", Key: memory.SummaryKey, Text: "A small web app.", Refs: []string{"main-branch"}, Source: "summary"})
 
-	first, err := s.Recall(ctx, repo, "style the button", map[int64]bool{}, b)
+	first, err := s.Recall(ctx, repo, "Tailwind style the button", map[int64]bool{}, b)
 	if err != nil || !strings.HasPrefix(first, memory.Header) {
 		t.Fatalf("first recall: %q %v", first, err)
 	}
@@ -188,7 +188,7 @@ func TestRecallSendsEachNoteOncePerChat(t *testing.T) {
 	if !seen[css.ID] || !seen[main.ID] || !seen[sum.ID] {
 		t.Fatalf("seen: %v", seen)
 	}
-	if again, _ := s.Recall(ctx, repo, "style the button", seen, b); again != "" {
+	if again, _ := s.Recall(ctx, repo, "Tailwind style the button", seen, b); again != "" {
 		t.Fatalf("resent notes already in chat:\n%s", again)
 	}
 

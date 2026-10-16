@@ -31,6 +31,9 @@ type Runner struct {
 	Notice   func(string)
 	Activity func(string)
 	Observe  func([]provider.Call, []provider.Result) // sees each batch of tool calls, e.g. for memory hooks
+	// BeforeMessage runs with the caller's context for each nonempty user message,
+	// after image processing and before the model. An error aborts the turn.
+	BeforeMessage func(context.Context, string) error
 }
 
 // Run executes one task. Steering interrupts a reply, but lets running tools
@@ -38,16 +41,51 @@ type Runner struct {
 func (r Runner) Run(ctx context.Context, task string) error {
 	p, ts, steer := r.Model, r.Tools, r.Input
 	user, results := task, []provider.Result(nil)
+	messagePending := user != ""
+	defer func() {
+		if messagePending {
+			// A pre-Step hook can fail after staging an image or memory. Do
+			// not attach that abandoned input to an unrelated later message.
+			if a, ok := p.(provider.ImageAttacher); ok {
+				a.AttachImage("")
+			}
+			if m, ok := p.(provider.MemorySetter); ok {
+				m.SetMemory("")
+			}
+		}
+		if len(results) == 0 {
+			return
+		}
+		// A hook/image error or cancellation must not strand completed tool
+		// calls. Step's contract retains supplied results even when cancelled.
+		flush, cancel := context.WithCancel(ctx)
+		cancel()
+		_, _ = p.Step(flush, "", results)
+	}()
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		messagePending = user != ""
 		var err error
 		user, err = withPastedImage(p, user)
 		if err != nil {
 			return err
 		}
+		if user != "" && r.BeforeMessage != nil {
+			if err := r.BeforeMessage(ctx, user); err != nil {
+				return err
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+		}
 		if r.Activity != nil {
 			r.Activity("waiting for model")
 		}
+		messagePending = false // provider now owns any staged input
 		calls, line, err := step(ctx, p, user, results, steer, r.Notice)
+		results = nil // supplied outputs now belong to provider history
 		if err != nil {
 			return err
 		}
