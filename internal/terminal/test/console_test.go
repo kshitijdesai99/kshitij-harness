@@ -36,11 +36,11 @@ func TestConsolesHaveIndependentInput(t *testing.T) {
 }
 
 func TestLocalCommandBypassesSteering(t *testing.T) {
-	c := terminal.NewConsole(strings.NewReader("/fork\nordinary steering\n/fork\n"), io.Discard, io.Discard)
+	c := terminal.NewConsole(strings.NewReader("/fork\n/new\nnew\nordinary steering\n/fork\n/new\n"), io.Discard, io.Discard)
 	defer c.Close()
 	var forks int
 	c.SetCommandHandler(func(line string) bool {
-		if line != "/fork" {
+		if line != "/fork" && line != "/new" {
 			return false
 		}
 		forks++
@@ -51,17 +51,17 @@ func TestLocalCommandBypassesSteering(t *testing.T) {
 	for line := range c.Lines {
 		messages = append(messages, line)
 	}
-	if forks != 2 || !reflect.DeepEqual(messages, []string{"ordinary steering"}) {
+	if forks != 4 || !reflect.DeepEqual(messages, []string{"new", "ordinary steering"}) {
 		t.Fatalf("forks=%d messages=%q", forks, messages)
 	}
 }
 
 func TestLocalCommandBypassesApproval(t *testing.T) {
-	c := terminal.NewConsole(strings.NewReader("/fork\nyes\n"), io.Discard, io.Discard)
+	c := terminal.NewConsole(strings.NewReader("/new\nyes\n"), io.Discard, io.Discard)
 	defer c.Close()
 	forked := make(chan struct{}, 1)
 	c.SetCommandHandler(func(line string) bool {
-		if line != "/fork" {
+		if line != "/new" {
 			return false
 		}
 		forked <- struct{}{}

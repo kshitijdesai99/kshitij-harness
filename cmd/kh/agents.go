@@ -212,22 +212,25 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 	return "", fmt.Errorf("unknown agent command: %s", args[0])
 }
 
-// forkChat opens an immutable conversation checkpoint in a pane to the right.
-// It never accesses the live provider, so the original reply keeps running.
-func forkChat(ctx context.Context, cfg config.Config, c *chat) (string, error) {
+// openChatPane opens a fresh chat or an immutable conversation checkpoint to
+// the right. It never accesses the live provider, so its reply keeps running.
+func openChatPane(ctx context.Context, cfg config.Config, c *chat, fork bool) (string, error) {
 	current, err := currentPane(ctx)
 	if err != nil {
-		return "", fmt.Errorf("fork needs tmux: %w", err)
+		return "", fmt.Errorf("opening a chat pane needs tmux: %w", err)
 	}
 	c.forkMu.Lock()
 	state, model, effort := c.forkState, c.forkModel, c.forkEffort
 	c.forkMu.Unlock()
-	if len(state) == 0 {
-		return "", fmt.Errorf("nothing to fork yet")
-	}
-	id := session.New()
-	if err := session.Save(id, state); err != nil {
-		return "", err
+	id, base := "", "new"
+	if fork {
+		if len(state) == 0 {
+			return "", fmt.Errorf("nothing to fork yet")
+		}
+		id, base = session.New(), "fork"
+		if err := session.Save(id, state); err != nil {
+			return "", err
+		}
 	}
 	panes, err := agentPanesContext(ctx)
 	if err != nil {
@@ -237,9 +240,9 @@ func forkChat(ctx context.Context, cfg config.Config, c *chat) (string, error) {
 	for _, pane := range panes {
 		taken[pane.name] = true
 	}
-	name := "fork"
+	name := base
 	for n := 2; taken[name]; n++ {
-		name = fmt.Sprintf("fork-%d", n)
+		name = fmt.Sprintf("%s-%d", base, n)
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -256,21 +259,26 @@ func forkChat(ctx context.Context, cfg config.Config, c *chat) (string, error) {
 	if !cfg.Sandbox {
 		command = append(command, "--nosandbox")
 	}
-	command = append(command, "-s", id)
+	if fork {
+		command = append(command, "-s", id)
+	}
 	pane, err := tmuxContext(ctx, "split-window", "-h", "-P", "-F", "#{pane_id}", "-t", current, "-c", cwd,
 		"-e", "KH_AGENT=kh:"+name, sessionCommand(false, command...))
 	if err != nil {
 		return "", err
 	}
-	// Reserve the address before accepting another /fork, even if the child
+	// Reserve the address before accepting another command, even if the child
 	// is still rebuilding. Do not wait for its startup to publish the name.
 	if _, err := tmuxContext(ctx, "set-option", "-p", "-t", pane, "@kh_name", name, ";",
 		"select-pane", "-t", pane, "-T", name, ";",
 		"set-option", "-w", "-t", pane, "pane-border-status", "top", ";",
 		"set-option", "-w", "-t", pane, "pane-border-format", " #{pane_title} "); err != nil {
-		return "", fmt.Errorf("fork started in %s, but address setup failed: %w", pane, err)
+		return "", fmt.Errorf("chat started in %s, but address setup failed: %w", pane, err)
 	}
-	return fmt.Sprintf("forked to right pane %s (session %s, address kh:%s)", name, id, name), nil
+	if fork {
+		return fmt.Sprintf("forked to right pane %s (session %s, address kh:%s)", name, id, name), nil
+	}
+	return fmt.Sprintf("opened new session in right pane %s (address kh:%s)", name, name), nil
 }
 
 func findAgentPane(ctx context.Context, name string) (string, error) {

@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -184,6 +186,35 @@ func testForkOpensNewPaneToTheRight(t *testing.T, source string) {
 	waitFor(t, func() bool {
 		return runTmux("display-message", "-p", "-t", originalPane, "#{@kh_state}") == "waiting"
 	})
+
+	// /new uses the same non-steering pane path but must start without any
+	// conversation or resume flags, with independent identities even when queued.
+	runTmux("send-keys", "-t", forkPane, "/new", "Enter", "/new", "Enter")
+	newIDs := map[string]bool{id: true, secondID: true}
+	for _, name := range []string{"new", "new-2"} {
+		pane := waitForFork(name)
+		command := runTmux("display-message", "-p", "-t", pane, "#{pane_start_command}")
+		if decoded, err := strconv.Unquote(command); err == nil {
+			command = decoded
+		}
+		assertTmuxStartupEnvironment(t, command, source)
+		if strings.Contains(command, "'-s'") || strings.Contains(command, "'-r'") {
+			t.Fatalf("new session unexpectedly resumes history: %s", command)
+		}
+		var screen string
+		waitFor(t, func() bool {
+			screen = runTmux("capture-pane", "-p", "-J", "-t", pane)
+			return strings.Contains(screen, "kh chat, session")
+		})
+		match := regexp.MustCompile(`kh chat, session ([^ ]+)`).FindStringSubmatch(screen)
+		if len(match) != 2 || newIDs[match[1]] || strings.Contains(screen, "There are 3 files.") || strings.Contains(screen, "> count files") {
+			t.Fatalf("new session not fresh and independent: %s", screen)
+		}
+		newIDs[match[1]] = true
+	}
+	if original, err := session.Load("original"); err != nil || string(original) != string(state) {
+		t.Fatalf("/new changed original session: %s: %v", original, err)
+	}
 
 	// A fresh chat has no completed conversation to copy.
 	runTmux("new-window", "-t", "kh", "-n", "empty", "-c", cwd,

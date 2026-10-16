@@ -47,7 +47,7 @@ func TestSteerInterruptsReply(t *testing.T) {
 	}
 }
 
-// A local /fork is handled while a reply is active, without cancelling it or
+// Local /fork and /new are handled while a reply is active, without cancelling it or
 // entering provider history. Ordinary input keeps its existing steering path.
 func TestLocalForkDoesNotSteerReply(t *testing.T) {
 	reader, writer := io.Pipe()
@@ -55,12 +55,12 @@ func TestLocalForkDoesNotSteerReply(t *testing.T) {
 	defer writer.Close()
 	console := terminal.NewConsole(reader, io.Discard, io.Discard)
 	defer console.Close()
-	forked := make(chan struct{})
+	forked := make(chan struct{}, 2)
 	console.SetCommandHandler(func(line string) bool {
-		if line != "/fork" {
+		if line != "/fork" && line != "/new" {
 			return false
 		}
-		close(forked)
+		forked <- struct{}{}
 		return true
 	})
 	console.Start()
@@ -86,13 +86,15 @@ func TestLocalForkDoesNotSteerReply(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("reply did not start")
 	}
-	if _, err := io.WriteString(writer, "/fork\n"); err != nil {
+	if _, err := io.WriteString(writer, "/fork\n/new\n"); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-forked:
-	case <-ctx.Done():
-		t.Fatal("local fork was not handled during reply")
+	for range 2 {
+		select {
+		case <-forked:
+		case <-ctx.Done():
+			t.Fatal("local command was not handled during reply")
+		}
 	}
 	close(release)
 	if err := <-done; err != nil {
