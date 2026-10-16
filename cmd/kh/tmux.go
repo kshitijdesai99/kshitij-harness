@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"os/exec"
@@ -228,32 +229,34 @@ func attachChat(args []string, rebuilt bool) error {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		return fmt.Errorf("tmux is required for chat: %w", err)
 	}
-	if _, err := tmux("has-session", "-t", "=kh"); err != nil {
-		exe, err := os.Executable()
-		if err != nil {
-			return err
-		}
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		if _, err = tmux("new-session", "-d", "-s", "kh", "-n", "main", "-c", cwd, sessionCommand(rebuilt, append([]string{exe}, args...)...)); err != nil {
-			return err
-		}
-		if _, err = tmux("set-option", "-p", "-t", "kh:main.0", "@kh_name", "main"); err != nil {
-			return err
-		}
-		if _, err = tmux("select-pane", "-t", "kh:main.0", "-T", "main"); err != nil {
-			return err
-		}
-		if _, err = tmux("set-option", "-w", "-t", "kh:main", "pane-border-status", "top"); err != nil {
-			return err
-		}
-		if _, err = tmux("set-option", "-w", "-t", "kh:main", "pane-border-format", " #{pane_title} "); err != nil {
-			return err
-		}
+	exe, err := os.Executable()
+	if err != nil {
+		return err
 	}
-	cmd := exec.Command("tmux", "attach-session", "-t", "kh")
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	// A new invocation must honor its own arguments and working directory,
+	// never silently reattach to an unrelated, still-running chat.
+	name := "kh-" + rand.Text()
+	if _, err = tmux("new-session", "-d", "-s", name, "-n", "main", "-c", cwd, sessionCommand(rebuilt, append([]string{exe}, args...)...)); err != nil {
+		return err
+	}
+	pane := name + ":main.0"
+	if _, err = tmux("set-option", "-p", "-t", pane, "@kh_name", "main"); err != nil {
+		return err
+	}
+	if _, err = tmux("select-pane", "-t", pane, "-T", "main"); err != nil {
+		return err
+	}
+	if _, err = tmux("set-option", "-w", "-t", pane, "pane-border-status", "top"); err != nil {
+		return err
+	}
+	if _, err = tmux("set-option", "-w", "-t", pane, "pane-border-format", " #{pane_title} "); err != nil {
+		return err
+	}
+	cmd := exec.Command("tmux", "attach-session", "-t", "="+name)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
 }

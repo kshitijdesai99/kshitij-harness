@@ -26,6 +26,8 @@ go build -o kh ./cmd/kh
 ./kh -s SESSION_ID              # resume a specific session
 ```
 
+Outside tmux, interactive launches create a fresh, uniquely named tmux session; existing chats keep running. Use `tmux list-sessions` and `tmux attach -t SESSION_NAME` to reconnect to a running chat. `-r` and `-s` resume saved conversations in a new chat.
+
 **Enter** sends; **Shift+Enter** starts a new line (shown with a `... ` continuation prompt) without sending. Earlier lines stay in the draft until Enter sends the whole message. **Ctrl-J** also starts a new line if your terminal cannot distinguish Shift+Enter from Enter.
 
 **Ctrl-C** discards the draft and stops a task; **Ctrl-D** on an empty line quits. **Up/Down** recall and navigate input history. Type while kh works to steer it.
