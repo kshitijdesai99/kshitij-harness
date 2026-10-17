@@ -38,15 +38,16 @@ func main() {
 			*field = value
 		}
 	}
-	if value := os.Getenv("KH_AUTO_WRITE"); value == "1" || value == "0" {
-		cfg.AutoWrite = value == "1"
+	if value := os.Getenv("KH_AUTO"); value == "1" || value == "0" {
+		cfg.Auto = value == "1"
 	}
 	// Flags override inherited settings and the config file.
 	flag.StringVar(&cfg.Provider, "provider", cfg.Provider, "backend adapter")
 	flag.StringVar(&cfg.Model, "model", cfg.Model, "model id")
 	flag.StringVar(&cfg.Effort, "effort", cfg.Effort, "reasoning effort: low, medium, high")
-	flag.BoolVar(&cfg.Auto, "auto", cfg.Auto, "skip command approval, not folder-write approval")
-	flag.BoolVar(&cfg.AutoWrite, "auto-write", cfg.AutoWrite, "automatically grant requested outside-folder writes; keep sandbox and path checks")
+	flag.BoolVar(&cfg.Auto, "auto", cfg.Auto, "automatically approve commands and requested folder writes; keep sandbox and path checks")
+	// Older running chats pass this when spawning a rebuilt child.
+	flag.BoolVar(&cfg.Auto, "auto-write", cfg.Auto, "deprecated alias for --auto")
 	noSandbox := flag.Bool("nosandbox", false, "let bash write outside the project")
 	resume := flag.Bool("r", false, "resume the latest session")
 	id := flag.String("s", "", "resume a session by id (files in ~/.kh/sessions)")
@@ -92,12 +93,7 @@ func main() {
 	}
 	exit(configErr)
 	cfg.Sandbox = cfg.Sandbox && !*noSandbox
-	applyAutoWrite(nil, cfg.AutoWrite)
-	if cfg.Auto {
-		os.Setenv("KH_AUTO", "1") // carry --auto into bash-invoked kh subcommands
-	} else if os.Getenv("KH_AUTO") == "1" {
-		cfg.Auto = true
-	}
+	applyAuto(nil, cfg.Auto)
 	args := flag.Args()
 	if *list || strings.Join(args, " ") == "sessions" {
 		listSessions(cfg)
@@ -307,32 +303,32 @@ func main() {
 	}
 }
 
-// command handles native slash commands. Folder-policy changes apply to future
+// command handles native slash commands. Approval-policy changes apply to future
 // requests immediately; model switches apply from the next message.
 func (c *chat) command(line string) {
 	p, access := c.model, c.writeAccess
 	cmd, arg, _ := strings.Cut(line, " ")
 	var model, effort string
 	switch cmd {
-	case "/auto-write":
+	case "/auto":
 		arg = strings.TrimSpace(arg)
 		if arg != "" {
 			if arg != "on" && arg != "off" {
-				fmt.Println("usage: /auto-write [on|off]")
+				fmt.Println("usage: /auto [on|off]")
 				return
 			}
 			enabled := arg == "on"
-			if err := config.Set("auto_write", enabled); err != nil {
+			if err := config.Set("auto", enabled); err != nil {
 				fmt.Println("error:", err)
 				return
 			}
-			applyAutoWrite(access, enabled)
-			c.seen.AutoWrite = enabled
+			applyAuto(access, enabled)
+			c.seen.Auto = enabled
 		}
-		if access.AutoWrite() {
-			fmt.Println("(auto_write on: requested outside-folder writes are automatically granted; sandbox and path checks remain enabled)")
+		if access.Auto() {
+			fmt.Println("(auto on: commands and requested outside-folder writes are automatically approved; sandbox and path checks remain enabled)")
 		} else {
-			fmt.Println("(auto_write off: new folders require approval; existing session grants remain until restart)")
+			fmt.Println("(auto off: commands and new folders require approval; existing session grants remain until restart)")
 		}
 		return
 	case "/model", "/effort":
@@ -349,22 +345,22 @@ func (c *chat) command(line string) {
 			model, effort = p.Use("", arg)
 		}
 	default:
-		fmt.Println("/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/new   open a fresh session in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message\n/auto-write [on|off]   persist outside-folder approval policy; existing grants remain until restart")
+		fmt.Println("/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/new   open a fresh session in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message\n/auto [on|off]   persist automatic command and folder approval; existing grants remain until restart")
 		return
 	}
 	fmt.Println(terminal.Color(os.Stdout, terminal.Muted, fmt.Sprintf("(model %s, effort %s)", model, effort)))
 }
 
 // Keep bash-invoked kh subcommands on the session's active permission policy.
-func applyAutoWrite(access *tools.WriteAccess, enabled bool) {
+func applyAuto(access *tools.WriteAccess, enabled bool) {
 	if access != nil {
-		access.SetAutoWrite(enabled)
+		access.SetAuto(enabled)
 	}
 	value := "0"
 	if enabled {
 		value = "1"
 	}
-	os.Setenv("KH_AUTO_WRITE", value)
+	os.Setenv("KH_AUTO", value)
 }
 
 func exit(err error) {

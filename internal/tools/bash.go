@@ -32,7 +32,7 @@ func BashWithAccess(c config.Config, approval Approver, access *WriteAccess) Too
 	timeout := time.Duration(c.TimeoutSec) * time.Second
 	return Tool{
 		Name:        "bash",
-		Description: "Run any shell command on the user's machine, with network and system access. Starts in the current dir. Before executing writes outside the project, declare the desired existing folders in write_dirs. Requests are granted automatically when auto_write is enabled; otherwise they require session permission. Do not retry a blocked command without declaring its write directories. Use rg to search; read many files in one call (cat a b, sed -n 1,80p f). Output is capped.",
+		Description: "Run any shell command on the user's machine, with network and system access. Starts in the current dir. Before executing writes outside the project, declare the desired existing folders in write_dirs. Requests are granted automatically when auto is enabled; otherwise they require session permission. Do not retry a blocked command without declaring its write directories. Use rg to search; read many files in one call (cat a b, sed -n 1,80p f). Output is capped.",
 		Params: map[string]any{
 			"command":    map[string]any{"type": "string"},
 			"write_dirs": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Outside folders this command needs to write; declare before executing."},
@@ -63,7 +63,11 @@ func BashWithAccess(c config.Config, approval Approver, access *WriteAccess) Too
 					return "", err
 				}
 			}
-			allowed := c.Auto || isSafe(in.Command, c.Safe)
+			auto := c.Auto
+			if access != nil {
+				auto = access.Auto()
+			}
+			allowed := auto || isSafe(in.Command, c.Safe)
 			if approval != nil {
 				var err error
 				allowed, err = approval.Approve(ctx, in.Command, allowed)
@@ -98,7 +102,7 @@ func BashWithAccess(c config.Config, approval Approver, access *WriteAccess) Too
 			out, err := run(ctx, argv, timeout, c.OutputCap)
 			// The error is the same for our sandbox and for macOS privacy, so name both.
 			if c.Sandbox && strings.Contains(out, "Operation not permitted") {
-				out += "\n(kh: if this was a write outside the project, kh's sandbox blocked it; declare the desired existing folder in write_dirs before executing writes (automatically granted when auto_write is enabled). " +
+				out += "\n(kh: if this was a write outside the project, kh's sandbox blocked it; declare the desired existing folder in write_dirs before executing writes (automatically granted when auto is enabled). " +
 					"If it was a read, macOS privacy settings are blocking this folder for the user's terminal app.)"
 			}
 			return out, err

@@ -50,7 +50,7 @@ func agentTool(cfg config.Config, action func(string), access *tools.WriteAccess
 		}
 		active := cfg
 		if access != nil {
-			active.AutoWrite = access.AutoWrite()
+			active.Auto = access.Auto()
 		}
 		for key, field := range map[string]*string{"KH_PROVIDER": &active.Provider, "KH_MODEL": &active.Model, "KH_EFFORT": &active.Effort} {
 			if value := os.Getenv(key); value != "" {
@@ -130,10 +130,7 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 		if err != nil {
 			return "", err
 		}
-		command := []string{exe, "--provider", cfg.Provider, "--model", cfg.Model, "--effort", cfg.Effort, "--auto-write=" + strconv.FormatBool(cfg.AutoWrite)}
-		if cfg.Auto {
-			command = append(command, "--auto")
-		}
+		command := []string{exe, "--provider", cfg.Provider, "--model", cfg.Model, "--effort", cfg.Effort, "--auto=" + strconv.FormatBool(cfg.Auto)}
 		if !cfg.Sandbox {
 			command = append(command, "--nosandbox")
 		}
@@ -256,14 +253,11 @@ func openChatPane(ctx context.Context, cfg config.Config, c *chat, fork bool) (s
 	if err != nil {
 		return "", err
 	}
-	autoWrite := cfg.AutoWrite
+	auto := cfg.Auto
 	if c.writeAccess != nil {
-		autoWrite = c.writeAccess.AutoWrite()
+		auto = c.writeAccess.Auto()
 	}
-	command := []string{exe, "--provider", c.backend, "--model", model, "--effort", effort, "--auto-write=" + strconv.FormatBool(autoWrite)}
-	if cfg.Auto {
-		command = append(command, "--auto")
-	}
+	command := []string{exe, "--provider", c.backend, "--model", model, "--effort", effort, "--auto=" + strconv.FormatBool(auto)}
 	if !cfg.Sandbox {
 		command = append(command, "--nosandbox")
 	}

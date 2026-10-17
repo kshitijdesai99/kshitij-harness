@@ -30,14 +30,14 @@ type writeRequest struct {
 // WriteAccess owns approved directory handles until Close. Configured Writable
 // directories are bash permissions only, not implicit permission for edits.
 type WriteAccess struct {
-	mu        sync.Mutex
-	cwd       string
-	approver  WriteApprover
-	writable  []string
-	grants    []writeGrant
-	pending   map[string]*writeRequest
-	closed    bool
-	autoWrite bool
+	mu       sync.Mutex
+	cwd      string
+	approver WriteApprover
+	writable []string
+	grants   []writeGrant
+	pending  map[string]*writeRequest
+	closed   bool
+	auto     bool
 }
 
 func NewWriteAccess(cfg config.Config, approver WriteApprover) (*WriteAccess, error) {
@@ -53,7 +53,7 @@ func NewWriteAccess(cfg config.Config, approver WriteApprover) (*WriteAccess, er
 	if err != nil {
 		return nil, err
 	}
-	a := &WriteAccess{cwd: cwd, approver: approver, autoWrite: cfg.AutoWrite, pending: make(map[string]*writeRequest), grants: []writeGrant{{cwd, root}}}
+	a := &WriteAccess{cwd: cwd, approver: approver, auto: cfg.Auto, pending: make(map[string]*writeRequest), grants: []writeGrant{{cwd, root}}}
 	for _, dir := range cfg.Writable {
 		dir, err = a.canonical(dir)
 		if err != nil {
@@ -65,19 +65,19 @@ func NewWriteAccess(cfg config.Config, approver WriteApprover) (*WriteAccess, er
 	return a, nil
 }
 
-// SetAutoWrite changes automatic approval for future approval requests only.
+// SetAuto changes automatic command and folder approval for future requests.
 // Pending requests retain their policy; existing session grants are not revoked.
-func (a *WriteAccess) SetAutoWrite(enabled bool) {
+func (a *WriteAccess) SetAuto(enabled bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.autoWrite = enabled
+	a.auto = enabled
 }
 
-// AutoWrite reports whether future outside-folder requests are automatically approved.
-func (a *WriteAccess) AutoWrite() bool {
+// Auto reports whether future commands and outside-folder requests are automatically approved.
+func (a *WriteAccess) Auto() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.autoWrite
+	return a.auto
 }
 
 func withinWriteDir(dir, path string) bool {
@@ -248,7 +248,7 @@ func (a *WriteAccess) require(ctx context.Context, dir string) error {
 	}
 	request := &writeRequest{done: make(chan struct{})}
 	a.pending[dir] = request
-	autoWrite := a.autoWrite
+	auto := a.auto
 	a.mu.Unlock()
 
 	// Pin before approval: approval must not authorize a later symlink target.
@@ -257,7 +257,7 @@ func (a *WriteAccess) require(ctx context.Context, dir string) error {
 		err = fmt.Errorf("write directory must exist; request its nearest existing parent: %s", dir)
 	}
 	if err == nil {
-		allowed := autoWrite
+		allowed := auto
 		if !allowed && a.approver != nil {
 			allowed, err = a.approver.ApproveWrite(ctx, dir)
 		}

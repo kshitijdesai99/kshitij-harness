@@ -60,10 +60,10 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 			}
 			c.seen.Model, c.seen.Effort = now.Model, now.Effort
 		}
-		if now.AutoWrite != c.seen.AutoWrite {
-			applyAutoWrite(c.writeAccess, now.AutoWrite)
+		if now.Auto != c.seen.Auto {
+			applyAuto(c.writeAccess, now.Auto)
 		}
-		c.seen.AutoWrite = now.AutoWrite
+		c.seen.Auto = now.Auto
 	}
 	exportModel(c.model, c.backend)
 	if err := c.snapshotFork(); err != nil {

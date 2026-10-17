@@ -202,7 +202,7 @@ func clearImagePastePane() {
 // Explicitly forward startup settings rather than relying on a long-lived
 // tmux server's environment. Empty values also clear stale server overrides.
 func sessionCommand(rebuilt bool, args ...string) string {
-	prefix := shellCommand("env", "KH_SOURCE_DIR="+os.Getenv("KH_SOURCE_DIR"), "KH_AUTO_REBUILD="+os.Getenv("KH_AUTO_REBUILD"), "KH_AUTO_WRITE="+os.Getenv("KH_AUTO_WRITE"))
+	prefix := shellCommand("env", "KH_SOURCE_DIR="+os.Getenv("KH_SOURCE_DIR"), "KH_AUTO_REBUILD="+os.Getenv("KH_AUTO_REBUILD"), "KH_AUTO="+os.Getenv("KH_AUTO"))
 	if rebuilt {
 		// exec preserves the shell PID, making the skip marker valid only for
 		// this new main pane, not for children it may later create.

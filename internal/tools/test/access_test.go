@@ -87,7 +87,7 @@ func TestWriteAccessOutsideNewFileAndNoImplicitWritable(t *testing.T) {
 	t.Chdir(t.TempDir())
 	outside := t.TempDir()
 	var prompted string
-	a := newTestAccess(t, config.Config{Auto: true, Writable: []string{outside}}, accessApprover(func(_ context.Context, dir string) (bool, error) {
+	a := newTestAccess(t, config.Config{Auto: false, Writable: []string{outside}}, accessApprover(func(_ context.Context, dir string) (bool, error) {
 		prompted = dir
 		return true, nil
 	}))
@@ -163,7 +163,7 @@ func TestWriteAccessCanceledApprovalDoesNotGrant(t *testing.T) {
 	t.Chdir(t.TempDir())
 	ctx, cancel := context.WithCancel(context.Background())
 	outside := t.TempDir()
-	a := newTestAccess(t, config.Config{Auto: true}, accessApprover(func(context.Context, string) (bool, error) {
+	a := newTestAccess(t, config.Config{Auto: false}, accessApprover(func(context.Context, string) (bool, error) {
 		cancel()
 		return true, nil
 	}))
@@ -216,7 +216,7 @@ func TestBashConfiguredWritableNeedsNoRedundantApproval(t *testing.T) {
 	t.Chdir(t.TempDir())
 	outside := t.TempDir()
 	cfg := config.Defaults
-	cfg.Auto, cfg.Sandbox, cfg.Writable = true, false, []string{outside}
+	cfg.Auto, cfg.Sandbox, cfg.Writable = false, false, []string{outside}
 	prompts := 0
 	a := newTestAccess(t, cfg, accessApprover(func(context.Context, string) (bool, error) {
 		prompts++
@@ -224,7 +224,8 @@ func TestBashConfiguredWritableNeedsNoRedundantApproval(t *testing.T) {
 	}))
 	path := filepath.Join(outside, "existing.txt")
 	input, _ := json.Marshal(map[string]any{"command": "printf old > " + shellQuote(path), "write_dirs": []string{outside}})
-	if _, err := tools.BashWithAccess(cfg, nil, a).Run(context.Background(), input); err != nil || prompts != 0 {
+	commandApproval := fakeApprover(func(context.Context, string, bool) (bool, error) { return true, nil })
+	if _, err := tools.BashWithAccess(cfg, commandApproval, a).Run(context.Background(), input); err != nil || prompts != 0 {
 		t.Fatalf("configured bash directory prompted: %v prompts=%d", err, prompts)
 	}
 	edit, _ := json.Marshal(map[string]string{"path": path, "old": "old", "new": "new"})
@@ -257,7 +258,8 @@ func TestBashWriteDirsApprovalBeforeExecution(t *testing.T) {
 				})
 			}
 			cfg := config.Defaults
-			cfg.Auto, cfg.Sandbox, cfg.Writable = true, false, nil
+			cfg.Auto, cfg.Sandbox, cfg.Writable = false, false, nil
+			cfg.Safe = []string{"touch"}
 			a := newTestAccess(t, cfg, approve)
 			file := filepath.Join(outside, mode)
 			in, _ := json.Marshal(map[string]any{"command": "touch " + shellQuote(file), "write_dirs": []string{outside}})
@@ -291,7 +293,8 @@ func TestBashSessionSandboxUpdates(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := config.Defaults
-	cfg.Auto, cfg.Sandbox, cfg.Writable = true, true, []string{configured}
+	cfg.Auto, cfg.Sandbox, cfg.Writable = false, true, []string{configured}
+	cfg.Safe = []string{"cat", "touch"}
 	var prompts int
 	a := newTestAccess(t, cfg, accessApprover(func(context.Context, string) (bool, error) {
 		prompts++

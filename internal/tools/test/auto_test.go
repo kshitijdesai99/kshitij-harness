@@ -14,7 +14,7 @@ import (
 	"kh/internal/tools"
 )
 
-func TestAutoWriteOptInAndSessionGrants(t *testing.T) {
+func TestAutoOptInAndSessionGrants(t *testing.T) {
 	t.Chdir(t.TempDir())
 	outside, later := t.TempDir(), t.TempDir()
 	prompts := 0
@@ -22,21 +22,21 @@ func TestAutoWriteOptInAndSessionGrants(t *testing.T) {
 		prompts++
 		return true, nil
 	}))
-	if a.AutoWrite() {
+	if a.Auto() {
 		t.Fatal("automatic folder approval enabled by default")
 	}
 	if err := a.Require(context.Background(), []string{outside}); err != nil || prompts != 1 {
 		t.Fatalf("default approval: %v prompts=%d", err, prompts)
 	}
-	a.SetAutoWrite(true)
-	if !a.AutoWrite() {
+	a.SetAuto(true)
+	if !a.Auto() {
 		t.Fatal("automatic folder approval not enabled")
 	}
 	if err := a.Require(context.Background(), []string{later}); err != nil || prompts != 1 {
 		t.Fatalf("automatic approval: %v prompts=%d", err, prompts)
 	}
-	a.SetAutoWrite(false)
-	if a.AutoWrite() {
+	a.SetAuto(false)
+	if a.Auto() {
 		t.Fatal("automatic folder approval not disabled")
 	}
 	if err := a.Require(context.Background(), []string{outside, later}); err != nil || prompts != 1 {
@@ -47,17 +47,17 @@ func TestAutoWriteOptInAndSessionGrants(t *testing.T) {
 	}
 }
 
-func TestAutoWriteOutsideEditAndBash(t *testing.T) {
+func TestAutoOutsideEditAndBash(t *testing.T) {
 	t.Chdir(t.TempDir())
 	editDir, bashDir := t.TempDir(), t.TempDir()
 	cfg := config.Defaults
-	cfg.Auto, cfg.AutoWrite, cfg.Sandbox, cfg.Writable = true, true, false, nil
+	cfg.Auto, cfg.Sandbox, cfg.Writable = true, false, nil
 	a := newTestAccess(t, cfg, accessApprover(func(context.Context, string) (bool, error) {
 		t.Error("automatic folder approval called approver")
 		return false, nil
 	}))
-	if !a.AutoWrite() {
-		t.Fatal("constructor did not copy AutoWrite")
+	if !a.Auto() {
+		t.Fatal("constructor did not copy Auto")
 	}
 	ctx := context.Background()
 	path := filepath.Join(editDir, "new.txt")
@@ -90,13 +90,56 @@ func TestAutoWriteOutsideEditAndBash(t *testing.T) {
 			t.Fatalf("missing sandbox grant %q: %v", canonical, dirs)
 		}
 	}
-	a.SetAutoWrite(false)
+	a.SetAuto(false)
 	if _, _, err := a.OpenEditRoot(ctx, bashPath); err != nil {
 		t.Fatalf("bash grant not shared with edit: %v", err)
 	}
 }
 
-func TestAutoWriteKeepsBashSandbox(t *testing.T) {
+// A tool is constructed once per session; changing shared access must override
+// its captured config for commands as well as for new outside-folder requests.
+func TestAutoRuntimeToggleControlsCommandsAndFolders(t *testing.T) {
+	for _, initial := range []bool{false, true} {
+		name := "initially-off"
+		if initial {
+			name = "initially-on"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			cfg := config.Defaults
+			cfg.Auto, cfg.Sandbox, cfg.Safe, cfg.Writable = initial, false, nil, nil
+			prompts := 0
+			a := newTestAccess(t, cfg, accessApprover(func(context.Context, string) (bool, error) {
+				prompts++
+				return true, nil
+			}))
+			tool := tools.BashWithAccess(cfg, nil, a)
+			for _, enabled := range []bool{initial, !initial, initial} {
+				a.SetAuto(enabled)
+				dir := t.TempDir()
+				path := filepath.Join(dir, "result")
+				input, _ := json.Marshal(map[string]any{"command": "printf unified > " + shellQuote(path), "write_dirs": []string{dir}})
+				before := prompts
+				_, err := tool.Run(context.Background(), input)
+				if enabled {
+					if err != nil || prompts != before {
+						t.Fatalf("auto on: err=%v folder prompts=%d", err, prompts-before)
+					}
+					requireText(t, path, "unified")
+				} else {
+					if err == nil || prompts != before+1 {
+						t.Fatalf("auto off: err=%v folder prompts=%d", err, prompts-before)
+					}
+					if _, err := os.Stat(path); !os.IsNotExist(err) {
+						t.Fatalf("unapproved command executed: %v", err)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestAutoKeepsBashSandbox(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("macOS sandbox only")
 	}
@@ -106,7 +149,7 @@ func TestAutoWriteKeepsBashSandbox(t *testing.T) {
 	t.Chdir(t.TempDir())
 	outside, unrequested := t.TempDir(), t.TempDir()
 	cfg := config.Defaults
-	cfg.Auto, cfg.AutoWrite, cfg.Sandbox, cfg.Writable = true, true, true, nil
+	cfg.Auto, cfg.Sandbox, cfg.Writable = true, true, nil
 	a := newTestAccess(t, cfg, accessApprover(func(context.Context, string) (bool, error) { t.Error("unexpected folder prompt"); return false, nil }))
 	allowed := filepath.Join(outside, "allowed.txt")
 	blocked := filepath.Join(unrequested, "blocked.txt")
@@ -122,10 +165,10 @@ func TestAutoWriteKeepsBashSandbox(t *testing.T) {
 	}
 }
 
-func TestAutoWriteRejectsCanceledAndInvalidRequests(t *testing.T) {
+func TestAutoRejectsCanceledAndInvalidRequests(t *testing.T) {
 	t.Chdir(t.TempDir())
 	outside := t.TempDir()
-	a := newTestAccess(t, config.Config{AutoWrite: true}, accessApprover(func(context.Context, string) (bool, error) {
+	a := newTestAccess(t, config.Config{Auto: true}, accessApprover(func(context.Context, string) (bool, error) {
 		t.Error("automatic folder approval called approver")
 		return false, nil
 	}))
@@ -156,11 +199,11 @@ func TestAutoWriteRejectsCanceledAndInvalidRequests(t *testing.T) {
 	}
 }
 
-func TestAutoWriteSymlinkEscapeAndRootReplacement(t *testing.T) {
+func TestAutoSymlinkEscapeAndRootReplacement(t *testing.T) {
 	project := t.TempDir()
 	t.Chdir(project)
 	outside := t.TempDir()
-	a := newTestAccess(t, config.Config{AutoWrite: true}, nil)
+	a := newTestAccess(t, config.Config{Auto: true}, nil)
 	link := filepath.Join(project, "escape")
 	if err := os.Symlink(outside, link); err != nil {
 		t.Fatal(err)

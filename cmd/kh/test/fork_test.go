@@ -32,6 +32,22 @@ func testForkOpensNewPaneToTheRight(t *testing.T, source string) {
 	t.Setenv("KH_SOURCE_DIR", source)
 	t.Setenv("KH_REBUILD_EXEC_PID", "inherited-marker")
 	t.Setenv("KH_AUTO_REBUILD", "0")
+	auto := source == ""
+	autoEnv := "0"
+	staleAutoEnv := "1"
+	if auto {
+		autoEnv, staleAutoEnv = "1", "0"
+	}
+	t.Setenv("KH_AUTO", autoEnv)
+	assertAuto := func(command string) {
+		t.Helper()
+		if decoded, err := strconv.Unquote(command); err == nil {
+			command = decoded
+		}
+		if !strings.Contains(command, "'KH_AUTO="+autoEnv+"'") || !strings.Contains(command, "'--auto="+strconv.FormatBool(auto)+"'") {
+			t.Fatalf("child lost active auto policy: %s", command)
+		}
+	}
 	t.Setenv("KH_PROVIDER", "")
 	t.Setenv("KH_MODEL", "")
 	t.Setenv("KH_EFFORT", "")
@@ -83,6 +99,7 @@ func testForkOpensNewPaneToTheRight(t *testing.T, source string) {
 	for key, value := range map[string]string{
 		"KH_SOURCE_DIR":       "/stale/server/source",
 		"KH_AUTO_REBUILD":     "1",
+		"KH_AUTO":             staleAutoEnv,
 		"KH_REBUILD_EXEC_PID": "stale-server-marker",
 	} {
 		runTmux("set-environment", "-g", key, value)
@@ -132,6 +149,7 @@ func testForkOpensNewPaneToTheRight(t *testing.T, source string) {
 	}
 	command := runTmux("display-message", "-p", "-t", forkPane, "#{pane_start_command}")
 	assertTmuxStartupEnvironment(t, command, source)
+	assertAuto(command)
 	id := command[strings.LastIndex(command, "'-s' '")+6:]
 	id = strings.TrimSuffix(strings.TrimSuffix(id, `"`), "'")
 	copied, err := session.Load(id)
@@ -169,6 +187,7 @@ func testForkOpensNewPaneToTheRight(t *testing.T, source string) {
 	}
 	secondCommand := runTmux("display-message", "-p", "-t", secondPane, "#{pane_start_command}")
 	assertTmuxStartupEnvironment(t, secondCommand, source)
+	assertAuto(secondCommand)
 	secondID := secondCommand[strings.LastIndex(secondCommand, "'-s' '")+6:]
 	secondID = strings.TrimSuffix(strings.TrimSuffix(secondID, `"`), "'")
 	if secondID == id {
@@ -198,6 +217,7 @@ func testForkOpensNewPaneToTheRight(t *testing.T, source string) {
 			command = decoded
 		}
 		assertTmuxStartupEnvironment(t, command, source)
+		assertAuto(command)
 		if strings.Contains(command, "'-s'") || strings.Contains(command, "'-r'") {
 			t.Fatalf("new session unexpectedly resumes history: %s", command)
 		}

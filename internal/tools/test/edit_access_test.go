@@ -20,7 +20,7 @@ func (f editFolderApprover) ApproveWrite(ctx context.Context, dir string) (bool,
 func editAccess(t *testing.T, approve editFolderApprover) *tools.WriteAccess {
 	t.Helper()
 	cfg := config.Defaults
-	cfg.Auto, cfg.Writable = true, nil
+	cfg.Auto, cfg.Writable = false, nil
 	access, err := tools.NewWriteAccess(cfg, approve)
 	if err != nil {
 		t.Fatal(err)

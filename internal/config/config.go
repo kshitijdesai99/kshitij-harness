@@ -19,8 +19,7 @@ type Config struct {
 	OutputCap           int      `json:"output_cap"`             // bytes of command output sent to the model
 	MapCap              int      `json:"map_cap"`                // bytes of repo map in the system prompt; 0 = off
 	Safe                []string `json:"safe"`                   // commands (or "cmd sub") that run without asking
-	Auto                bool     `json:"auto"`                   // skip command approval, not folder-write approval
-	AutoWrite           bool     `json:"auto_write"`             // explicitly opt in to automatic requested folder grants
+	Auto                bool     `json:"auto"`                   // automatically approve commands and requested folder grants
 	Sandbox             bool     `json:"sandbox"`                // macOS: bash may only write in the project + Writable
 	Writable            []string `json:"writable"`               // extra dirs bash may write to when sandboxed
 	MemoryModel         string   `json:"memory_model"`           // cheap model for background memory; "" = chat model, "off" = no automatic saving
@@ -88,6 +87,17 @@ func Load() (Config, error) {
 	if err := json.Unmarshal(b, &c); err != nil {
 		return c, fmt.Errorf("%s: %w", path, err)
 	}
+	// Preserve the old opt-in when upgrading, but an explicit auto wins.
+	var legacy struct {
+		Auto      *bool `json:"auto"`
+		AutoWrite bool  `json:"auto_write"`
+	}
+	if err := json.Unmarshal(b, &legacy); err != nil {
+		return c, err
+	}
+	if legacy.Auto == nil && legacy.AutoWrite {
+		c.Auto = true
+	}
 	return c, nil
 }
 
@@ -100,6 +110,9 @@ func Set(key string, v any) error {
 		if err := json.Unmarshal(b, &m); err != nil {
 			return fmt.Errorf("%s: %w", path, err) // don't overwrite a file we can't read
 		}
+	}
+	if key == "auto" {
+		delete(m, "auto_write")
 	}
 	m[key] = v
 	b, _ := json.MarshalIndent(m, "", "  ")

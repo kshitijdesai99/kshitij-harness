@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestAutoWriteCLIOptInAndPersistence(t *testing.T) {
+func TestAutoCLIOptInAndPersistence(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "kh")
 	build := exec.Command("go", "build", "-o", binary, "./cmd/kh")
 	build.Dir = "../../.."
@@ -24,7 +24,7 @@ func TestAutoWriteCLIOptInAndPersistence(t *testing.T) {
 		t.Fatal(err)
 	}
 	configPath := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(configPath, []byte(`{"memory_model":"off","effort":"high","custom":"preserve"}`), 0600); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"memory_model":"off","effort":"high","custom":"preserve","auto":false,"auto_write":true}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	inherited := ""
@@ -33,7 +33,7 @@ func TestAutoWriteCLIOptInAndPersistence(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, binary, args...)
-		cmd.Env = append(os.Environ(), "HOME="+home, "KH_AUTO_REBUILD=0", "KH_AUTO_WRITE="+inherited, "KH_PROVIDER=", "KH_MODEL=", "KH_EFFORT=", "KH_PARENT=", "KH_AGENT=", "TMUX=", "TMUX_PANE=")
+		cmd.Env = append(os.Environ(), "HOME="+home, "KH_AUTO_REBUILD=0", "KH_AUTO="+inherited, "KH_PROVIDER=", "KH_MODEL=", "KH_EFFORT=", "KH_PARENT=", "KH_AGENT=", "TMUX=", "TMUX_PANE=")
 		cmd.Stdin = strings.NewReader(input)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -53,58 +53,62 @@ func TestAutoWriteCLIOptInAndPersistence(t *testing.T) {
 		}
 		return v
 	}
-	if out := run("/auto-write\n/auto-write on\n/auto-write\n"); !strings.Contains(out, "auto_write off") || strings.Count(out, "auto_write on") != 2 || strings.Contains(out, "Allow session-only") {
+	if out := run("/auto\n/auto on\n/auto\n"); !strings.Contains(out, "auto off") || strings.Count(out, "auto on") != 2 || strings.Contains(out, "Allow session-only") {
 		t.Fatalf("native opt-in: %s", out)
 	}
 	v := read()
-	if v["auto_write"] != true || v["custom"] != "preserve" || v["effort"] != "high" {
+	if v["auto"] != true || v["custom"] != "preserve" || v["effort"] != "high" {
 		t.Fatalf("config lost keys: %v", v)
 	}
-	if _, ok := v["auto"]; ok {
-		t.Fatal("folder permission changed command approval")
+	if _, ok := v["auto_write"]; ok {
+		t.Fatal("/auto persistence retained legacy auto_write")
 	}
 	if _, ok := v["sandbox"]; ok {
 		t.Fatal("folder permission changed sandbox")
 	}
-	if out := run("/auto-write\n"); !strings.Contains(out, "auto_write on") {
+	if out := run("/auto\n"); !strings.Contains(out, "auto on") {
 		t.Fatalf("policy did not persist: %s", out)
 	}
-	if out := run("/auto-write\n", "--auto-write=false"); !strings.Contains(out, "auto_write off") {
+	if out := run("/auto\n", "--auto=false"); !strings.Contains(out, "auto off") {
 		t.Fatalf("explicit flag did not override config: %s", out)
 	}
-	if read()["auto_write"] != true {
+	if read()["auto"] != true {
 		t.Fatal("session flag unexpectedly persisted")
 	}
+	// Older running chats may still pass this spelling to rebuilt children.
+	if out := run("/auto\n", "--auto-write=false"); !strings.Contains(out, "auto off") {
+		t.Fatalf("legacy flag did not control unified auto: %s", out)
+	}
 	inherited = "0"
-	if out := run("/auto-write\n"); !strings.Contains(out, "auto_write off") {
+	if out := run("/auto\n"); !strings.Contains(out, "auto off") {
 		t.Fatalf("parent disabled policy not inherited: %s", out)
 	}
-	if out := run("/auto-write\n", "--auto-write"); !strings.Contains(out, "auto_write on") {
+	if out := run("/auto\n", "--auto"); !strings.Contains(out, "auto on") {
 		t.Fatalf("explicit on flag did not override inherited off: %s", out)
 	}
 	inherited = ""
-	if out := run("/auto-write invalid\n"); !strings.Contains(out, "usage: /auto-write") {
+	if out := run("/auto invalid\n"); !strings.Contains(out, "usage: /auto") {
 		t.Fatalf("invalid syntax: %s", out)
 	}
-	if read()["auto_write"] != true {
+	if read()["auto"] != true {
 		t.Fatal("invalid command changed policy")
 	}
-	if out := run("/auto-write off\n"); !strings.Contains(out, "existing session grants remain") {
+	if out := run("/auto off\n"); !strings.Contains(out, "existing session grants remain") {
 		t.Fatalf("disable: %s", out)
 	}
-	if read()["auto_write"] != false {
+	if read()["auto"] != false {
 		t.Fatal("off did not persist")
 	}
 	inherited = "1"
-	if out := run("/auto-write\n"); !strings.Contains(out, "auto_write on") {
+	if out := run("/auto\n"); !strings.Contains(out, "auto on") {
 		t.Fatalf("parent enabled policy not inherited: %s", out)
 	}
-	if out := run("/auto-write\n", "--auto-write=false"); !strings.Contains(out, "auto_write off") {
+	if out := run("/auto\n", "--auto=false"); !strings.Contains(out, "auto off") {
 		t.Fatalf("explicit off flag did not override inherited on: %s", out)
 	}
 }
 
-func TestAutoWriteReloadAfterLocalToggleAndProviderOverride(t *testing.T) {
+func TestAutoReloadAfterLocalToggleAndProviderOverride(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "kh")
 	build := exec.Command("go", "build", "-o", binary, "./cmd/kh")
 	build.Dir = "../../.."
@@ -119,7 +123,7 @@ func TestAutoWriteReloadAfterLocalToggleAndProviderOverride(t *testing.T) {
 	configPath := filepath.Join(dir, "config.json")
 	writeConfig := func() {
 		t.Helper()
-		if err := os.WriteFile(configPath, []byte(`{"memory_model":"off","provider":"not-installed","auto_write":false}`), 0600); err != nil {
+		if err := os.WriteFile(configPath, []byte(`{"memory_model":"off","provider":"not-installed","auto":false}`), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -127,7 +131,7 @@ func TestAutoWriteReloadAfterLocalToggleAndProviderOverride(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binary, "--provider", "codex")
-	cmd.Env = append(os.Environ(), "HOME="+home, "KH_AUTO_REBUILD=0", "KH_AUTO_WRITE=", "KH_PROVIDER=", "KH_MODEL=", "KH_EFFORT=", "KH_PARENT=", "KH_AGENT=", "TMUX=", "TMUX_PANE=")
+	cmd.Env = append(os.Environ(), "HOME="+home, "KH_AUTO_REBUILD=0", "KH_AUTO=", "KH_PROVIDER=", "KH_MODEL=", "KH_EFFORT=", "KH_PARENT=", "KH_AGENT=", "TMUX=", "TMUX_PANE=")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -161,10 +165,10 @@ func TestAutoWriteReloadAfterLocalToggleAndProviderOverride(t *testing.T) {
 		data, _ := os.ReadFile(log.Name())
 		t.Fatalf("missing %q: %s", text, data)
 	}
-	if _, err := stdin.Write([]byte("/auto-write on\n")); err != nil {
+	if _, err := stdin.Write([]byte("/auto on\n")); err != nil {
 		t.Fatal(err)
 	}
-	waitFor("auto_write on:")
+	waitFor("auto on:")
 	// Another session disables the persisted policy before this chat's first
 	// normal turn. Its active provider differs from the file's provider too.
 	writeConfig()
@@ -172,10 +176,10 @@ func TestAutoWriteReloadAfterLocalToggleAndProviderOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor("error: not logged in")
-	if _, err := stdin.Write([]byte("/auto-write\n")); err != nil {
+	if _, err := stdin.Write([]byte("/auto\n")); err != nil {
 		t.Fatal(err)
 	}
-	waitFor("auto_write off:")
+	waitFor("auto off:")
 	stdin.Close()
 	if err := cmd.Wait(); err != nil {
 		data, _ := os.ReadFile(log.Name())
