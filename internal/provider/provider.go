@@ -42,6 +42,13 @@ func Reply(out Output, text, phase string) {
 	out.Reply(text)
 }
 
+// Progress updates an optional activity indicator without exposing private text.
+func Progress(out Output, phase string) {
+	if p, ok := out.(interface{ Progress(string) }); ok {
+		p.Progress(phase)
+	}
+}
+
 // FlushReply signals an optional presentation boundary without requiring
 // captures and other plain Outputs to implement buffering.
 func FlushReply(out Output) {

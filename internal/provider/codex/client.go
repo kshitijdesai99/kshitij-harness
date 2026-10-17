@@ -38,6 +38,7 @@ type Client struct {
 	memory      string // memory message for the next user message; saved with it, so it is sent once
 	image       string // data URL attached to the next user message; retained if the request fails
 	tools       []map[string]any
+	toolChoice  string           // empty means auto; compaction uses none to prohibit new tools
 	input       []map[string]any // full history; the server stores nothing (store: false)
 	session     string
 	stats       provider.Stats
@@ -121,12 +122,16 @@ func (c *Client) Step(ctx context.Context, user string, results []provider.Resul
 		}
 	}()
 
+	choice := c.toolChoice
+	if choice == "" {
+		choice = "auto"
+	}
 	body, _ := json.Marshal(map[string]any{
 		"model":               c.model,
 		"instructions":        c.instructions(),
 		"input":               c.input,
 		"tools":               c.tools,
-		"tool_choice":         "auto",
+		"tool_choice":         choice,
 		"parallel_tool_calls": true,
 		"reasoning":           map[string]string{"effort": c.effort},
 		"store":               false,

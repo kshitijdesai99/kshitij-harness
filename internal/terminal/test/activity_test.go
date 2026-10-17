@@ -53,6 +53,15 @@ func TestActivityProcess(t *testing.T) {
 	go func() { <-ctx.Done(); a.Stop(); fmt.Println("CANCELLED") }()
 	for line := range c.Lines {
 		switch line {
+		case "compact":
+			a.Start("compacting context")
+			fmt.Println("COMPACTING")
+		case "compact-progress":
+			(terminal.Renderer{Out: os.Stdout, Err: os.Stderr, Activity: a}).Progress("compacting context")
+			fmt.Println("COMPACT_PROGRESS")
+		case "save-compact":
+			a.Set("saving compacted context")
+			fmt.Println("SAVING_COMPACT")
 		case "phase":
 			a.Set("running bash")
 			fmt.Println("PHASE")
@@ -120,6 +129,12 @@ try:
  if sys.argv[2]!='dumb':assert any(b'running bash' in x for x in titles()),titles()
  send(b'reply',b'REPLIED');pump(.25)
  if sys.argv[2]!='dumb':assert any(b'responding' in x for x in titles()),titles()
+ send(b'compact',b'COMPACTING');pump(.25)
+ if sys.argv[2]!='dumb':assert any(b'compacting context' in x for x in titles()),titles()
+ send(b'save-compact',b'SAVING_COMPACT');pump(.25)
+ if sys.argv[2]!='dumb':assert any(b'saving compacted context' in x for x in titles()),titles()
+ send(b'compact-progress',b'COMPACT_PROGRESS');pump(.25)
+ if sys.argv[2]!='dumb':assert any(b'compacting context' in x for x in titles()),titles()
  send(b'stop',b'STOPPED');buf=b'';pump(.45);assert not titles(),titles()
  send(b'start',b'STARTED');pump(.25)
  if sys.argv[2]!='dumb':assert titles(),buf

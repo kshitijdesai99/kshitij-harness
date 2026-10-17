@@ -53,6 +53,13 @@ func (r Renderer) Commentary(text string) {
 	fmt.Fprint(r.Out, text)
 }
 
+// Progress updates titles without streaming private operations into the chat.
+func (r Renderer) Progress(phase string) {
+	if r.Activity != nil {
+		r.Activity.Set(phase)
+	}
+}
+
 func (r Renderer) Statistics(text string) {
 	r.FlushReply()
 	fmt.Fprintln(r.Err, Color(r.Err, LightOrange, text))

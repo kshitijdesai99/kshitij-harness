@@ -63,6 +63,9 @@ func TestPreHookSavesThenReplacesARule(t *testing.T) {
 	s, c := open(t), &calls{}
 	text := "Use Tailwind over plain CSS."
 	answer := func(system, prompt string) string {
+		if strings.Contains(system, "durable-memory replacement") {
+			return `{"update":true,"text":"Use plain CSS.","evidence":"actually, plain CSS"}`
+		}
 		if is(system, "lasting user instructions") {
 			return "```json\n{\"save\":[{\"key\":\"css-framework\",\"text\":\"" + text + "\",\"scope\":\"repo\"}]}\n```"
 		}

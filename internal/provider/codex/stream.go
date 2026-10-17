@@ -11,6 +11,22 @@ import (
 	"kh/internal/provider"
 )
 
+type streamError struct {
+	Message string `json:"message"`
+	Code    string `json:"code"`
+	Type    string `json:"type"`
+}
+
+func (e streamError) detail() string {
+	var parts []string
+	for _, s := range []string{e.Message, e.Code, e.Type} {
+		if s = strings.TrimSpace(s); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, "; ")
+}
+
 // readStream is adapter-specific: the loop and renderer never see SSE events.
 func (c *Client) readStream(r io.Reader) ([]provider.Call, error) {
 	sc := bufio.NewScanner(r)
@@ -37,8 +53,10 @@ func (c *Client) readStream(r io.Reader) ([]provider.Call, error) {
 			Delta    string         `json:"delta"`
 			Item     map[string]any `json:"item"`
 			Message  string         `json:"message"`
+			Code     string         `json:"code"`
+			Error    streamError    `json:"error"`
 			Response struct {
-				Error *struct{ Message string } `json:"error"`
+				Error streamError `json:"error"`
 				Usage struct {
 					In      int `json:"input_tokens"`
 					Out     int `json:"output_tokens"`
@@ -98,15 +116,25 @@ func (c *Client) readStream(r io.Reader) ([]provider.Call, error) {
 			c.stats.Think += u.OutDetails.Think
 			c.stats.Context = u.In + u.Out
 			return calls, nil
-		case "response.failed":
-			if ev.Response.Error != nil {
-				return nil, fmt.Errorf("codex: %s", ev.Response.Error.Message)
+		case "response.failed", "error":
+			detail := ev.Error.detail()
+			if ev.Type == "response.failed" {
+				if responseDetail := ev.Response.Error.detail(); responseDetail != "" {
+					detail = responseDetail
+				}
 			}
-			return nil, fmt.Errorf("codex: response failed")
+			if detail == "" {
+				detail = (streamError{Message: ev.Message, Code: ev.Code}).detail()
+			}
+			if detail == "" {
+				detail = "stream error"
+				if ev.Type == "response.failed" {
+					detail = "response failed"
+				}
+			}
+			return nil, fmt.Errorf("codex: %s", detail)
 		case "response.incomplete":
 			return nil, fmt.Errorf("codex: reply was cut off")
-		case "error":
-			return nil, fmt.Errorf("codex: %s", ev.Message)
 		}
 	}
 	if err := sc.Err(); err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -22,7 +23,7 @@ func agentCommand(args []string, cfg config.Config) error {
 	return err
 }
 
-func agentTool(cfg config.Config, action func(string)) tools.Tool {
+func agentTool(cfg config.Config, action func(string), access *tools.WriteAccess) tools.Tool {
 	// Serialize this chat's spawns, including parallel tool calls. Reads and
 	// messages need not wait for a model request or the spawned task to finish.
 	spawning := make(chan struct{}, 1)
@@ -48,6 +49,9 @@ func agentTool(cfg config.Config, action func(string)) tools.Tool {
 			args = []string{"agents"}
 		}
 		active := cfg
+		if access != nil {
+			active.AutoWrite = access.AutoWrite()
+		}
 		for key, field := range map[string]*string{"KH_PROVIDER": &active.Provider, "KH_MODEL": &active.Model, "KH_EFFORT": &active.Effort} {
 			if value := os.Getenv(key); value != "" {
 				*field = value
@@ -126,7 +130,7 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 		if err != nil {
 			return "", err
 		}
-		command := []string{exe, "--provider", cfg.Provider, "--model", cfg.Model, "--effort", cfg.Effort}
+		command := []string{exe, "--provider", cfg.Provider, "--model", cfg.Model, "--effort", cfg.Effort, "--auto-write=" + strconv.FormatBool(cfg.AutoWrite)}
 		if cfg.Auto {
 			command = append(command, "--auto")
 		}
@@ -252,7 +256,11 @@ func openChatPane(ctx context.Context, cfg config.Config, c *chat, fork bool) (s
 	if err != nil {
 		return "", err
 	}
-	command := []string{exe, "--provider", c.backend, "--model", model, "--effort", effort}
+	autoWrite := cfg.AutoWrite
+	if c.writeAccess != nil {
+		autoWrite = c.writeAccess.AutoWrite()
+	}
+	command := []string{exe, "--provider", c.backend, "--model", model, "--effort", effort, "--auto-write=" + strconv.FormatBool(autoWrite)}
 	if cfg.Auto {
 		command = append(command, "--auto")
 	}

@@ -56,11 +56,12 @@ func TestCompactSummarizesWithoutToolsAndResumes(t *testing.T) {
 			Tools        []any
 			Input        []map[string]any
 			Instructions string
+			ToolChoice   string `json:"tool_choice"`
 		}
 		if err := json.Unmarshal(body, &request); err != nil {
 			t.Fatal(err)
 		}
-		if len(request.Tools) != 0 || !strings.Contains(request.Instructions, "Do not use tools") {
+		if len(request.Tools) != 0 || request.ToolChoice != "none" || !strings.Contains(request.Instructions, "Do not use tools") {
 			t.Fatalf("unsafe compaction request: %s", body)
 		}
 		if strings.Contains(strings.ToLower(request.Instructions), "agents") || strings.Contains(strings.ToLower(request.Instructions), "curl") {

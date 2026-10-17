@@ -34,6 +34,7 @@ type chat struct {
 	tools             []tools.Tool
 	seen              config.Config
 	recentContext     string // bounded last exchange; never a second transcript archive
+	writeAccess       *tools.WriteAccess
 	forkMu            sync.Mutex
 	forkState         []byte // last completed conversation; never read a streaming model
 	forkModel         string
@@ -49,14 +50,20 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 	defer setAgentState("waiting")
 	// Flags hold until the file changes. A different backend starts a new
 	// chat rather than switching the interpretation of an existing history.
-	if now, err := config.Load(); err == nil && now.Provider == c.backend {
-		if now.Model != c.seen.Model {
-			c.model.Use(now.Model, "")
+	if now, err := config.Load(); err == nil {
+		if now.Provider == c.backend {
+			if now.Model != c.seen.Model {
+				c.model.Use(now.Model, "")
+			}
+			if now.Effort != c.seen.Effort {
+				c.model.Use("", now.Effort)
+			}
+			c.seen.Model, c.seen.Effort = now.Model, now.Effort
 		}
-		if now.Effort != c.seen.Effort {
-			c.model.Use("", now.Effort)
+		if now.AutoWrite != c.seen.AutoWrite {
+			applyAutoWrite(c.writeAccess, now.AutoWrite)
 		}
-		c.seen.Model, c.seen.Effort = now.Model, now.Effort
+		c.seen.AutoWrite = now.AutoWrite
 	}
 	exportModel(c.model, c.backend)
 	if err := c.snapshotFork(); err != nil {
@@ -197,17 +204,26 @@ func (c *chat) compact(ctx context.Context) error {
 	defer stop()
 	setAgentState("busy")
 	defer setAgentState("waiting")
+	started := time.Now()
 	if c.ui.Activity != nil {
 		c.ui.Activity.Start("compacting context")
 		defer c.ui.Activity.Stop()
 	}
+	c.ui.Notice("(compacting context... Ctrl-C to cancel)")
 	if err := compacter.Compact(tctx); err != nil {
-		return err
+		if errors.Is(err, context.Canceled) || tctx.Err() == context.Canceled {
+			c.ui.Notice("(compaction cancelled; conversation unchanged)")
+			return nil
+		}
+		return fmt.Errorf("failed; conversation unchanged: %w", err)
+	}
+	if c.ui.Activity != nil {
+		c.ui.Activity.Set("saving compacted context")
 	}
 	if err := c.save(); err != nil {
-		return err
+		return fmt.Errorf("context compacted, but session/checkpoint save failed: %w", err)
 	}
-	c.ui.Notice("(context compacted and session saved)")
+	c.ui.Notice(fmt.Sprintf("(context compacted and session saved in %s)", secs(time.Since(started))))
 	return nil
 }
 

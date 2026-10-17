@@ -91,7 +91,7 @@ func EditWithOutput(action func(string)) Tool {
 // EditWithAccess shares session folder grants with shell commands.
 func EditWithAccess(action func(string), access *WriteAccess) Tool {
 	t := Edit
-	t.Description = "Edit files in the project or approved folders. Outside folders require explicit session-only user approval. " + t.Description
+	t.Description = "Edit files in the project or granted folders. Outside-folder requests follow auto_write: grant automatically when enabled, otherwise ask for session-only approval. " + t.Description
 	t.Run = func(ctx context.Context, input json.RawMessage) (string, error) {
 		return editWithOutput(ctx, input, action, access)
 	}

@@ -38,11 +38,15 @@ func main() {
 			*field = value
 		}
 	}
-	// Flags override the config file, which overrides the defaults.
+	if value := os.Getenv("KH_AUTO_WRITE"); value == "1" || value == "0" {
+		cfg.AutoWrite = value == "1"
+	}
+	// Flags override inherited settings and the config file.
 	flag.StringVar(&cfg.Provider, "provider", cfg.Provider, "backend adapter")
 	flag.StringVar(&cfg.Model, "model", cfg.Model, "model id")
 	flag.StringVar(&cfg.Effort, "effort", cfg.Effort, "reasoning effort: low, medium, high")
 	flag.BoolVar(&cfg.Auto, "auto", cfg.Auto, "skip command approval, not folder-write approval")
+	flag.BoolVar(&cfg.AutoWrite, "auto-write", cfg.AutoWrite, "automatically grant requested outside-folder writes; keep sandbox and path checks")
 	noSandbox := flag.Bool("nosandbox", false, "let bash write outside the project")
 	resume := flag.Bool("r", false, "resume the latest session")
 	id := flag.String("s", "", "resume a session by id (files in ~/.kh/sessions)")
@@ -88,6 +92,7 @@ func main() {
 	}
 	exit(configErr)
 	cfg.Sandbox = cfg.Sandbox && !*noSandbox
+	applyAutoWrite(nil, cfg.AutoWrite)
 	if cfg.Auto {
 		os.Setenv("KH_AUTO", "1") // carry --auto into bash-invoked kh subcommands
 	} else if os.Getenv("KH_AUTO") == "1" {
@@ -185,7 +190,7 @@ func main() {
 	writeAccess, err := tools.NewWriteAccess(cfg, console)
 	exit(err)
 	defer writeAccess.Close()
-	ts := []tools.Tool{tools.BashWithAccess(cfg, console, writeAccess), tools.EditWithAccess(ui.Action, writeAccess), tools.Memory(db, repoScope, owner), tools.ViewImage(ui.Action), agentTool(cfg, ui.Action)}
+	ts := []tools.Tool{tools.BashWithAccess(cfg, console, writeAccess), tools.EditWithAccess(ui.Action, writeAccess), tools.Memory(db, repoScope, owner), tools.ViewImage(ui.Action), agentTool(cfg, ui.Action, writeAccess)}
 	if *resume {
 		*id, err = session.Latest()
 		exit(err)
@@ -218,7 +223,7 @@ func main() {
 
 	exportModel(p, cfg.Provider)
 	c := chat{model: p, backend: cfg.Provider, id: *id, repo: repoScope,
-		memory: db, learn: learner, input: console, ui: ui, tools: ts, seen: fromFile,
+		memory: db, learn: learner, input: console, ui: ui, tools: ts, seen: fromFile, writeAccess: writeAccess,
 		budget: memory.Budget{SummaryChars: cfg.SummaryMaxTokens * 4, TopInstructions: cfg.TopInstructions, TopGotchas: cfg.TopGotchas,
 			TopKnowledge: cfg.TopKnowledge, TotalChars: cfg.MemoryMaxTokens * 4}}
 	exit(c.snapshotFork())
@@ -290,7 +295,7 @@ func main() {
 			continue
 		}
 		if singleLine && strings.HasPrefix(line, "/") {
-			command(p, line)
+			c.command(line)
 			if err := c.snapshotFork(); err != nil {
 				fmt.Fprintln(os.Stderr, "fork checkpoint:", err)
 			}
@@ -302,11 +307,34 @@ func main() {
 	}
 }
 
-// command handles chat slash commands. Switches apply from the next message.
-func command(p provider.Provider, line string) {
+// command handles native slash commands. Folder-policy changes apply to future
+// requests immediately; model switches apply from the next message.
+func (c *chat) command(line string) {
+	p, access := c.model, c.writeAccess
 	cmd, arg, _ := strings.Cut(line, " ")
 	var model, effort string
 	switch cmd {
+	case "/auto-write":
+		arg = strings.TrimSpace(arg)
+		if arg != "" {
+			if arg != "on" && arg != "off" {
+				fmt.Println("usage: /auto-write [on|off]")
+				return
+			}
+			enabled := arg == "on"
+			if err := config.Set("auto_write", enabled); err != nil {
+				fmt.Println("error:", err)
+				return
+			}
+			applyAutoWrite(access, enabled)
+			c.seen.AutoWrite = enabled
+		}
+		if access.AutoWrite() {
+			fmt.Println("(auto_write on: requested outside-folder writes are automatically granted; sandbox and path checks remain enabled)")
+		} else {
+			fmt.Println("(auto_write off: new folders require approval; existing session grants remain until restart)")
+		}
+		return
 	case "/model", "/effort":
 		if arg = strings.TrimSpace(arg); arg != "" {
 			// Saved to config, so every session (including open ones) follows.
@@ -321,10 +349,22 @@ func command(p provider.Provider, line string) {
 			model, effort = p.Use("", arg)
 		}
 	default:
-		fmt.Println("/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/new   open a fresh session in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message")
+		fmt.Println("/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/new   open a fresh session in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message\n/auto-write [on|off]   persist outside-folder approval policy; existing grants remain until restart")
 		return
 	}
 	fmt.Println(terminal.Color(os.Stdout, terminal.Muted, fmt.Sprintf("(model %s, effort %s)", model, effort)))
+}
+
+// Keep bash-invoked kh subcommands on the session's active permission policy.
+func applyAutoWrite(access *tools.WriteAccess, enabled bool) {
+	if access != nil {
+		access.SetAutoWrite(enabled)
+	}
+	value := "0"
+	if enabled {
+		value = "1"
+	}
+	os.Setenv("KH_AUTO_WRITE", value)
 }
 
 func exit(err error) {
