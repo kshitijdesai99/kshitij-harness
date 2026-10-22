@@ -194,6 +194,10 @@ func TestMemoryHybridCLI(t *testing.T) {
 		setMode(true)
 		stdin.Write([]byte("context\n"))
 		waitFor("error: not logged in", 1)
+		waitFor("Memory search: ok; keyword: ok", 1)
+		waitFor("semantic: ok", 1)
+		waitFor("rerank: ok", 1)
+		waitFor(" context", 1) // loaded memory key, not just candidate counts
 		if calls.Load() < 2 {
 			t.Fatalf("reload did not enable both services: %d calls", calls.Load())
 		}
@@ -201,6 +205,8 @@ func TestMemoryHybridCLI(t *testing.T) {
 		before := calls.Load()
 		stdin.Write([]byte("context\n"))
 		waitFor("error: not logged in", 2)
+		waitFor("Memory search: ok; keyword: ok", 2)
+		waitFor("semantic: off; rerank: off", 1)
 		if calls.Load() != before {
 			t.Fatal("disabled reload contacted models")
 		}

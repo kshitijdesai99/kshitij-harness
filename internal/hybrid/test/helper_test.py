@@ -226,6 +226,7 @@ class ModelTests(unittest.TestCase):
         forward = [c for c in calls if c[0] == "forward"]
         self.assertTrue(all(c[1]["use_cache"] is False for c in forward))
         self.assertTrue(any(c[0] == "encode" and "<Query>: find my preference" in c[1] for c in calls))
+        self.assertTrue(any(c[0] == "encode" and "saved instruction that governs the requested action" in c[1] for c in calls))
 
 
 if __name__ == "__main__":

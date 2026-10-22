@@ -146,6 +146,9 @@ func memoryCommand(args []string, cfg config.Config) error {
 		if args[0] == "explain" {
 			fmt.Printf("lexical candidates: %v\nsemantic enabled: %t; fallback: %t\nsemantic candidates: %v\nselected: %v\n", trace.LexicalIDs, trace.SemanticEnabled, trace.SemanticFallback, trace.SemanticIDs, trace.SelectedIDs)
 			fmt.Printf("rerank enabled: %t; fallback: %t\nreranked: %v\n", trace.RerankEnabled, trace.RerankFallback, trace.RerankedIDs)
+			if trace.RerankComplete {
+				fmt.Printf("relevance scores: %v\nrejected (<%.4g): %v\n", trace.RerankScores, trace.RelevanceCutoff, trace.RejectedIDs)
+			}
 		}
 		for _, n := range found {
 			fmt.Println(tools.Note(n))

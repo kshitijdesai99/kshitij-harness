@@ -93,7 +93,9 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 			if err != nil {
 				return fmt.Errorf("retrieve memory: %w", err)
 			}
-			relevant, err := c.memory.Recall(ctx, c.repo, query, memory.Seen(state), c.budget)
+			retrievalStart := time.Now()
+			relevant, trace, err := c.memory.RecallWithTrace(ctx, c.repo, query, memory.Seen(state), c.budget)
+			c.ui.Notice(fmt.Sprintf("%s (%s)", trace.Diagnostic(err), time.Since(retrievalStart).Round(time.Millisecond)))
 			if err != nil {
 				return fmt.Errorf("retrieve memory: %w", err)
 			}

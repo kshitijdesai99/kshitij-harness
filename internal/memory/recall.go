@@ -59,6 +59,21 @@ func Seen(state []byte) map[int64]bool {
 // topics already sent, and the top matching instructions and gotchas.
 // It returns "" when there is nothing new.
 func (s *Store) Recall(ctx context.Context, repo, query string, seen map[int64]bool, b Budget) (string, error) {
+	return s.recall(ctx, repo, query, seen, b, nil)
+}
+
+// RecallWithTrace reports the actual search and newly injected notes, including
+// summaries and corrections that do not come from search. It does no extra retrieval.
+func (s *Store) RecallWithTrace(ctx context.Context, repo, query string, seen map[int64]bool, b Budget) (string, RecallTrace, error) {
+	trace := RecallTrace{Search: SearchTrace{
+		SemanticEnabled: s.semanticConfig() != nil,
+		RerankEnabled:   s.rerankConfig() != nil,
+	}}
+	text, err := s.recall(ctx, repo, query, seen, b, &trace)
+	return text, trace, err
+}
+
+func (s *Store) recall(ctx context.Context, repo, query string, seen map[int64]bool, b Budget, trace *RecallTrace) (string, error) {
 	if seen == nil {
 		seen = map[int64]bool{}
 	}
@@ -68,13 +83,24 @@ func (s *Store) Recall(ctx context.Context, repo, query string, seen map[int64]b
 	}
 	used := len(Header)
 	var lines []string
-	appendLine := func(id int64, line string) bool {
+	appendLine := func(id int64, key, line string) bool {
 		if used+len(line)+1 > total {
 			return false
 		}
 		lines = append(lines, line)
 		used += len(line) + 1
 		seen[id] = true
+		if trace != nil {
+			trace.LoadedIDs = append(trace.LoadedIDs, id)
+			// Keys are stored data, not trusted terminal control sequences.
+			key = strings.Map(func(r rune) rune {
+				if unicode.IsControl(r) {
+					return -1
+				}
+				return r
+			}, key)
+			trace.Loaded = append(trace.Loaded, fmt.Sprintf("#%d %s", id, key))
+		}
 		return true
 	}
 	add := func(n Note, note string) bool {
@@ -85,7 +111,7 @@ func (s *Store) Recall(ctx context.Context, repo, query string, seen map[int64]b
 		if n.Kind == "reference" {
 			note += fmt.Sprintf(" (load full procedure/assets with memory action=load id=%d; retrieval never executes assets)", n.ID)
 		}
-		return appendLine(n.ID, fmt.Sprintf("[memory #%d] %s %s%s%s: %s [stated %s]", n.ID, n.Kind, n.Key, scope, note, n.Text, n.StatedAt.UTC().Format(time.RFC3339Nano)))
+		return appendLine(n.ID, n.Key, fmt.Sprintf("[memory #%d] %s %s%s%s: %s [stated %s]", n.ID, n.Kind, n.Key, scope, note, n.Text, n.StatedAt.UTC().Format(time.RFC3339Nano)))
 	}
 	ids := make([]int64, 0, len(seen))
 	for id := range seen {
@@ -114,7 +140,7 @@ func (s *Store) Recall(ctx context.Context, repo, query string, seen map[int64]b
 			continue
 		}
 		if cur.Forgotten {
-			appendLine(cur.ID, fmt.Sprintf("[memory #%d] %s %s: no longer applies.", cur.ID, old.Kind, old.Key))
+			appendLine(cur.ID, old.Key, fmt.Sprintf("[memory #%d] %s %s: no longer applies.", cur.ID, old.Kind, old.Key))
 		} else {
 			add(cur, " (replaces earlier note)")
 		}
@@ -143,7 +169,7 @@ func (s *Store) Recall(ctx context.Context, repo, query string, seen map[int64]b
 		summaryUsed := 0
 		if !seen[sum.ID] {
 			line := fmt.Sprintf("[memory summary #%d] %s", sum.ID, sum.Text)
-			if len(sum.Text) <= b.SummaryChars && appendLine(sum.ID, line) {
+			if len(sum.Text) <= b.SummaryChars && appendLine(sum.ID, sum.Key, line) {
 				summaryUsed += len(sum.Text)
 			}
 		}
@@ -169,17 +195,47 @@ func (s *Store) Recall(ctx context.Context, repo, query string, seen map[int64]b
 	}
 	// One hybrid search across all kinds avoids repeating query embeddings.
 	limits := map[string]int{"instruction": b.TopInstructions, "gotcha": b.TopGotchas, "fact": b.TopKnowledge, "decision": b.TopKnowledge, "reference": b.TopKnowledge}
-	found, err := s.search(ctx, repo, "", query, b.TopInstructions+b.TopGotchas+3*b.TopKnowledge, SearchOptions{}, limits, seen, nil)
-	if err != nil {
-		return "", err
+	var searchTrace *SearchTrace
+	if trace != nil {
+		searchTrace = &trace.Search
 	}
-	for _, n := range found {
-		add(n, "")
+	if reason := topicSearchSkipReason(query); reason != "" {
+		if searchTrace != nil {
+			searchTrace.SkipReason = reason
+		}
+	} else {
+		found, err := s.search(ctx, repo, "", query, b.TopInstructions+b.TopGotchas+3*b.TopKnowledge, SearchOptions{}, limits, seen, searchTrace)
+		if err != nil {
+			return "", err
+		}
+		for _, n := range found {
+			add(n, "")
+		}
 	}
 	if len(lines) == 0 {
 		return "", nil
 	}
 	return Header + "\n" + strings.Join(lines, "\n"), nil
+}
+
+// topicSearchSkipReason only gates automatic topic recall, not explicit searches,
+// corrections, required summary notes, or named references. Exact phrases avoid
+// suppressing short topics and mixed messages such as "hey, fix the tests".
+func topicSearchSkipReason(query string) string {
+	q := strings.Join(strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}), " ")
+	switch q {
+	case "":
+		return "no topic"
+	case "hi", "hey", "hello", "hi there", "hey there", "hello there", "greetings",
+		"good morning", "good afternoon", "good evening",
+		"thanks", "thank you", "thanks a lot", "thank you very much",
+		"ok", "okay", "got it", "sounds good":
+		return "standalone greeting or acknowledgment"
+	default:
+		return ""
+	}
 }
 
 // referenceMentions inspects names/aliases only, never full procedures/assets.

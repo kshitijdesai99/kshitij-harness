@@ -24,10 +24,25 @@ func (s *Store) Search(ctx context.Context, repo, kind, query string, limit int)
 
 // SearchTrace explains one retrieval without retaining query text or provider errors.
 type SearchTrace struct {
-	LexicalIDs, SemanticIDs, SelectedIDs []int64
-	SemanticEnabled, SemanticFallback    bool
-	RerankEnabled, RerankFallback        bool
-	RerankedIDs                          []int64
+	Started, LexicalComplete, SemanticComplete, RerankComplete bool
+	LexicalIDs, SemanticIDs, SelectedIDs                       []int64
+	SemanticEnabled, SemanticFallback                          bool
+	RerankEnabled, RerankFallback                              bool
+	RerankedIDs                                                []int64
+	RerankScores                                               []RerankScore
+	RejectedIDs                                                []int64
+	RelevanceCutoff                                            float64
+	SkipReason                                                 string
+}
+
+// RerankScore retains relevance evidence without retaining query or note text.
+type RerankScore struct {
+	ID    int64
+	Score float64
+}
+
+func (s RerankScore) String() string {
+	return fmt.Sprintf("#%d=%.4g", s.ID, s.Score)
 }
 
 func (s *Store) SearchWithOptions(ctx context.Context, repo, kind, query string, limit int, opts SearchOptions) ([]Note, error) {
@@ -41,6 +56,11 @@ func (s *Store) SearchWithTrace(ctx context.Context, repo, kind, query string, l
 }
 
 func (s *Store) search(ctx context.Context, repo, kind, query string, limit int, opts SearchOptions, quotas map[string]int, excluded map[int64]bool, trace *SearchTrace) ([]Note, error) {
+	reranker := s.rerankConfig()
+	if trace != nil {
+		trace.SemanticEnabled = s.semanticConfig() != nil
+		trace.RerankEnabled = reranker != nil
+	}
 	if opts.Order != "" && opts.Order != "relevance" && opts.Order != "newest" && opts.Order != "oldest" {
 		return nil, fmt.Errorf("memory: order must be relevance, newest or oldest")
 	}
@@ -48,7 +68,13 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 		return nil, fmt.Errorf("memory: since must not be after until")
 	}
 	if limit <= 0 || strings.TrimSpace(query) == "" {
+		if trace != nil {
+			trace.SkipReason = "zero search budget or empty query"
+		}
 		return nil, nil
+	}
+	if trace != nil {
+		trace.Started = true
 	}
 	limit = min(limit, 100)
 	candidates := min(limit*4, 400)
@@ -89,25 +115,30 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 			return nil, err
 		}
 	}
-	reranker := s.rerankConfig()
 	if trace != nil {
-		trace.RerankEnabled = reranker != nil
-		trace.SemanticEnabled = s.semanticConfig() != nil
+		trace.LexicalComplete = true
 		for _, n := range lexical {
 			trace.LexicalIDs = append(trace.LexicalIDs, n.ID)
 		}
 	}
+	minSimilarity := 0.35
+	if reranker != nil && (opts.Order == "" || opts.Order == "relevance") {
+		// Similarity orders candidates; the bounded reranker decides relevance.
+		// A useful task instruction can fall below the standalone cosine floor.
+		minSimilarity = -1
+	}
 	semanticCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
-	semantic, err := s.SemanticSearchBetween(semanticCtx, repo, kind, query, candidates, opts.Since, opts.Until)
+	semantic, err := s.semanticSearchBetween(semanticCtx, repo, kind, query, candidates, opts.Since, opts.Until, minSimilarity)
 	cancel()
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		s.semanticNotice(err)
-		if trace != nil {
-			trace.SemanticFallback = true
-		}
+	}
+	if trace != nil {
+		trace.SemanticFallback = err != nil
+		trace.SemanticComplete = trace.SemanticEnabled && err == nil
 	}
 	hybridFailed := reranker != nil && (err != nil || s.semanticConfig() == nil)
 	if hybridFailed {
@@ -156,6 +187,7 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 		}
 		return a.note.ID > b.note.ID
 	})
+	var relevanceCutoff float64
 	// Never send excluded, secret-bearing, or stale records to the reranker.
 	// Revalidate again below after the network call before returning results.
 	if reranker != nil && !hybridFailed && (opts.Order == "" || opts.Order == "relevance") {
@@ -210,6 +242,7 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 				}
 			} else {
 				reranker.succeeded()
+				relevanceCutoff = minRerankRelevance
 				rankedNotes = nil
 				for i, n := range batch {
 					rankedNotes = append(rankedNotes, &ranked{note: n, score: scores[i]})
@@ -222,8 +255,11 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 					return semanticNewer(a.note, b.note)
 				})
 				if trace != nil {
+					trace.RerankComplete = true
+					trace.RelevanceCutoff = minRerankRelevance
 					for _, n := range rankedNotes {
 						trace.RerankedIDs = append(trace.RerankedIDs, n.note.ID)
+						trace.RerankScores = append(trace.RerankScores, RerankScore{ID: n.note.ID, Score: n.score})
 					}
 				}
 			}
@@ -241,15 +277,31 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 	for _, n := range live {
 		current[n.ID] = true
 	}
+	if relevanceCutoff > 0 {
+		// Stale, seen, and unrequested kinds must not raise the cutoff for
+		// eligible notes. Revalidate before using the top score, too.
+		for _, n := range rankedNotes {
+			if current[n.note.ID] && !excluded[n.note.ID] && (quotas == nil || quotas[n.note.Kind] > 0) {
+				relevanceCutoff = max(relevanceCutoff, n.score*minRerankFraction)
+			}
+		}
+		if trace != nil {
+			trace.RelevanceCutoff = relevanceCutoff
+		}
+	}
 	var out []Note
 	for _, n := range rankedNotes {
-		if !current[n.note.ID] || excluded[n.note.ID] {
+		if !current[n.note.ID] || excluded[n.note.ID] || (quotas != nil && quotas[n.note.Kind] <= 0) {
+			continue
+		}
+		// Reject before quotas/limits; rejected notes remain unseen.
+		if relevanceCutoff > 0 && n.score < relevanceCutoff {
+			if trace != nil {
+				trace.RejectedIDs = append(trace.RejectedIDs, n.note.ID)
+			}
 			continue
 		}
 		if quotas != nil {
-			if quotas[n.note.Kind] <= 0 {
-				continue
-			}
 			quotas[n.note.Kind]--
 		}
 		out = append(out, n.note)

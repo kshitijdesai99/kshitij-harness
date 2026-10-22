@@ -92,6 +92,10 @@ func (s *Store) SemanticSearch(ctx context.Context, repo, kind, query string, li
 // ranking. Zero bounds are unbounded; superseded and forgotten versions never
 // participate.
 func (s *Store) SemanticSearchBetween(ctx context.Context, repo, kind, query string, limit int, since, until time.Time) ([]Note, error) {
+	return s.semanticSearchBetween(ctx, repo, kind, query, limit, since, until, 0.35)
+}
+
+func (s *Store) semanticSearchBetween(ctx context.Context, repo, kind, query string, limit int, since, until time.Time, minSimilarity float64) ([]Note, error) {
 	if limit <= 0 || strings.TrimSpace(query) == "" || kind == "summary" {
 		return nil, nil
 	}
@@ -200,7 +204,7 @@ func (s *Store) SemanticSearchBetween(ctx context.Context, repo, kind, query str
 		if !ok || v.hash != semanticHash(n) || !semanticEligible(n, since, until) {
 			continue
 		}
-		if score := cosine(queryVector, v.vector); score >= 0.35 {
+		if score := cosine(queryVector, v.vector); score >= minSimilarity {
 			matches = append(matches, match{n, score})
 		}
 	}

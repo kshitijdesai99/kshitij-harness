@@ -74,7 +74,7 @@ func (s *Store) ProbeHybrid(ctx context.Context) error {
 	if err != nil || len(vectors) != 1 || !validVector(vectors[0], 0) {
 		return fmt.Errorf("hybrid embedding probe failed")
 	}
-	scores, err := r.model.Rerank(ctx, query, []Note{{Key: "testing", Text: "Keep project tests in test folders."}})
+	scores, err := r.model.Rerank(ctx, query, []Note{{Kind: "instruction", Key: "testing", Text: "Keep project tests in test folders."}})
 	if err != nil || !validScores(scores, 1) {
 		return fmt.Errorf("hybrid reranker probe failed")
 	}
@@ -92,6 +92,15 @@ func validScores(scores []float64, count int) bool {
 	}
 	return true
 }
+
+// These are conservative selection heuristics, not calibrated probabilities.
+// Local Qwen evaluation retained task constraints near .021 while rejecting
+// unrelated topics. The relative floor removes weak tails behind strong matches
+// without forcing top-one selection for multi-topic requests.
+const (
+	minRerankRelevance = 0.02
+	minRerankFraction  = 0.1
+)
 
 // Covers the managed service's 16s queue + 8s inference, plus HTTP overhead.
 const rerankTimeout = 25 * time.Second
@@ -126,7 +135,7 @@ func (r *httpReranker) Rerank(ctx context.Context, query string, notes []Note) (
 		if Secret(n.Key) || Secret(n.Text) || Secret(n.ContextSummary) {
 			return nil, fmt.Errorf("memory: refusing to rerank what looks like a secret")
 		}
-		documents[i] = semanticText(n)
+		documents[i] = "Memory kind: " + n.Kind + "\nTopic: " + n.Key + "\nContent: " + n.Text + "\n" + n.ContextSummary
 	}
 	body, err := json.Marshal(struct {
 		Query     string   `json:"query"`

@@ -54,9 +54,13 @@ def load_scorer(cache):
         for index, doc in enumerate(documents):
             if time.monotonic() > deadline:
                 raise TimeoutError("reranking request exceeded its time budget")
-            text = ("<Instruct>: Given a memory search query, retrieve relevant "
-                    "memories that answer the query\n<Query>: " + query +
-                    "\n<Document>: " + doc)
+            text = ("<Instruct>: Given a user request and a saved memory, determine "
+                    "whether this memory is needed to fulfill that specific request. "
+                    "Return yes for a directly matching topic or a saved instruction "
+                    "that governs the requested action, including constraints on where "
+                    "or how to perform it. Return no for unrelated instructions, "
+                    "incidental word overlap, greetings, acknowledgments, and questions "
+                    "outside the memory topic.\n<Query>: " + query + "\n<Document>: " + doc)
             ids = tokenizer.encode(text, add_special_tokens=False,
                                    truncation=True,
                                    max_length=8192-len(prefix)-len(suffix))

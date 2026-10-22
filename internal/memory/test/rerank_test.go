@@ -228,11 +228,11 @@ func TestHTTPRerankerRequestAndScoreOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scores, err := r.Rerank(context.Background(), "car", []memory.Note{{Key: "first", Text: "first text", ContextSummary: "discussion"}, {Key: "second", Text: "second text"}})
+	scores, err := r.Rerank(context.Background(), "car", []memory.Note{{Kind: "instruction", Key: "first", Text: "first text", ContextSummary: "discussion"}, {Kind: "fact", Key: "second", Text: "second text"}})
 	if err != nil || !reflect.DeepEqual(scores, []float64{.2, .8}) || request.Query != "car" || len(request.Documents) != 2 {
 		t.Fatalf("scores=%v request=%+v err=%v", scores, request, err)
 	}
-	if !strings.Contains(request.Documents[0], "first text") || !strings.Contains(request.Documents[0], "discussion") || !strings.Contains(request.Documents[1], "second text") {
+	if request.Documents[0] != "Memory kind: instruction\nTopic: first\nContent: first text\ndiscussion" || request.Documents[1] != "Memory kind: fact\nTopic: second\nContent: second text\n" {
 		t.Fatalf("documents lost content/order: %q", request.Documents)
 	}
 }
