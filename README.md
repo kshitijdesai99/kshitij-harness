@@ -38,7 +38,7 @@ Run `./kh --help` for CLI options; use `/help` in chat for commands. Ask kh to i
 
 Session startup automatically rebuilds the invoked executable from local sources and runs the new build. This requires Go, the kh source checkout, and a writable executable directory. Set `KH_SOURCE_DIR=/path/to/kshitij-harness` if sources moved, or `KH_AUTO_REBUILD=0` to skip rebuilding. Failed builds stop startup without replacing the old binary. Existing running chats are unchanged; restart and resume to use updates.
 
-See [release notes](RELEASE_NOTES.md) for recent changes.
+See [release notes](release-notes/) for recent changes, grouped by date.
 
 ## Configuration and safety
 
