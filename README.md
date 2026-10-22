@@ -62,6 +62,6 @@ If hybrid retrieval falls back, the notice identifies the embedding or reranking
 
 Named procedural references keep full procedures and inert script assets in the same database. Names, aliases, and topics retrieve compact hints; the memory tool's `load` action fetches the full item on demand. `kh memory reference demo` stores a sound example without playing it. Use `reference put/get/export/import/asset` to manage individual versioned references; imports never execute assets or overwrite existing topics. Execute requested assets only through normal approved, sandboxed commands—not during retrieval.
 
-See the [memory architecture](memory-architecture.png) for retrieval, saving, and reference-loading flows.
+See the [memory architecture](memory-architecture.svg) for retrieval, saving, and reference-loading flows.
 
 Ask kh to delegate work using native agents. Workers share project files: assign separate files or coordinate edits. Their tmux panes close after successful tasks; failures stay visible, and `keep` retains a worker for follow-ups.
