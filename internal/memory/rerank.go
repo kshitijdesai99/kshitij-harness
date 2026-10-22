@@ -46,13 +46,13 @@ func (s *Store) rerankConfig() *rerankState {
 	return s.reranker
 }
 
-func (r *rerankState) failed() {
+func (r *rerankState) failed(stage string) {
 	r.mu.Lock()
 	notify := !r.warned && r.notice != nil
 	r.warned = true
 	r.mu.Unlock()
 	if notify {
-		r.notice("Hybrid retrieval unavailable; using keyword search.")
+		r.notice("Hybrid retrieval unavailable (" + stage + " stage); using keyword search.")
 	}
 }
 
@@ -93,6 +93,9 @@ func validScores(scores []float64, count int) bool {
 	return true
 }
 
+// Covers the managed service's 16s queue + 8s inference, plus HTTP overhead.
+const rerankTimeout = 25 * time.Second
+
 type httpReranker struct {
 	endpoint string
 	client   *http.Client
@@ -106,7 +109,7 @@ func NewHTTPReranker(endpoint string) (Reranker, error) {
 		return nil, fmt.Errorf("memory: reranker endpoint must be an HTTP(S) URL without credentials, query or fragment")
 	}
 	return &httpReranker{endpoint: u.String(), client: &http.Client{
-		Timeout:       8 * time.Second,
+		Timeout:       rerankTimeout,
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}}, nil
 }

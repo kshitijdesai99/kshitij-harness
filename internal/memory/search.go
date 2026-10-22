@@ -112,7 +112,7 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 	hybridFailed := reranker != nil && (err != nil || s.semanticConfig() == nil)
 	if hybridFailed {
 		semantic = nil
-		reranker.failed()
+		reranker.failed("embedding")
 		if trace != nil {
 			trace.RerankFallback = true
 		}
@@ -193,14 +193,14 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 		}
 		appendCandidates(false)
 		if len(batch) > 0 {
-			rctx, stop := context.WithTimeout(ctx, 8*time.Second)
+			rctx, stop := context.WithTimeout(ctx, rerankTimeout)
 			scores, rerankErr := rerankCandidates(rctx, reranker, query, batch)
 			stop()
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
 			if rerankErr != nil {
-				reranker.failed()
+				reranker.failed("reranking")
 				if trace != nil {
 					trace.RerankFallback = true
 				}

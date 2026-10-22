@@ -137,6 +137,13 @@ func TestRerankFailureReturnsLexicalOnly(t *testing.T) {
 			if len(notices) != 1 || !strings.Contains(strings.ToLower(notices[0]), "keyword") || strings.Contains(notices[0], "private") {
 				t.Fatalf("unsafe or repeated notices: %q", notices)
 			}
+			stage := "reranking"
+			if failure == "semantic" || failure == "no-embedder" {
+				stage = "embedding"
+			}
+			if !strings.Contains(notices[0], stage+" stage") {
+				t.Errorf("notice must identify %s stage: %q", stage, notices[0])
+			}
 		})
 	}
 }
@@ -236,7 +243,7 @@ func TestHTTPRerankerAllowsQueuedInference(t *testing.T) {
 		inference.Lock()
 		defer inference.Unlock()
 		select {
-		case <-time.After(2100 * time.Millisecond):
+		case <-time.After(3100 * time.Millisecond):
 			fmt.Fprint(w, `{"results":[{"index":0,"relevance_score":0.5}]}`)
 		case <-r.Context().Done():
 		}
@@ -246,16 +253,16 @@ func TestHTTPRerankerAllowsQueuedInference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
-	done := make(chan error, 2)
-	for i := 0; i < 2; i++ {
+	done := make(chan error, 3)
+	for i := 0; i < 3; i++ {
 		go func() {
 			_, err := r.Rerank(ctx, "car", []memory.Note{{Text: "safe"}})
 			done <- err
 		}()
 	}
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		if err := <-done; err != nil {
 			t.Errorf("queued inference failed: %v", err)
 		}
@@ -270,7 +277,7 @@ func TestSearchRerankDeadlineAllowsQueueAndInference(t *testing.T) {
 		called = true
 		deadline, ok := ctx.Deadline()
 		remaining := time.Until(deadline)
-		if !ok || remaining < 7500*time.Millisecond || remaining > 8*time.Second {
+		if !ok || remaining < 24*time.Second || remaining > 25*time.Second {
 			t.Errorf("rerank deadline must allow bounded queue and inference: %v (set=%v)", remaining, ok)
 		}
 		return (&fakeReranker{}).Rerank(ctx, query, notes)

@@ -13,8 +13,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MODEL = "Qwen/Qwen3-Reranker-0.6B"
 MAX_BODY = 2 * 1024 * 1024
-LOCK_WAIT_SECONDS = 4
-INFERENCE_SECONDS = 4
+# Allow a burst of three full-budget workers: two queued, one inferring.
+# Keep the Go client's 25s deadline above the combined 24s service budget.
+LOCK_WAIT_SECONDS = 16
+INFERENCE_SECONDS = 8
 
 
 def download(cache):

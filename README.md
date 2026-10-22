@@ -38,6 +38,8 @@ Run `./kh --help` for CLI options; use `/help` in chat for commands. Ask kh to i
 
 Session startup automatically rebuilds the invoked executable from local sources and runs the new build. This requires Go, the kh source checkout, and a writable executable directory. Set `KH_SOURCE_DIR=/path/to/kshitij-harness` if sources moved, or `KH_AUTO_REBUILD=0` to skip rebuilding. Failed builds stop startup without replacing the old binary. Existing running chats are unchanged; restart and resume to use updates.
 
+See [release notes](RELEASE_NOTES.md) for recent changes.
+
 ## Configuration and safety
 
 Optionally create `~/.kh/config.json`, specifying only overrides:
@@ -54,8 +56,12 @@ On macOS, shell reads are allowed wherever OS permissions permit; writes are san
 
 kh selectively saves lasting instructions, established facts, accepted decisions, and gotchas in `~/.kh/memory.db`; it does not archive every discussion into memory. Notes keep discussion context, statement/save timestamps, and links to the versions they replace. Repo and global scopes remain separate. Delegated workers read shared memory; user-facing chats learn from exchanges. Use `kh memory status`, `search`, `get`, or `history` to inspect them; `kh memory explain "query"` shows retrieval candidates and fallback status. Saved chats live separately in `~/.kh/sessions`.
 
-Search uses keywords by default, with no model downloads. `/memory hybrid on` explicitly downloads and verifies the local embedding model and reranker before enabling hybrid retrieval; `/memory hybrid off` immediately restores keyword-only retrieval without deleting models or vectors. Open chats pick up mode changes on their next message. Optional `memory_embedding_url`, `memory_embedding_model`, and `memory_reranker_url` settings override the local defaults. Startup only uses cached models; embedding or reranking failures fall back to keywords with a notice. `memory_max_tokens` bounds injected memory (estimated as characters/4); context and history are fetched on demand.
+Search uses keywords by default, with no model downloads. Optional hybrid mode requires Ollama and Python 3.10+ with venv support. `/memory hybrid on` explicitly downloads and verifies Qwen3-Embedding 0.6B and Qwen3-Reranker 0.6B before enabling hybrid retrieval; `/memory hybrid off` immediately restores keyword-only retrieval without deleting models or vectors. Open chats pick up mode changes on their next message. Optional `memory_embedding_url`, `memory_embedding_model`, and `memory_reranker_url` settings override the local defaults. Startup only uses cached models; embedding or reranking failures fall back to keywords with a notice. `memory_max_tokens` bounds injected memory (estimated as characters/4); context and history are fetched on demand. Managed runtime files live in `~/.kh/hybrid`, which remains writable under the shell sandbox without granting access to config or login files.
+
+If hybrid retrieval falls back, the notice identifies the embedding or reranking stage. `kh memory explain "query"` reports which stages fell back; `/memory hybrid on` retries setup and verification. Reranking waits up to 16 seconds for busy workers and allows 8 seconds for inference, within a 25-second request budget. Keyword-only mode needs neither service.
 
 Named procedural references keep full procedures and inert script assets in the same database. Names, aliases, and topics retrieve compact hints; the memory tool's `load` action fetches the full item on demand. `kh memory reference demo` stores a sound example without playing it. Use `reference put/get/export/import/asset` to manage individual versioned references; imports never execute assets or overwrite existing topics. Execute requested assets only through normal approved, sandboxed commands—not during retrieval.
+
+See the [memory architecture](memory-architecture.png) for retrieval, saving, and reference-loading flows.
 
 Ask kh to delegate work using native agents. Workers share project files: assign separate files or coordinate edits. Their tmux panes close after successful tasks; failures stay visible, and `keep` retains a worker for follow-ups.

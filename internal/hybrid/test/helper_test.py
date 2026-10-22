@@ -107,6 +107,30 @@ class ServerTests(unittest.TestCase):
             self.assertFalse(second.is_alive())
         self.assertEqual(sorted(responses), [200, 200])
 
+    def test_three_worker_burst_completes_within_client_budget(self):
+        # Scale wall time, preserving the production queue/inference ratio.
+        # Each worker uses less than half the inference budget; two can still
+        # occupy the lock long enough to reject the third with the old limits.
+        scale = 0.025
+        duration = runtime.INFERENCE_SECONDS * scale * 0.55
+        barrier = threading.Barrier(3)
+        responses = []
+        def score(q, docs):
+            time.sleep(duration)
+            return [{"index": 0, "relevance_score": 0.5}]
+        def request():
+            barrier.wait()
+            responses.append(self.request(data={"query": "q", "documents": ["d"]})[0])
+        runtime.Handler.scorer = staticmethod(score)
+        with patch.object(runtime, "LOCK_WAIT_SECONDS", runtime.LOCK_WAIT_SECONDS * scale):
+            workers = [threading.Thread(target=request) for _ in range(3)]
+            for worker in workers:
+                worker.start()
+            for worker in workers:
+                worker.join(2)
+                self.assertFalse(worker.is_alive())
+        self.assertEqual(sorted(responses), [200, 200, 200])
+
     def test_queue_exhaustion_is_bounded_and_does_not_block_health(self):
         with patch.object(runtime, "LOCK_WAIT_SECONDS", 0.05, create=True):
             runtime.Handler.inference_lock.acquire()
@@ -189,7 +213,7 @@ class ModelTests(unittest.TestCase):
         # neither may another document start after it expires.
         for documents in (["memory a"], ["memory a", "memory b"]):
             with patch.dict("sys.modules", torch=torch, transformers=transformers):
-                with patch.object(runtime.time, "monotonic", side_effect=[0, 0, 5]):
+                with patch.object(runtime.time, "monotonic", side_effect=[0, 0, runtime.INFERENCE_SECONDS + 1]):
                     with self.assertRaises(TimeoutError):
                         score("find my preference", documents)
         self.assertEqual([r["relevance_score"] for r in results], [0.8, 0.8])

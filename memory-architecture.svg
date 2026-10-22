@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1480" viewBox="0 0 1600 1480" font-family="Helvetica, Arial, sans-serif">
   <title>kh memory architecture</title>
-  <desc>Selective memory hooks, append-only provenance, scoped hybrid retrieval and bounded chat context.</desc>
+  <desc>Selective memory hooks, append-only provenance, opt-in hybrid retrieval, inert procedural references and bounded chat context.</desc>
   <defs>
     <style>
       .title { font-size: 34px; font-weight: 700; fill: #0f172a; }
@@ -77,8 +77,9 @@
   <text x="1135" y="444" class="b">overridden: previous id → earlier chain</text>
   <text x="1135" y="471" class="b">Current: newest row per repo + key;</text>
   <text x="1135" y="498" class="b">this repo + global, not forgotten</text>
-  <text x="1135" y="525" class="b">Summary: separate row, rebuilt from</text>
-  <text x="1135" y="552" class="b">current notes, never the old summary</text>
+  <text x="1135" y="525" class="b">Summary rebuilt from current notes</text>
+  <text x="1135" y="552" class="b">Versioned references + inert assets</text>
+  <text x="1135" y="579" class="b">live in the same database</text>
 
   <!-- Card 4: hybrid search -->
   <rect x="1115" y="720" width="430" height="480" rx="16" class="card"/>
@@ -87,18 +88,18 @@
   <text x="1185" y="770" class="h">Hybrid search</text>
   <line x1="1135" y1="792" x2="1525" y2="792" class="rule"/>
   <text x="1135" y="828" class="s">FTS5 BM25 keyword search, always on</text>
-  <text x="1135" y="855" class="b">+ optional Ollama embeddings,</text>
-  <text x="1135" y="882" class="b">cosine ≥ 0.35, fused by RRF k = 60</text>
-  <text x="1135" y="909" class="b">4s semantic budget, 3s HTTP timeout;</text>
-  <text x="1135" y="936" class="b">embedding failure → keyword only</text>
-  <text x="1135" y="963" class="b">Vector cache notes_vectors:</text>
-  <text x="1135" y="990" class="m">note_id model content_hash vector</text>
-  <text x="1135" y="1017" class="s">Opt-in: BOTH memory_embedding_url</text>
-  <text x="1135" y="1044" class="b">(explicit /api/embed) and</text>
-  <text x="1135" y="1071" class="s">memory_embedding_model. Default: off</text>
-  <text x="1135" y="1098" class="b">A configured endpoint receives query,</text>
-  <text x="1135" y="1125" class="b">note and context text. No model</text>
-  <text x="1135" y="1152" class="b">download, no chat credentials sent</text>
+  <text x="1135" y="855" class="b">Opt-in: Qwen embeddings + reranker</text>
+  <text x="1135" y="882" class="b">cosine ≥ 0.35, RRF k = 60, then rerank</text>
+  <text x="1135" y="909" class="b">Either stage fails → keyword only</text>
+  <text x="1135" y="936" class="b">4s semantic budget; 3s embed HTTP</text>
+  <text x="1135" y="963" class="b">Rerank: 16s queue + 8s inference;</text>
+  <text x="1135" y="990" class="b">25s request budget, ≤ 64 candidates</text>
+  <text x="1135" y="1017" class="s">/memory hybrid on: setup + verify</text>
+  <text x="1135" y="1044" class="b">Downloads both models explicitly</text>
+  <text x="1135" y="1071" class="b">Startup: cached models only</text>
+  <text x="1135" y="1098" class="b">/memory hybrid off: keywords only</text>
+  <text x="1135" y="1125" class="b">Endpoints receive query + note context,</text>
+  <text x="1135" y="1152" class="b">never chat credentials. Vectors cached</text>
 
   <!-- Card 5: recall message -->
   <rect x="585" y="720" width="430" height="480" rx="16" class="card"/>
@@ -109,15 +110,16 @@
   <text x="605" y="828" class="b">Built per query; only what is new</text>
   <text x="605" y="855" class="s">1. Correction notices first:</text>
   <text x="605" y="882" class="b">replaced, or "no longer applies"</text>
-  <text x="605" y="909" class="s">2. Unseen summary + must-load refs</text>
-  <text x="605" y="936" class="b">within summary_max_tokens</text>
-  <text x="605" y="963" class="s">3. Matched notes, default maxima:</text>
-  <text x="605" y="990" class="b">10 instructions, 10 gotchas, 5 per fact/decision</text>
-  <text x="605" y="1017" class="s">TOTAL: memory_max_tokens (4000),</text>
-  <text x="605" y="1044" class="b">≈ chars/4, header included</text>
-  <text x="605" y="1098" class="b">Seen IDs: [memory #id] markers in</text>
-  <text x="605" y="1125" class="b">saved provider history. Compaction</text>
-  <text x="605" y="1152" class="b">drops them, so notes are resent</text>
+  <text x="605" y="909" class="s">2. Up to 3 named reference hints</text>
+  <text x="605" y="936" class="b">even when ordinary quotas are zero</text>
+  <text x="605" y="963" class="s">3. Unseen summary + must-load notes</text>
+  <text x="605" y="990" class="b">within summary_max_tokens</text>
+  <text x="605" y="1017" class="s">4. Matches: 10 instructions, 10 gotchas;</text>
+  <text x="605" y="1044" class="b">5 each: facts, decisions, references</text>
+  <text x="605" y="1071" class="s">TOTAL: memory_max_tokens (4000),</text>
+  <text x="605" y="1098" class="b">≈ chars/4, header included</text>
+  <text x="605" y="1125" class="b">Seen IDs in saved provider history;</text>
+  <text x="605" y="1152" class="b">compaction drops them → resend</text>
 
   <!-- Card 6: memory tool -->
   <rect x="55" y="720" width="430" height="480" rx="16" class="card"/>
@@ -125,7 +127,7 @@
   <text x="91" y="769" class="num" text-anchor="middle">6</text>
   <text x="125" y="770" class="h">memory tool (agent)</text>
   <line x1="75" y1="792" x2="465" y2="792" class="rule"/>
-  <text x="75" y="828" class="s">search · get · history · forget</text>
+  <text x="75" y="828" class="s">search · get · load · history · forget</text>
   <text x="75" y="855" class="b">No save action; hooks handle saving</text>
   <text x="75" y="882" class="b">Scope repo: repo + global notes</text>
   <text x="75" y="909" class="b">Scope global: global notes only</text>
@@ -136,8 +138,8 @@
   <text x="75" y="1044" class="b">default 20, max 50; truncation shown</text>
   <text x="75" y="1071" class="b">since / until: inclusive RFC3339</text>
   <text x="75" y="1098" class="b">bounds on stated_at</text>
-  <text x="75" y="1125" class="b">order: relevance · newest · oldest</text>
-  <text x="75" y="1152" class="b">forget only when the user asks</text>
+  <text x="75" y="1125" class="b">load: full procedure + inert assets</text>
+  <text x="75" y="1152" class="b">No auto-execution; forget on request</text>
 
   <!-- Data flow -->
   <path d="M487,330 L573,330" class="flow"/>
@@ -181,13 +183,13 @@
   <path d="M110,1212 L110,1268 L1575,1268 L1575,360 L1557,360" class="flow"/>
   <polygon points="1547,360 1561.0,353.0 1561.0,367.0" fill="#475569"/><polygon points="110,1202 117.0,1216.0 103.0,1216.0" fill="#475569"/>
   <rect x="477" y="1259" width="566" height="24" fill="#f8fafc"/>
-  <text x="760" y="1276" class="l" text-anchor="middle">get · history read, forget appends a tombstone (card 3 directly)</text>
+  <text x="760" y="1276" class="l" text-anchor="middle">get · load · history read; forget appends a tombstone (card 3)</text>
 
   <!-- Control surface -->
   <rect x="55" y="1294" width="1490" height="166" rx="14" class="foot"/>
   <text x="80" y="1330" class="h">Control surface</text>
   <text x="80" y="1364" class="b">~/.kh/config.json: memory_model ("" = chat model, "off" = no automatic saving) · summary_max_tokens 2500 · memory_max_tokens 4000</text>
-  <text x="80" y="1391" class="b">top_instructions 10 · top_gotchas 10 · top_knowledge 5 · memory_embedding_url + memory_embedding_model (set both, or neither)</text>
-  <text x="80" y="1418" class="b">CLI: kh memory list | search | explain | status | get | history | remember | forget | purge | import-md</text>
+  <text x="80" y="1391" class="b">top_instructions 10 · top_gotchas 10 · top_knowledge 5 · memory_hybrid false by default · embedding/model/reranker overrides optional</text>
+  <text x="80" y="1418" class="b">CLI: kh memory list | search | explain | status | get | history | remember | forget | purge | import-md | reference</text>
   <text x="80" y="1445" class="b">forget appends a tombstone row and keeps history · purge deletes every version and its cached vectors</text>
 </svg>

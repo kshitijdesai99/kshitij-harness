@@ -169,6 +169,10 @@ func sandboxProfile(dirs []string, resolve bool) []string {
 			dir = resolved
 		}
 		p += ") (allow file-write-create (literal " + strconv.Quote(dir) + ")) (allow file-write*"
+		// Hybrid's lock, logs, venv and model cache are also managed state.
+		// Resolve .kh above, but not hybrid: following a hybrid symlink could
+		// accidentally grant writes to config/auth or an unrelated directory.
+		p += " (subpath " + strconv.Quote(filepath.Join(dir, "hybrid")) + ")"
 		for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
 			p += " (literal " + strconv.Quote(filepath.Join(dir, "memory.db")+suffix) + ")"
 		}

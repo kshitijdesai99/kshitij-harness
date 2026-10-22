@@ -1,0 +1,18 @@
+# Release notes
+
+User-facing changes in kh, newest first.
+
+## 2026-10-23
+
+### Memory
+
+- Added opt-in hybrid retrieval with local Qwen3-Embedding 0.6B and Qwen3-Reranker 0.6B. `/memory hybrid on` sets up and verifies both; `/memory hybrid off` restores keyword-only search without deleting cached models or vectors.
+- Added database-native procedural references with names, aliases, version history, and shareable exports. Full procedures and inert script assets load on demand; retrieval and imports never execute them.
+- Fixed reranker queue exhaustion during worker bursts. Queue and inference limits now fit within the client deadline, with cancellation and keyword fallback preserved.
+- Allowed managed hybrid runtime files through the macOS shell sandbox without granting writes to config, login files, or unrelated folders.
+- Fallback notices now distinguish embedding failures from reranking failures.
+
+### Chat and documentation
+
+- Interactive chat and automatic command/folder approval are now the defaults. Use `-p "TASK"` for headless work or `--auto=false` for approval prompts; sandbox restrictions still apply.
+- Updated the README and memory architecture diagram for hybrid setup, reranking, and procedural references.
