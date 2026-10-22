@@ -193,7 +193,7 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 		}
 		appendCandidates(false)
 		if len(batch) > 0 {
-			rctx, stop := context.WithTimeout(ctx, 4*time.Second)
+			rctx, stop := context.WithTimeout(ctx, 8*time.Second)
 			scores, rerankErr := rerankCandidates(rctx, reranker, query, batch)
 			stop()
 			if ctx.Err() != nil {

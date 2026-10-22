@@ -106,7 +106,7 @@ func NewHTTPReranker(endpoint string) (Reranker, error) {
 		return nil, fmt.Errorf("memory: reranker endpoint must be an HTTP(S) URL without credentials, query or fragment")
 	}
 	return &httpReranker{endpoint: u.String(), client: &http.Client{
-		Timeout:       4 * time.Second,
+		Timeout:       8 * time.Second,
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}}, nil
 }

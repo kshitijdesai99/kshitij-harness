@@ -13,6 +13,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MODEL = "Qwen/Qwen3-Reranker-0.6B"
 MAX_BODY = 2 * 1024 * 1024
+LOCK_WAIT_SECONDS = 4
+INFERENCE_SECONDS = 4
 
 
 def download(cache):
@@ -45,7 +47,7 @@ def load_scorer(cache):
     @torch.inference_mode()
     def score(query, documents):
         results = []
-        deadline = time.monotonic() + 60
+        deadline = time.monotonic() + INFERENCE_SECONDS
         # Single-document batches bound memory even on CPU-only machines.
         for index, doc in enumerate(documents):
             if time.monotonic() > deadline:
@@ -66,6 +68,10 @@ def load_scorer(cache):
             if not math.isfinite(value):
                 raise ValueError("non-finite model score")
             results.append({"index": index, "relevance_score": value})
+        # An individual model call cannot be interrupted, so also reject a
+        # final document that finishes after the bounded inference budget.
+        if time.monotonic() > deadline:
+            raise TimeoutError("reranking request exceeded its time budget")
         return sorted(results, key=lambda r: r["relevance_score"], reverse=True)
     return score
 
@@ -83,12 +89,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def reply(self, status, data):
         body = json.dumps(data, allow_nan=False).encode()
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Connection", "close")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # Canceled clients must not generate server tracebacks.
 
     def do_GET(self):
         if self.path != "/health":
@@ -112,7 +121,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError()
         except (ValueError, TypeError, UnicodeDecodeError):
             return self.reply(400, {"error": "expected query and 1..128 document strings"})
-        if not self.inference_lock.acquire(blocking=False):
+        if not self.inference_lock.acquire(timeout=LOCK_WAIT_SECONDS):
             return self.reply(503, {"error": "local reranker is busy"})
         try:
             try:

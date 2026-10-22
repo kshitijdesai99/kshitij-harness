@@ -230,6 +230,59 @@ func TestHTTPRerankerRequestAndScoreOrder(t *testing.T) {
 	}
 }
 
+func TestHTTPRerankerAllowsQueuedInference(t *testing.T) {
+	var inference sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		inference.Lock()
+		defer inference.Unlock()
+		select {
+		case <-time.After(2100 * time.Millisecond):
+			fmt.Fprint(w, `{"results":[{"index":0,"relevance_score":0.5}]}`)
+		case <-r.Context().Done():
+		}
+	}))
+	defer server.Close()
+	r, err := memory.NewHTTPReranker(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	done := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			_, err := r.Rerank(ctx, "car", []memory.Note{{Text: "safe"}})
+			done <- err
+		}()
+	}
+	for i := 0; i < 2; i++ {
+		if err := <-done; err != nil {
+			t.Errorf("queued inference failed: %v", err)
+		}
+	}
+}
+
+func TestSearchRerankDeadlineAllowsQueueAndInference(t *testing.T) {
+	s := open(t)
+	add(t, s, memory.Note{Kind: "fact", Key: "transport", Text: "car automobile"})
+	called := false
+	configureRerank(t, s, &fakeReranker{fn: func(ctx context.Context, query string, notes []memory.Note) ([]float64, error) {
+		called = true
+		deadline, ok := ctx.Deadline()
+		remaining := time.Until(deadline)
+		if !ok || remaining < 7500*time.Millisecond || remaining > 8*time.Second {
+			t.Errorf("rerank deadline must allow bounded queue and inference: %v (set=%v)", remaining, ok)
+		}
+		return (&fakeReranker{}).Rerank(ctx, query, notes)
+	}})
+	if _, err := s.Search(context.Background(), repo, "", "car", 10); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("search did not invoke reranker")
+	}
+}
+
 func TestHTTPRerankerRejectsInvalidScores(t *testing.T) {
 	for name, body := range map[string]string{
 		"missing-result":  `{"results":[{"index":0,"relevance_score":0.2}]}`,

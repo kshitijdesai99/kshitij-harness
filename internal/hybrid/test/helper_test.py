@@ -4,8 +4,9 @@ import importlib.util
 import json
 from pathlib import Path
 import threading
+import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import types
 
 spec = importlib.util.spec_from_file_location("reranker", Path(__file__).parent.parent / "reranker.py")
@@ -71,13 +72,68 @@ class ServerTests(unittest.TestCase):
         self.assertNotIn("private", str(body))
         self.assertFalse(runtime.Handler.inference_lock.locked())
 
-    def test_busy_inference_does_not_block_health(self):
-        runtime.Handler.inference_lock.acquire()
-        try:
-            self.assertEqual(self.request(data={"query": "q", "documents": ["d"]})[0], 503)
-            self.assertEqual(self.request("/health", method="GET")[0], 200)
-        finally:
-            runtime.Handler.inference_lock.release()
+    def test_concurrent_callers_wait_and_health_remains_responsive(self):
+        entered, release, waiting = threading.Event(), threading.Event(), threading.Event()
+        class ObservedLock:
+            def __init__(self): self.lock = threading.Lock()
+            def acquire(self, *args, **kwargs):
+                if self.lock.locked():
+                    waiting.set()
+                return self.lock.acquire(*args, **kwargs)
+            def release(self): self.lock.release()
+        def score(q, docs):
+            entered.set()
+            if not release.wait(2):
+                raise TimeoutError("test did not release inference")
+            return [{"index": 0, "relevance_score": 0.5}]
+        runtime.Handler.scorer = staticmethod(score)
+        responses = []
+        def request():
+            responses.append(self.request(data={"query": "q", "documents": ["d"]})[0])
+        with patch.object(runtime.Handler, "inference_lock", ObservedLock()):
+            first, second = threading.Thread(target=request), threading.Thread(target=request)
+            first.start()
+            try:
+                self.assertTrue(entered.wait(1), "first inference did not start")
+                second.start()
+                self.assertTrue(waiting.wait(1), "second caller did not reach occupied lock")
+                self.assertEqual(self.request("/health", method="GET")[0], 200)
+            finally:
+                release.set()
+                first.join(2)
+                if second.ident is not None:
+                    second.join(2)
+            self.assertFalse(first.is_alive())
+            self.assertFalse(second.is_alive())
+        self.assertEqual(sorted(responses), [200, 200])
+
+    def test_queue_exhaustion_is_bounded_and_does_not_block_health(self):
+        with patch.object(runtime, "LOCK_WAIT_SECONDS", 0.05, create=True):
+            runtime.Handler.inference_lock.acquire()
+            try:
+                started = time.monotonic()
+                self.assertEqual(self.request(data={"query": "q", "documents": ["d"]})[0], 503)
+                elapsed = time.monotonic() - started
+                self.assertGreaterEqual(elapsed, 0.04)
+                self.assertLess(elapsed, 1)
+                self.assertEqual(self.request("/health", method="GET")[0], 200)
+            finally:
+                runtime.Handler.inference_lock.release()
+
+    def test_disconnected_client_does_not_raise_or_log(self):
+        for error in (BrokenPipeError, ConnectionResetError):
+            for stage in ("end_headers", "write"):
+                with self.subTest(error=error, stage=stage):
+                    handler = object.__new__(runtime.Handler)
+                    handler.send_response = Mock()
+                    handler.send_header = Mock()
+                    handler.end_headers = Mock()
+                    handler.wfile = Mock()
+                    target = handler.end_headers if stage == "end_headers" else handler.wfile.write
+                    target.side_effect = error("client disconnected")
+                    with patch("sys.stderr") as stderr:
+                        handler.reply(200, {"results": []})
+                    stderr.write.assert_not_called()
 
 
 class ModelTests(unittest.TestCase):
@@ -129,6 +185,13 @@ class ModelTests(unittest.TestCase):
         with patch.dict("sys.modules", torch=torch, transformers=transformers):
             score = runtime.load_scorer("/cache")
             results = score("find my preference", ["memory a", "memory b"])
+        # A final slow document must not return stale scores after the budget;
+        # neither may another document start after it expires.
+        for documents in (["memory a"], ["memory a", "memory b"]):
+            with patch.dict("sys.modules", torch=torch, transformers=transformers):
+                with patch.object(runtime.time, "monotonic", side_effect=[0, 0, 5]):
+                    with self.assertRaises(TimeoutError):
+                        score("find my preference", documents)
         self.assertEqual([r["relevance_score"] for r in results], [0.8, 0.8])
         loads = [c for c in calls if c[0] == "load"]
         self.assertEqual(len(loads), 2)
