@@ -11,7 +11,9 @@ import (
 
 // Maps this repo and checks a few known symbols show up in the right place.
 func TestSelf(t *testing.T) {
-	m := repomap.Build("../../..", 20000)
+	// Symbol coverage needs the full map as this repository grows; budget
+	// truncation is exercised separately below.
+	m := repomap.Build("../../..", 1<<20)
 	for _, want := range []string{
 		"internal/tools/bash.go: ", "isSafe",
 		"internal/tools/edit.go: Edit",

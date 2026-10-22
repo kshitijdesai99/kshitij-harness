@@ -27,7 +27,8 @@ const memoryUsage = `usage: kh memory <command>
   remember <repo|global> <instruction|fact|decision|gotcha> <key> <text> [context]
   forget <repo|global> <key>                    stop using a topic (history kept)
   purge <repo|global> <key>                     delete every version of a topic
-  import-md <file>                              split a Markdown rules file into notes, after review`
+  import-md <file>                              split a Markdown rules file into notes, after review
+  reference <put|get|export|import|asset|demo>    DB-native procedures and inert script assets`
 
 // memoryCommand inspects and edits memory. Agents use the memory tool instead,
 // since shell commands may be sandboxed.
@@ -62,6 +63,8 @@ func memoryCommand(args []string, cfg config.Config) error {
 		return nil
 	}
 	switch args[0] {
+	case "reference":
+		return referenceCommand(ctx, s, repo, owner, args[1:])
 	case "list":
 		if err := need(1); err != nil {
 			return err

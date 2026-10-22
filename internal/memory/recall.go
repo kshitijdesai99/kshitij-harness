@@ -3,12 +3,14 @@ package memory
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"kh/internal/provider"
 )
@@ -80,6 +82,9 @@ func (s *Store) Recall(ctx context.Context, repo, query string, seen map[int64]b
 		if n.Repo == Global {
 			scope = " (global)"
 		}
+		if n.Kind == "reference" {
+			note += fmt.Sprintf(" (load full procedure/assets with memory action=load id=%d; retrieval never executes assets)", n.ID)
+		}
 		return appendLine(n.ID, fmt.Sprintf("[memory #%d] %s %s%s%s: %s [stated %s]", n.ID, n.Kind, n.Key, scope, note, n.Text, n.StatedAt.UTC().Format(time.RFC3339Nano)))
 	}
 	ids := make([]int64, 0, len(seen))
@@ -114,6 +119,24 @@ func (s *Store) Recall(ctx context.Context, repo, query string, seen map[int64]b
 			add(cur, " (replaces earlier note)")
 		}
 	}
+	// Explicit names/aliases remain discoverable even when the ordinary search
+	// quotas are zero. Only compact metadata is read or injected here.
+	mentions, err := s.referenceMentions(ctx, repo, query)
+	if err != nil {
+		return "", err
+	}
+	added := 0
+	for _, n := range mentions {
+		if seen[n.ID] {
+			continue
+		}
+		if add(n, "") {
+			added++
+		}
+		if added == 3 {
+			break
+		}
+	}
 	if sum, ok, err := s.Summary(ctx, repo); err != nil {
 		return "", err
 	} else if ok {
@@ -145,8 +168,8 @@ func (s *Store) Recall(ctx context.Context, repo, query string, seen map[int64]b
 		}
 	}
 	// One hybrid search across all kinds avoids repeating query embeddings.
-	limits := map[string]int{"instruction": b.TopInstructions, "gotcha": b.TopGotchas, "fact": b.TopKnowledge, "decision": b.TopKnowledge}
-	found, err := s.search(ctx, repo, "", query, b.TopInstructions+b.TopGotchas+2*b.TopKnowledge, SearchOptions{}, limits, seen, nil)
+	limits := map[string]int{"instruction": b.TopInstructions, "gotcha": b.TopGotchas, "fact": b.TopKnowledge, "decision": b.TopKnowledge, "reference": b.TopKnowledge}
+	found, err := s.search(ctx, repo, "", query, b.TopInstructions+b.TopGotchas+3*b.TopKnowledge, SearchOptions{}, limits, seen, nil)
 	if err != nil {
 		return "", err
 	}
@@ -157,4 +180,50 @@ func (s *Store) Recall(ctx context.Context, repo, query string, seen map[int64]b
 		return "", nil
 	}
 	return Header + "\n" + strings.Join(lines, "\n"), nil
+}
+
+// referenceMentions inspects names/aliases only, never full procedures/assets.
+func (s *Store) referenceMentions(ctx context.Context, repo, query string) ([]Note, error) {
+	normalize := func(text string) string {
+		return " " + strings.Join(strings.FieldsFunc(strings.ToLower(text), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }), " ") + " "
+	}
+	q := normalize(query)
+	rows, err := s.db.QueryContext(ctx, latest+` SELECT l.id,l.key,p.aliases FROM latest l JOIN reference_payloads p ON p.note_id=l.id WHERE l.kind='reference' AND l.forgotten=0`, repo)
+	if err != nil {
+		return nil, err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		var name, raw string
+		if err = rows.Scan(&id, &name, &raw); err != nil {
+			break
+		}
+		var aliases []string
+		if err = json.Unmarshal([]byte(raw), &aliases); err != nil {
+			break
+		}
+		for _, label := range append(aliases, name) {
+			phrase := normalize(label)
+			if strings.TrimSpace(phrase) != "" && strings.Contains(q, phrase) {
+				ids = append(ids, id)
+				break
+			}
+		}
+	}
+	if err == nil {
+		err = rows.Err()
+	}
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	notes, err := s.byIDs(ctx, ids)
+	sort.Slice(notes, func(i, j int) bool {
+		if (notes[i].Repo == repo) != (notes[j].Repo == repo) {
+			return notes[i].Repo == repo
+		}
+		return semanticNewer(notes[i], notes[j])
+	})
+	return notes, err
 }

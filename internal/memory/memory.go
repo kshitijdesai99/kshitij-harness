@@ -26,7 +26,7 @@ const (
 )
 
 var (
-	Kinds   = []string{"instruction", "gotcha", "summary", "fact", "decision"}
+	Kinds   = []string{"instruction", "gotcha", "summary", "fact", "decision", "reference"}
 	Sources = []string{"you", "pre-hook", "post-hook", "summary", "import"}
 	// ErrStale means the topic changed after a hook read it, or the incoming
 	// statement predates its current version; stale decisions are not saved.
@@ -84,6 +84,12 @@ func Open(path string) (*Store, error) {
             refs TEXT NOT NULL DEFAULT '', owner TEXT NOT NULL DEFAULT '', source TEXT NOT NULL,
             forgotten INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)`,
 		`CREATE INDEX IF NOT EXISTS notes_topic ON notes(repo, key, created_at, id)`,
+		`CREATE TABLE IF NOT EXISTS reference_payloads (
+            note_id INTEGER PRIMARY KEY, reference_id TEXT NOT NULL, version INTEGER NOT NULL,
+            aliases TEXT NOT NULL, procedure TEXT NOT NULL, assets TEXT NOT NULL,
+            origin TEXT NOT NULL DEFAULT '')`,
+		`CREATE TRIGGER IF NOT EXISTS notes_reference_ad AFTER DELETE ON notes BEGIN
+            DELETE FROM reference_payloads WHERE note_id = old.id; END`,
 		`CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(key, text, content='notes', content_rowid='id')`,
 		// Rows are never updated, so insert and delete (purge) keep the index in step.
 		`CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
@@ -91,15 +97,35 @@ func Open(path string) (*Store, error) {
 		`CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
             INSERT INTO notes_fts(notes_fts, rowid, key, text) VALUES ('delete', old.id, old.key, old.text); END`,
 	} {
-		if _, err = db.Exec(stmt); err != nil {
+		// Changing journal mode can return SQLITE_BUSY immediately despite
+		// busy_timeout when another process is starting against the same file.
+		// Retry only that startup statement, within the same five-second budget.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		for {
+			_, err = db.ExecContext(ctx, stmt)
+			var busy interface{ Code() int }
+			if err == nil || stmt != "PRAGMA journal_mode=WAL" || !errors.As(err, &busy) || busy.Code()&0xff != 5 || ctx.Err() != nil {
+				break
+			}
+			select {
+			case <-ctx.Done():
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+		cancel()
+		if err != nil {
 			db.Close()
-			return nil, fmt.Errorf("memory: %w", err)
+			return nil, fmt.Errorf("memory: startup %q: %w", stmt, err)
 		}
 	}
 	s := &Store{db: db}
 	if err = s.migrateProvenance(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("memory: migrate provenance: %w", err)
+	}
+	if err = s.migrateReferenceOrigin(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("memory: migrate reference origin: %w", err)
 	}
 	if err = s.migrate(); err != nil {
 		db.Close()
@@ -143,7 +169,7 @@ func scan(rows *sql.Rows) ([]Note, error) {
 
 func valid(n Note) error {
 	if n.Repo == "" || !one(n.Kind, Kinds) || !one(n.Source, Sources) {
-		return fmt.Errorf("memory: repo, kind (instruction|gotcha|summary|fact|decision) and source are required")
+		return fmt.Errorf("memory: repo, kind (instruction|gotcha|summary|fact|decision|reference) and source are required")
 	}
 	if strings.TrimSpace(n.Key) == "" || len(n.Key) > 100 || strings.ContainsAny(n.Key, "\n\r") {
 		return fmt.Errorf("memory: key must be one short line")
@@ -182,14 +208,30 @@ func one(v string, set []string) bool {
 // A zero StatedAt defaults to insertion time; explicit older statements return
 // ErrStale. Overridden is always assigned from the current topic revision.
 func (s *Store) Add(ctx context.Context, n Note, expect int64) (prev *Note, saved Note, err error) {
-	if err = valid(n); err != nil {
-		return nil, n, err
+	if n.Kind == "reference" {
+		return nil, n, fmt.Errorf("memory: references require PutReference or Forget")
 	}
+	return s.add(ctx, n, expect)
+}
+
+func (s *Store) add(ctx context.Context, n Note, expect int64) (prev *Note, saved Note, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, n, err
 	}
 	defer tx.Rollback()
+	prev, saved, err = s.addTx(ctx, tx, n, expect)
+	if err != nil {
+		return nil, n, err
+	}
+	return prev, saved, tx.Commit()
+}
+
+// addTx is the single validation, CAS and provenance path for note writes.
+func (s *Store) addTx(ctx context.Context, tx *sql.Tx, n Note, expect int64) (prev *Note, saved Note, err error) {
+	if err = valid(n); err != nil {
+		return nil, n, err
+	}
 	rows, err := tx.QueryContext(ctx, `SELECT `+columns+` FROM notes WHERE repo = ? AND key = ?
         ORDER BY created_at DESC, id DESC LIMIT 1`, n.Repo, n.Key)
 	if err != nil {
@@ -237,7 +279,7 @@ func (s *Store) Add(ctx context.Context, n Note, expect int64) (prev *Note, save
 	if err != nil {
 		return nil, n, err
 	}
-	return prev, n, tx.Commit()
+	return prev, n, nil
 }
 
 // Forget appends a row that removes the topic; history stays until Purge.
@@ -246,7 +288,7 @@ func (s *Store) Forget(ctx context.Context, repo, key, owner, source string) (bo
 	if err != nil || !ok || cur.Forgotten {
 		return false, err
 	}
-	_, _, err = s.Add(ctx, Note{Repo: repo, Kind: cur.Kind, Key: key, Owner: owner, Source: source, Forgotten: true}, cur.ID)
+	_, _, err = s.add(ctx, Note{Repo: repo, Kind: cur.Kind, Key: key, Owner: owner, Source: source, Forgotten: true}, cur.ID)
 	return err == nil, err
 }
 
@@ -341,6 +383,45 @@ func (s *Store) byIDs(ctx context.Context, ids []int64) ([]Note, error) {
 		return nil, err
 	}
 	return scan(rows)
+}
+
+// migrateReferenceOrigin upgrades the already-deployed payload table in place.
+func (s *Store) migrateReferenceOrigin() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// Reserve the writer before inspecting schema, just like migrateProvenance.
+	if _, err = tx.Exec(`UPDATE reference_payloads SET note_id=note_id WHERE 0`); err != nil {
+		return err
+	}
+	rows, err := tx.Query(`PRAGMA table_info(reference_payloads)`)
+	if err != nil {
+		return err
+	}
+	present := false
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var def sql.NullString
+		if err = rows.Scan(&cid, &name, &typ, &notnull, &def, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		present = present || name == "origin"
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	if !present {
+		if _, err = tx.Exec(`ALTER TABLE reference_payloads ADD COLUMN origin TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // migrateProvenance adds metadata without rewriting or deleting historical rows.
