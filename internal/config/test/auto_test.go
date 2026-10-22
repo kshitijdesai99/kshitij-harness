@@ -9,12 +9,21 @@ import (
 	"kh/internal/config"
 )
 
+func TestAutoDefaultsOn(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cfg, err := config.Load()
+	if err != nil || !cfg.Auto || !cfg.Sandbox {
+		t.Fatalf("defaults: Auto=%v Sandbox=%v err=%v", cfg.Auto, cfg.Sandbox, err)
+	}
+}
+
 func TestAutoMigratesLegacyOnlyWithoutExplicitAuto(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		input string
 		want  bool
 	}{
+		{"empty", `{}`, true},
 		{"legacy-on", `{"auto_write":true}`, true},
 		{"legacy-off", `{"auto_write":false}`, false},
 		{"explicit-off-wins", `{"auto":false,"auto_write":true}`, false},

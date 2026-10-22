@@ -27,7 +27,7 @@ func TestSafetyRegression(t *testing.T) {
 		t.Run(command, func(t *testing.T) {
 			called := false
 			cfg := config.Defaults
-			cfg.Sandbox = false
+			cfg.Auto, cfg.Sandbox = false, false
 			approval := fakeApprover(func(_ context.Context, got string, safe bool) (bool, error) {
 				called = true
 				if got != command {
@@ -68,7 +68,7 @@ func TestNilApprover(t *testing.T) {
 func TestExplicitApprovalAndError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	cfg := config.Defaults
-	cfg.Sandbox = false
+	cfg.Auto, cfg.Sandbox = false, false
 	input := []byte(`{"command":"touch approved"}`)
 	approval := fakeApprover(func(_ context.Context, _ string, safe bool) (bool, error) {
 		if safe {
@@ -92,7 +92,7 @@ func TestExplicitApprovalAndError(t *testing.T) {
 func TestApprovalCancellation(t *testing.T) {
 	t.Chdir(t.TempDir())
 	cfg := config.Defaults
-	cfg.Sandbox = false
+	cfg.Auto, cfg.Sandbox = false, false
 	c, cancel := context.WithCancel(ctx)
 	defer cancel()
 	started := make(chan struct{})

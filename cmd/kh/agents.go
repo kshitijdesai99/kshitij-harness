@@ -134,9 +134,11 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 		if !cfg.Sandbox {
 			command = append(command, "--nosandbox")
 		}
-		// Without -i the agent exits after its task and tmux closes the pane.
+		// One-shot workers exit after their task; keep retains interactive chat.
 		if keep {
 			command = append(command, "-i")
+		} else {
+			command = append(command, "-p")
 		}
 		command = append(command, args[2])
 		pane, err := tmuxContext(ctx, "set-option", "-p", "-t", current, "@kh_name", strings.TrimPrefix(parent, "kh:"), ";",

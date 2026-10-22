@@ -88,7 +88,7 @@ func TestSessionSaveFailureIsReportedByCLI(t *testing.T) {
 	}
 	ctx, stop := context.WithTimeout(context.Background(), 15*time.Second)
 	defer stop()
-	cmd := exec.CommandContext(ctx, binary, "-nosandbox", "question")
+	cmd := exec.CommandContext(ctx, binary, "-p", "--nosandbox", "question")
 	cmd.Env = append(os.Environ(), "HOME="+home, "KH_PROVIDER=", "KH_MODEL=", "KH_EFFORT=")
 	cmd.Stdin = strings.NewReader("")
 	out, err := cmd.CombinedOutput()

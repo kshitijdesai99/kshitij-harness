@@ -50,7 +50,7 @@ func TestHelpCLIBypassesChatAndSessions(t *testing.T) {
 	if err == nil || !strings.Contains(out, "unsupported provider") {
 		t.Fatalf("request treated as subcommand: %s %v", out, err)
 	}
-	for _, args := range [][]string{{"--help", "-r", "question"}, {"--help", "-s", "old", "question"}, {"--help", "-i", "question"}, {"--help", "--sessions", "question"}, {"--help", "--rebuild", "question"}} {
+	for _, args := range [][]string{{"--help", "-r", "question"}, {"--help", "-s", "old", "question"}, {"--help", "-i", "question"}, {"--help", "-p", "question"}, {"--help", "--sessions", "question"}, {"--help", "--rebuild", "question"}} {
 		out, err := run(args...)
 		if err == nil || !strings.Contains(out, "cannot be combined") && !strings.Contains(out, "takes no other flags") {
 			t.Fatalf("conflict %v: %s %v", args, out, err)

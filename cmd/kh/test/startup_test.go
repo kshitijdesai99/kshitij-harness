@@ -46,7 +46,7 @@ try:
     tmux('-f','/dev/null','new-session','-d','-s','kh','-n','main','sleep 60')
     old=tmux('display-message','-p','-t','kh:main','#{pane_id}')
     previous={'kh'}
-    for index,args in enumerate([[],['-i','--auto','-model','startup-test-model',"let's do something"]]):
+    for index,args in enumerate([[],['--model','startup-test-model',"let's do something"]]):
         cwd=os.path.join(home,'project '+str(index))
         os.mkdir(cwd)
         master,slave=pty.openpty()

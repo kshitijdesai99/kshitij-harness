@@ -56,6 +56,7 @@ var Defaults = Config{
 		"git status", "git diff", "git log", "git show",
 		"kh peek", "kh agents",
 	},
+	Auto:    true,
 	Sandbox: true,
 	// Temp dirs and tool caches, so builds and tests still work.
 	Writable:         []string{"/tmp", "/private/var/folders", "~/Library/Caches", "~/.cache", "~/go"},
@@ -90,13 +91,13 @@ func Load() (Config, error) {
 	// Preserve the old opt-in when upgrading, but an explicit auto wins.
 	var legacy struct {
 		Auto      *bool `json:"auto"`
-		AutoWrite bool  `json:"auto_write"`
+		AutoWrite *bool `json:"auto_write"`
 	}
 	if err := json.Unmarshal(b, &legacy); err != nil {
 		return c, err
 	}
-	if legacy.Auto == nil && legacy.AutoWrite {
-		c.Auto = true
+	if legacy.Auto == nil && legacy.AutoWrite != nil {
+		c.Auto = *legacy.AutoWrite
 	}
 	return c, nil
 }

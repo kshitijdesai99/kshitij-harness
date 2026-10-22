@@ -19,8 +19,8 @@ go build -o kh ./cmd/kh
 
 ```bash
 ./kh                            # interactive chat
-./kh "fix the failing tests"     # one-shot task
-./kh -i "fix the failing tests"  # task, then stay in chat
+./kh "fix the failing tests"     # task, then stay in chat
+./kh -p "fix the failing tests"  # headless task, then exit
 ./kh -r                         # resume this folder's latest session
 ./kh --sessions                 # list saved sessions
 ./kh -s SESSION_ID              # resume a specific session
@@ -46,9 +46,9 @@ Optionally create `~/.kh/config.json`, specifying only overrides:
 { "effort": "high" }
 ```
 
-CLI flags override configuration. Recognized read-only shell commands run without asking; other commands require approval. `--auto` skips command and requested folder-write approval; `/auto on|off` persists this policy.
+CLI flags override configuration. Automatic command and requested folder-write approval is on by default. Use `--auto=false` for approval prompts in one session, or `/auto off` to persist that preference. `-i` remains a compatibility alias for interactive mode.
 
-On macOS, shell reads are allowed wherever OS permissions permit; writes are sandboxed to the project, configured tool/cache directories, and folders granted for the running session. Outside-folder edits and declared shell `write_dirs` normally require approval. To authorize commands and requested folder writes without prompts, use `/auto on` (persists `"auto": true`) or `--auto` for one session. This keeps sandbox and pinned-path checks; it does not grant the whole filesystem at startup. Workers and new/forked chats inherit the active policy, not directory grants. `/auto off` restores command and new-folder prompts; existing grants remain until restart. `--nosandbox` disables shell write restrictions. Other Unix systems have no OS-level shell sandbox; approvals alone are not a security boundary.
+On macOS, shell reads are allowed wherever OS permissions permit; writes are sandboxed to the project, configured tool/cache directories, and folders granted for the running session. Outside-folder edits and declared shell `write_dirs` are automatically approved unless auto is disabled. `/auto on` persists `"auto": true`; `--auto` enables it for one session. This keeps sandbox and pinned-path checks; it does not grant the whole filesystem at startup. Workers and new/forked chats inherit the active policy, not directory grants. `/auto off` restores command and new-folder prompts; existing grants remain until restart. `--nosandbox` disables shell write restrictions. Other Unix systems have no OS-level shell sandbox; approvals alone are not a security boundary.
 
 ## Memory and agents
 

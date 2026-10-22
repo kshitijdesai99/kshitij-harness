@@ -40,6 +40,8 @@ func TestSafeList(t *testing.T) {
 	if err := os.WriteFile("a.go", []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	cfg := config.Defaults
+	cfg.Auto = false // Exercise approval classification, not the automatic default.
 	for c, safe := range map[string]bool{
 		"cat a.go | head":               true,
 		"sed -n 1,20p a.go":             true,
@@ -59,7 +61,7 @@ func TestSafeList(t *testing.T) {
 		"kh spawn tests task":           false,
 		"kh peek kh:tests; rm x":        false,
 	} {
-		_, err := bash(t, config.Defaults, c)
+		_, err := bash(t, cfg, c)
 		if asked := err != nil && err.Error() == "user said no"; asked == safe {
 			t.Errorf("%q: safe=%v but asked=%v", c, safe, asked)
 		}

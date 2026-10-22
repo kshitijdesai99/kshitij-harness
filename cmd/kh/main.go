@@ -52,7 +52,8 @@ func main() {
 	resume := flag.Bool("r", false, "resume the latest session")
 	id := flag.String("s", "", "resume a session by id (files in ~/.kh/sessions)")
 	list := flag.Bool("sessions", false, "list this folder's saved sessions")
-	stay := flag.Bool("i", false, "stay in chat after the task")
+	stay := flag.Bool("i", false, "interactive chat (the default; retained for compatibility)")
+	printOnly := flag.Bool("p", false, "run a task headlessly, then exit")
 	rebuildFlag := flag.Bool("rebuild", false, "rebuild this executable from local kh sources, then exit")
 	helpFlag := flag.Bool("help", false, "show usage, or answer a one-off question without saving a session")
 	flag.BoolVar(helpFlag, "h", false, "alias for --help")
@@ -77,8 +78,8 @@ func main() {
 			flag.Usage()
 			return
 		}
-		if *resume || *id != "" || *stay || *list {
-			exit(fmt.Errorf("kh --help with a request cannot be combined with -r, -s, -i, or --sessions"))
+		if *resume || *id != "" || *stay || *printOnly || *list {
+			exit(fmt.Errorf("kh --help with a request cannot be combined with -r, -s, -i, -p, or --sessions"))
 		}
 		exit(configErr)
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -126,6 +127,13 @@ func main() {
 			return
 		}
 	}
+	if *printOnly && *stay {
+		exit(fmt.Errorf("-p cannot be combined with -i"))
+	}
+	if *printOnly && strings.TrimSpace(strings.Join(args, " ")) == "" {
+		exit(fmt.Errorf("usage: kh -p \"task\""))
+	}
+	interactive := !*printOnly
 	// Build before handing a terminal to tmux so compiler failures remain
 	// visible. The newly created main pane consumes a one-time skip marker;
 	// other spawned/forked sessions still perform their own startup build.
@@ -133,12 +141,12 @@ func main() {
 	rebuilt, err := rebuildBeforeSession(rebuildCtx)
 	stop()
 	exit(err)
-	if (len(args) == 0 || *stay) && os.Getenv("TMUX") == "" && chatTerminal() {
+	if interactive && os.Getenv("TMUX") == "" && chatTerminal() {
 		exit(attachChat(os.Args[1:], rebuilt))
 		return
 	}
 
-	if os.Getenv("TMUX") != "" && (len(args) == 0 || *stay) {
+	if os.Getenv("TMUX") != "" && interactive {
 		installImagePasteBinding()
 		// "on" forwards modified keys only to applications requesting them,
 		// unlike "always". Leave an existing "always" setting untouched.
@@ -208,7 +216,7 @@ func main() {
 	exit(err)
 	if *id != "" {
 		exit(p.Load(saved.State))
-		if len(args) == 0 || *stay {
+		if interactive {
 			fmt.Printf("--- session %s ---\n", *id)
 			p.Replay(terminal.NewRenderer(os.Stdout, os.Stdout))
 			fmt.Println("---")
@@ -240,7 +248,7 @@ func main() {
 
 	setAgentState("waiting")
 	task := strings.Join(args, " ")
-	if task != "" && !*stay {
+	if task != "" && !interactive {
 		err := turn(task)
 		// A spawned agent's pane closes when kh exits. On failure stay in chat
 		// instead, so the error stays visible and the agent can be steered.

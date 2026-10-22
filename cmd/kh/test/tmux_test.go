@@ -108,7 +108,7 @@ func testTmuxAgents(t *testing.T, source string) {
 	if title := runTmux("display-message", "-p", "-t", docsPane, "#{pane_title}"); title != "docs" {
 		t.Fatalf("worker title: %q", title)
 	}
-	if strings.Contains(command, "'-i'") {
+	if strings.Contains(command, "'-i'") || !strings.Contains(command, "'-p'") {
 		t.Errorf("spawned agent should exit after its task: %q", command)
 	}
 	for _, value := range []string{"--auto", "-provider", "codex", "-model", "future-model", "-effort", "low"} {
