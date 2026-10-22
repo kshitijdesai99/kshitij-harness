@@ -56,6 +56,8 @@ type Store struct {
 	db         *sql.DB
 	semantic   *semanticState
 	semanticMu sync.Mutex
+	rerankMu   sync.Mutex
+	reranker   *rerankState
 }
 
 func Path() string {

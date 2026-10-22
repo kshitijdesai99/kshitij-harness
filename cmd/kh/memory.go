@@ -5,10 +5,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"time"
 
 	"kh/internal/config"
+	"kh/internal/hybrid"
 	"kh/internal/learn"
 	"kh/internal/memory"
 	"kh/internal/tools"
@@ -93,9 +96,9 @@ func memoryCommand(args []string, cfg config.Config) error {
 		for _, kind := range []string{"instruction", "fact", "decision", "gotcha"} {
 			fmt.Printf("%s: %d\n", kind, counts[kind])
 		}
-		mode := "keyword only (embeddings not configured)"
-		if cfg.MemoryEmbeddingURL != "" && cfg.MemoryEmbeddingModel != "" {
-			mode = "hybrid configured (keyword fallback on embedding failure)"
+		mode := "keyword only"
+		if cfg.HybridMemory() {
+			mode = "hybrid configured (keyword fallback on embedding or reranking failure)"
 		}
 		fmt.Println("retrieval:", mode)
 		fmt.Printf("memory budget: approximately %d tokens\n", cfg.MemoryMaxTokens)
@@ -132,15 +135,14 @@ func memoryCommand(args []string, cfg config.Config) error {
 		if err := need(2); err != nil {
 			return err
 		}
-		if err := configureMemory(s, cfg); err != nil {
-			return err
-		}
+		startMemory(ctx, s, cfg)
 		found, trace, err := s.SearchWithTrace(ctx, repo, "", args[1], 30, memory.SearchOptions{})
 		if err != nil {
 			return err
 		}
 		if args[0] == "explain" {
 			fmt.Printf("lexical candidates: %v\nsemantic enabled: %t; fallback: %t\nsemantic candidates: %v\nselected: %v\n", trace.LexicalIDs, trace.SemanticEnabled, trace.SemanticFallback, trace.SemanticIDs, trace.SelectedIDs)
+			fmt.Printf("rerank enabled: %t; fallback: %t\nreranked: %v\n", trace.RerankEnabled, trace.RerankFallback, trace.RerankedIDs)
 		}
 		for _, n := range found {
 			fmt.Println(tools.Note(n))
@@ -232,20 +234,144 @@ func memoryCommand(args []string, cfg config.Config) error {
 	}
 }
 
-// Semantic search is opt-in: no model download or external transmission occurs
-// until both an embedding endpoint and model have been explicitly configured.
+// Configuration is download-free. Explicit activation handles installation;
+// startup only starts cached local services, leaving keyword search usable.
 func configureMemory(s *memory.Store, cfg config.Config) error {
-	if cfg.MemoryEmbeddingURL == "" && cfg.MemoryEmbeddingModel == "" {
-		return nil
+	if !cfg.HybridMemory() {
+		return disableHybrid(s)
 	}
-	if cfg.MemoryEmbeddingURL == "" || cfg.MemoryEmbeddingModel == "" {
-		return fmt.Errorf("set both memory_embedding_url and memory_embedding_model to enable semantic retrieval")
-	}
-	e, err := memory.NewOllamaEmbedder(cfg.MemoryEmbeddingURL, cfg.MemoryEmbeddingModel)
+	r, err := memory.NewHTTPReranker(or(cfg.MemoryRerankerURL, hybrid.DefaultEndpoint))
 	if err != nil {
 		return err
 	}
-	return s.ConfigureSemantic(e, func(message string) { fmt.Fprintln(os.Stderr, "(memory) "+message) })
+	e, err := memory.NewOllamaEmbedder(or(cfg.MemoryEmbeddingURL, hybrid.EmbeddingEndpoint+"/api/embed"), or(cfg.MemoryEmbeddingModel, hybrid.EmbeddingModel))
+	if err != nil {
+		return err
+	}
+	if err := s.ConfigureReranker(r, memoryNotice); err != nil {
+		return err
+	}
+	if err := s.ConfigureSemantic(e, memoryNotice); err != nil {
+		_ = disableHybrid(s)
+		return err
+	}
+	return nil
+}
+
+func disableHybrid(s *memory.Store) error {
+	// Disabling never removes cached models or stored vectors.
+	rerr := s.ConfigureReranker(nil, nil)
+	err := s.ConfigureSemantic(nil, nil)
+	if rerr != nil {
+		return rerr
+	}
+	return err
+}
+
+func memoryNotice(message string) {
+	fmt.Fprintln(os.Stderr, "(memory) "+message)
+}
+
+func startMemory(ctx context.Context, s *memory.Store, cfg config.Config) bool {
+	managedEmbedding := cfg.MemoryEmbeddingURL == "" || cfg.MemoryEmbeddingURL == hybrid.EmbeddingEndpoint+"/api/embed"
+	managedReranker := cfg.MemoryRerankerURL == "" || cfg.MemoryRerankerURL == hybrid.DefaultEndpoint
+	// Mixed/custom endpoints are externally managed: do not require unrelated
+	// local services or caches to use a healthy configured pipeline.
+	if cfg.HybridMemory() && managedEmbedding && managedReranker {
+		startup, cancel := context.WithTimeout(ctx, 60*time.Second)
+		err := hybrid.Start(startup)
+		cancel()
+		if err != nil {
+			memoryNotice(fmt.Sprintf("Hybrid runtime unavailable; using keyword search until services recover: %v", err))
+		}
+	}
+	if err := configureMemory(s, cfg); err != nil {
+		_ = disableHybrid(s)
+		memoryNotice(fmt.Sprintf("Hybrid configuration unavailable; using keyword search: %v", err))
+		return false
+	}
+	return cfg.HybridMemory()
+}
+
+func sameMemory(a, b config.Config) bool {
+	return a.HybridMemory() == b.HybridMemory() && a.MemoryEmbeddingURL == b.MemoryEmbeddingURL && a.MemoryEmbeddingModel == b.MemoryEmbeddingModel && a.MemoryRerankerURL == b.MemoryRerankerURL
+}
+
+func (c *chat) rememberMemoryConfig(cfg config.Config) {
+	c.seen.MemoryHybrid = cfg.MemoryHybrid
+	c.seen.MemoryEmbeddingURL = cfg.MemoryEmbeddingURL
+	c.seen.MemoryEmbeddingModel = cfg.MemoryEmbeddingModel
+	c.seen.MemoryRerankerURL = cfg.MemoryRerankerURL
+}
+
+func (c *chat) reloadMemory(ctx context.Context) {
+	cfg, err := config.Load()
+	if err != nil {
+		memoryNotice(fmt.Sprintf("Cannot reload memory configuration: %v", err))
+		return
+	}
+	if !sameMemory(cfg, c.seen) {
+		c.memoryActive = startMemory(ctx, c.memory, cfg)
+		c.rememberMemoryConfig(cfg)
+	}
+}
+
+func (c *chat) restoreMemory() {
+	if !c.memoryActive {
+		_ = disableHybrid(c.memory)
+		return
+	}
+	if err := configureMemory(c.memory, c.seen); err != nil {
+		_ = disableHybrid(c.memory)
+		c.memoryActive = false
+		memoryNotice("Cannot restore hybrid pipeline; using keyword search.")
+	}
+}
+
+func (c *chat) memoryCommand(ctx context.Context, args []string) error {
+	if len(args) != 2 || args[0] != "hybrid" || (args[1] != "on" && args[1] != "off") {
+		return fmt.Errorf("usage: /memory hybrid on|off")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	enabled := args[1] == "on"
+	cfg.MemoryHybrid = &enabled
+	if enabled {
+		setup, stop := signal.NotifyContext(ctx, os.Interrupt)
+		defer stop()
+		if err := hybrid.Ensure(setup, memoryNotice); err != nil {
+			return fmt.Errorf("hybrid setup failed; mode unchanged: %w", err)
+		}
+		if err := configureMemory(c.memory, cfg); err != nil {
+			c.restoreMemory()
+			return fmt.Errorf("hybrid configuration failed; mode not saved: %w", err)
+		}
+		if err := c.memory.ProbeHybrid(setup); err != nil {
+			c.restoreMemory()
+			return fmt.Errorf("hybrid verification failed; mode not saved: %w", err)
+		}
+	}
+	if err := config.Set("memory_hybrid", enabled); err != nil {
+		if enabled {
+			c.restoreMemory()
+		}
+		return err
+	}
+	if !enabled {
+		if err := disableHybrid(c.memory); err != nil {
+			return err
+		}
+	}
+	c.memoryActive = enabled
+	c.rememberMemoryConfig(cfg)
+	if enabled {
+		fmt.Println("(memory hybrid on: keyword + semantic retrieval with reranking)")
+	} else {
+		fmt.Println("(memory hybrid off: keyword-only retrieval; models and vectors preserved)")
+	}
+	return nil
 }
 
 func or(s, fallback string) string {

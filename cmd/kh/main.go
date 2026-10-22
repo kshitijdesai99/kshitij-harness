@@ -162,7 +162,7 @@ func main() {
 	cwd, err := os.Getwd()
 	exit(err)
 	repoScope, owner := memory.RepoScope(cwd), memory.Owner(cwd)
-	exit(configureMemory(db, cfg))
+	memoryActive := startMemory(ctx, db, cfg)
 	var learner *learn.Learner
 	// Delegated task prompts are not user preferences. Workers read shared
 	// memory, but only user-facing chats learn durable knowledge.
@@ -227,7 +227,7 @@ func main() {
 
 	exportModel(p, cfg.Provider)
 	c := chat{model: p, backend: cfg.Provider, id: *id, repo: repoScope,
-		memory: db, learn: learner, input: console, ui: ui, tools: ts, seen: fromFile, writeAccess: writeAccess,
+		memory: db, memoryActive: memoryActive, learn: learner, input: console, ui: ui, tools: ts, seen: fromFile, writeAccess: writeAccess,
 		budget: memory.Budget{SummaryChars: cfg.SummaryMaxTokens * 4, TopInstructions: cfg.TopInstructions, TopGotchas: cfg.TopGotchas,
 			TopKnowledge: cfg.TopKnowledge, TotalChars: cfg.MemoryMaxTokens * 4}}
 	exit(c.snapshotFork())
@@ -299,7 +299,7 @@ func main() {
 			continue
 		}
 		if singleLine && strings.HasPrefix(line, "/") {
-			c.command(line)
+			c.command(ctx, line)
 			if err := c.snapshotFork(); err != nil {
 				fmt.Fprintln(os.Stderr, "fork checkpoint:", err)
 			}
@@ -313,11 +313,16 @@ func main() {
 
 // command handles native slash commands. Approval-policy changes apply to future
 // requests immediately; model switches apply from the next message.
-func (c *chat) command(line string) {
+func (c *chat) command(ctx context.Context, line string) {
 	p, access := c.model, c.writeAccess
 	cmd, arg, _ := strings.Cut(line, " ")
 	var model, effort string
 	switch cmd {
+	case "/memory":
+		if err := c.memoryCommand(ctx, strings.Fields(arg)); err != nil {
+			fmt.Println("error:", err)
+		}
+		return
 	case "/auto":
 		arg = strings.TrimSpace(arg)
 		if arg != "" {
@@ -353,7 +358,7 @@ func (c *chat) command(line string) {
 			model, effort = p.Use("", arg)
 		}
 	default:
-		fmt.Println("/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/new   open a fresh session in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message\n/auto [on|off]   persist automatic command and folder approval; existing grants remain until restart")
+		fmt.Println("/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/new   open a fresh session in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message\n/auto [on|off]   persist automatic command and folder approval; existing grants remain until restart\n/memory hybrid on|off   enable local hybrid retrieval or keyword-only memory")
 		return
 	}
 	fmt.Println(terminal.Color(os.Stdout, terminal.Muted, fmt.Sprintf("(model %s, effort %s)", model, effort)))

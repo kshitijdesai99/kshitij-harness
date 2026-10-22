@@ -29,8 +29,10 @@ type Config struct {
 
 	TopKnowledge         int    `json:"top_knowledge"`          // matching facts and decisions per kind
 	MemoryMaxTokens      int    `json:"memory_max_tokens"`      // total injected memory budget, estimated as chars/4
-	MemoryEmbeddingURL   string `json:"memory_embedding_url"`   // explicit Ollama /api/embed endpoint; empty disables semantic search
-	MemoryEmbeddingModel string `json:"memory_embedding_model"` // explicit embedding model; no chat-auth assumptions
+	MemoryHybrid         *bool  `json:"memory_hybrid"`          // explicit opt-in; nil preserves legacy endpoint/model opt-in
+	MemoryEmbeddingURL   string `json:"memory_embedding_url"`   // empty uses the managed local embedding endpoint
+	MemoryEmbeddingModel string `json:"memory_embedding_model"` // empty uses the managed embedding model
+	MemoryRerankerURL    string `json:"memory_reranker_url"`    // empty uses the managed local reranker
 }
 
 // Short and fixed on purpose: short = fast, fixed = cacheable.
@@ -65,6 +67,14 @@ var Defaults = Config{
 	TopGotchas:       10,
 	TopKnowledge:     5,
 	MemoryMaxTokens:  4000,
+}
+
+// HybridMemory preserves legacy opt-in unless an explicit mode was saved.
+func (c Config) HybridMemory() bool {
+	if c.MemoryHybrid != nil {
+		return *c.MemoryHybrid
+	}
+	return c.MemoryEmbeddingURL != "" && c.MemoryEmbeddingModel != ""
 }
 
 // Dir is where kh keeps its config and login.

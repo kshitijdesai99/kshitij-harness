@@ -54,12 +54,6 @@ On macOS, shell reads are allowed wherever OS permissions permit; writes are san
 
 kh selectively saves lasting instructions, established facts, accepted decisions, and gotchas in `~/.kh/memory.db`; it does not archive every discussion into memory. Notes keep discussion context, statement/save timestamps, and links to the versions they replace. Repo and global scopes remain separate. Delegated workers read shared memory; user-facing chats learn from exchanges. Use `kh memory status`, `search`, `get`, or `history` to inspect them; `kh memory explain "query"` shows retrieval candidates and fallback status. Saved chats live separately in `~/.kh/sessions`.
 
-Search uses keywords by default. To enable meaning-based hybrid search, explicitly configure an Ollama endpoint and an already-installed embedding model in `~/.kh/config.json`:
-
-```json
-{ "memory_embedding_url": "http://localhost:11434/api/embed", "memory_embedding_model": "your-installed-model" }
-```
-
-Only selected notes and search queries are sent to that endpoint; no models are downloaded automatically. Embedding failures fall back to keyword search with a notice. `memory_max_tokens` bounds injected memory (estimated as characters/4); context and history are fetched on demand.
+Search uses keywords by default, with no model downloads. `/memory hybrid on` explicitly downloads and verifies the local embedding model and reranker before enabling hybrid retrieval; `/memory hybrid off` immediately restores keyword-only retrieval without deleting models or vectors. Open chats pick up mode changes on their next message. Optional `memory_embedding_url`, `memory_embedding_model`, and `memory_reranker_url` settings override the local defaults. Startup only uses cached models; embedding or reranking failures fall back to keywords with a notice. `memory_max_tokens` bounds injected memory (estimated as characters/4); context and history are fetched on demand.
 
 Ask kh to delegate work using native agents. Workers share project files: assign separate files or coordinate edits. Their tmux panes close after successful tasks; failures stay visible, and `keep` retains a worker for follow-ups.

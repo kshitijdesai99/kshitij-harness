@@ -26,6 +26,8 @@ func (s *Store) Search(ctx context.Context, repo, kind, query string, limit int)
 type SearchTrace struct {
 	LexicalIDs, SemanticIDs, SelectedIDs []int64
 	SemanticEnabled, SemanticFallback    bool
+	RerankEnabled, RerankFallback        bool
+	RerankedIDs                          []int64
 }
 
 func (s *Store) SearchWithOptions(ctx context.Context, repo, kind, query string, limit int, opts SearchOptions) ([]Note, error) {
@@ -87,7 +89,9 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 			return nil, err
 		}
 	}
+	reranker := s.rerankConfig()
 	if trace != nil {
+		trace.RerankEnabled = reranker != nil
 		trace.SemanticEnabled = s.semanticConfig() != nil
 		for _, n := range lexical {
 			trace.LexicalIDs = append(trace.LexicalIDs, n.ID)
@@ -103,6 +107,14 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 		s.semanticNotice(err)
 		if trace != nil {
 			trace.SemanticFallback = true
+		}
+	}
+	hybridFailed := reranker != nil && (err != nil || s.semanticConfig() == nil)
+	if hybridFailed {
+		semantic = nil
+		reranker.failed()
+		if trace != nil {
+			trace.RerankFallback = true
 		}
 	}
 	if trace != nil {
@@ -144,6 +156,81 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 		}
 		return a.note.ID > b.note.ID
 	})
+	// Never send excluded, secret-bearing, or stale records to the reranker.
+	// Revalidate again below after the network call before returning results.
+	if reranker != nil && !hybridFailed && (opts.Order == "" || opts.Order == "relevance") {
+		live, err := s.Current(ctx, repo, kind)
+		if err != nil {
+			return nil, err
+		}
+		eligible := make(map[int64]bool, len(live))
+		for _, n := range live {
+			eligible[n.ID] = semanticEligible(n, opts.Since, opts.Until)
+		}
+		var batch []Note
+		chosen := map[int64]bool{}
+		counts := map[string]int{}
+		// Reserve room for each requested kind before filling the candidate
+		// budget, so frequent instructions cannot crowd out facts or gotchas.
+		appendCandidates := func(reserve bool) {
+			for _, n := range rankedNotes {
+				if len(batch) == 64 {
+					break
+				}
+				if !eligible[n.note.ID] || excluded[n.note.ID] || chosen[n.note.ID] {
+					continue
+				}
+				if reserve && counts[n.note.Kind] >= quotas[n.note.Kind] {
+					continue
+				}
+				batch = append(batch, n.note)
+				chosen[n.note.ID] = true
+				counts[n.note.Kind]++
+			}
+		}
+		if quotas != nil {
+			appendCandidates(true)
+		}
+		appendCandidates(false)
+		if len(batch) > 0 {
+			rctx, stop := context.WithTimeout(ctx, 4*time.Second)
+			scores, rerankErr := rerankCandidates(rctx, reranker, query, batch)
+			stop()
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if rerankErr != nil {
+				reranker.failed()
+				if trace != nil {
+					trace.RerankFallback = true
+				}
+				rankedNotes = nil
+				for _, n := range lexical {
+					rankedNotes = append(rankedNotes, &ranked{note: n})
+				}
+			} else {
+				reranker.succeeded()
+				rankedNotes = nil
+				for i, n := range batch {
+					rankedNotes = append(rankedNotes, &ranked{note: n, score: scores[i]})
+				}
+				sort.SliceStable(rankedNotes, func(i, j int) bool {
+					a, b := rankedNotes[i], rankedNotes[j]
+					if a.score != b.score {
+						return a.score > b.score
+					}
+					return semanticNewer(a.note, b.note)
+				})
+				if trace != nil {
+					for _, n := range rankedNotes {
+						trace.RerankedIDs = append(trace.RerankedIDs, n.note.ID)
+					}
+				}
+			}
+		} else {
+			reranker.succeeded()
+		}
+	}
 	// Embedding work can overlap a replacement or forget in another process.
 	// Revalidate lexical candidates too, not only the semantic branch.
 	live, err := s.Current(ctx, repo, kind)

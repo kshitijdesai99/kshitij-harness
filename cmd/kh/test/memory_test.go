@@ -47,6 +47,20 @@ func TestMemoryCLIProvenanceAndSemanticSearch(t *testing.T) {
 	}
 	s.Close()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/rerank" {
+			var in struct {
+				Documents []string `json:"documents"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+				t.Error(err)
+			}
+			results := make([]map[string]any, len(in.Documents))
+			for i := range results {
+				results[i] = map[string]any{"index": i, "relevance_score": 0.9}
+			}
+			json.NewEncoder(w).Encode(map[string]any{"results": results})
+			return
+		}
 		var in struct {
 			Input []string `json:"input"`
 		}
@@ -60,7 +74,7 @@ func TestMemoryCLIProvenanceAndSemanticSearch(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{"embeddings": vectors})
 	}))
 	defer server.Close()
-	cfg, _ := json.Marshal(map[string]any{"memory_model": "off", "memory_embedding_url": server.URL + "/api/embed", "memory_embedding_model": "test-model"})
+	cfg, _ := json.Marshal(map[string]any{"memory_model": "off", "memory_embedding_url": server.URL + "/api/embed", "memory_embedding_model": "test-model", "memory_reranker_url": server.URL + "/rerank"})
 	if err := os.WriteFile(filepath.Join(home, ".kh", "config.json"), cfg, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +96,9 @@ func TestMemoryCLIProvenanceAndSemanticSearch(t *testing.T) {
 	}
 	if out := run("search", "reduce context footprint"); !strings.Contains(out, second.Text) || strings.Contains(out, first.Text) {
 		t.Fatalf("semantic: %s", out)
+	}
+	if out := run("explain", "reduce context footprint"); !strings.Contains(out, "rerank enabled: true; fallback: false") || !strings.Contains(out, "reranked: [") {
+		t.Fatalf("reranking trace: %s", out)
 	}
 	if out := run("get", fmt.Sprint(first.ID)); !strings.Contains(out, "state: superseded") || !strings.Contains(out, first.ContextSummary) {
 		t.Fatalf("get: %s", out)

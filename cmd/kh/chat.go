@@ -27,6 +27,7 @@ type chat struct {
 	model             provider.Provider
 	backend, id, repo string
 	memory            *memory.Store
+	memoryActive      bool // applied pipeline, distinct from persisted opt-in after startup failure
 	budget            memory.Budget
 	learn             *learn.Learner // nil when automatic memory is off
 	input             *terminal.Console
@@ -81,6 +82,7 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 	}
 	currentQuery := msg
 	beforeMessage := func(ctx context.Context, query string) error {
+		c.reloadMemory(ctx)
 		currentQuery = query
 		if c.learn != nil {
 			c.learn.MessageAt(query, recent, time.Now())

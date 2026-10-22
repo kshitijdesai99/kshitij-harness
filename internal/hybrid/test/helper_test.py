@@ -1,0 +1,145 @@
+"""Exercise the embedded server without torch, model downloads, or fixed ports."""
+import http.client
+import importlib.util
+import json
+from pathlib import Path
+import threading
+import unittest
+from unittest.mock import patch
+import types
+
+spec = importlib.util.spec_from_file_location("reranker", Path(__file__).parent.parent / "reranker.py")
+runtime = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runtime)
+
+
+class ServerTests(unittest.TestCase):
+    def setUp(self):
+        runtime.Handler.scorer = staticmethod(lambda q, docs: [
+            {"index": i, "relevance_score": 0.5} for i in range(len(docs))])
+        self.server = runtime.ThreadingHTTPServer(("127.0.0.1", 0), runtime.Handler)
+        self.thread = threading.Thread(target=self.server.serve_forever)
+        self.thread.start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join()
+
+    def request(self, path="/rerank", data=None, method="POST"):
+        conn = http.client.HTTPConnection(*self.server.server_address, timeout=2)
+        try:
+            conn.request(method, path, json.dumps(data))
+            response = conn.getresponse()
+            return response.status, json.loads(response.read())
+        finally:
+            conn.close()
+
+    def test_health_identity_and_response_shape(self):
+        status, data = self.request("/health", method="GET")
+        self.assertEqual((status, data), (200, {"model": runtime.MODEL, "ready": True}))
+        status, data = self.request(data={"query": "q", "documents": ["a", "b"]})
+        self.assertEqual(status, 200)
+        self.assertEqual([r["index"] for r in data["results"]], [0, 1])
+        self.assertEqual(data["results"][0]["relevance_score"], 0.5)
+
+    def test_invalid_requests(self):
+        for data in [None, [], {}, {"query": "", "documents": ["d"]},
+                     {"query": "q", "documents": []},
+                     {"query": "q", "documents": [None]},
+                     {"query": "q", "documents": ["d"] * 129}]:
+            with self.subTest(data=data):
+                self.assertEqual(self.request(data=data)[0], 400)
+        conn = http.client.HTTPConnection(*self.server.server_address, timeout=2)
+        try:
+            conn.putrequest("POST", "/rerank")
+            conn.putheader("Content-Length", str(runtime.MAX_BODY + 1))
+            conn.endheaders()
+            response = conn.getresponse()
+            self.assertEqual(response.status, 413)
+            response.read()
+        finally:
+            conn.close()
+        self.assertEqual(self.request("/other")[0], 404)
+
+    def test_inference_failure_is_sanitized(self):
+        def fail(*_):
+            raise ValueError("private memory contents")
+        runtime.Handler.scorer = staticmethod(fail)
+        status, body = self.request(data={"query": "q", "documents": ["d"]})
+        self.assertEqual(status, 500)
+        self.assertNotIn("private", str(body))
+        self.assertFalse(runtime.Handler.inference_lock.locked())
+
+    def test_busy_inference_does_not_block_health(self):
+        runtime.Handler.inference_lock.acquire()
+        try:
+            self.assertEqual(self.request(data={"query": "q", "documents": ["d"]})[0], 503)
+            self.assertEqual(self.request("/health", method="GET")[0], 200)
+        finally:
+            runtime.Handler.inference_lock.release()
+
+
+class ModelTests(unittest.TestCase):
+    def test_download_is_explicit(self):
+        calls = []
+        hub = types.SimpleNamespace(snapshot_download=lambda *a, **kw: calls.append((a, kw)))
+        with patch.dict("sys.modules", huggingface_hub=hub):
+            runtime.download("/private/cache")
+        self.assertEqual(calls[0][0], (runtime.MODEL,))
+        self.assertEqual(calls[0][1]["cache_dir"], "/private/cache")
+        self.assertIn("*.safetensors", calls[0][1]["allow_patterns"])
+
+    def test_loading_is_offline_and_scores_yes_no(self):
+        calls = []
+        class Tensor:
+            def __getitem__(self, key):
+                calls.append(("select", key))
+                return self
+            def float(self): return self
+            def item(self): return 0.8
+        class Inputs(dict):
+            def to(self, device): return self
+        class Tokenizer:
+            def convert_tokens_to_ids(self, text): return {"no": 17, "yes": 42}[text]
+            def encode(self, text, **kwargs):
+                calls.append(("encode", text, kwargs))
+                return [1, 2]
+            def pad(self, inputs, **kwargs):
+                calls.append(("pad", inputs, kwargs))
+                return Inputs(inputs)
+        class Model:
+            def to(self, device): return self
+            def eval(self): return self
+            def model(self, **kwargs):
+                calls.append(("forward", kwargs))
+                return types.SimpleNamespace(last_hidden_state=Tensor())
+            def lm_head(self, hidden): return Tensor()
+        class Factory:
+            def __init__(self, value): self.value = value
+            def from_pretrained(self, *args, **kwargs):
+                calls.append(("load", args, kwargs))
+                return self.value
+        torch = types.SimpleNamespace(
+            cuda=types.SimpleNamespace(is_available=lambda: False),
+            backends=types.SimpleNamespace(mps=types.SimpleNamespace(is_available=lambda: False)),
+            float32="float32", inference_mode=lambda: lambda f: f,
+            softmax=lambda t, dim: t)
+        transformers = types.SimpleNamespace(AutoTokenizer=Factory(Tokenizer()), AutoModelForCausalLM=Factory(Model()))
+        with patch.dict("sys.modules", torch=torch, transformers=transformers):
+            score = runtime.load_scorer("/cache")
+            results = score("find my preference", ["memory a", "memory b"])
+        self.assertEqual([r["relevance_score"] for r in results], [0.8, 0.8])
+        loads = [c for c in calls if c[0] == "load"]
+        self.assertEqual(len(loads), 2)
+        self.assertTrue(all(c[2]["local_files_only"] for c in loads))
+        self.assertTrue(all(c[2]["cache_dir"] == "/cache" for c in loads))
+        self.assertEqual(loads[0][2]["padding_side"], "left")
+        self.assertIn(("select", (0, [17, 42])), calls)
+        forward = [c for c in calls if c[0] == "forward"]
+        self.assertTrue(all(c[1]["use_cache"] is False for c in forward))
+        self.assertTrue(any(c[0] == "encode" and "<Query>: find my preference" in c[1] for c in calls))
+
+
+if __name__ == "__main__":
+    unittest.main()
