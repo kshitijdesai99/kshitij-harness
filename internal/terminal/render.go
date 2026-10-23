@@ -67,7 +67,7 @@ func (r Renderer) Statistics(text string) {
 
 func (r Renderer) Query(text string) {
 	r.FlushReply()
-	fmt.Fprintln(r.Out, Color(r.Out, Query, "> "+text))
+	fmt.Fprintln(r.Out, colorQuery(r.Out, text, "> "))
 }
 
 func (r Renderer) Action(text string) {

@@ -209,5 +209,5 @@ func (c *Console) readPlain() {
 type queryPainter struct{ out io.Writer }
 
 func (p queryPainter) Paint(line []rune, _ int) []rune {
-	return []rune(Color(p.out, Query, string(line)))
+	return []rune(colorQuery(p.out, string(line), ""))
 }

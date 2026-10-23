@@ -6,7 +6,6 @@ package learn
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -72,12 +71,23 @@ func (l *Learner) enqueue(job func(context.Context)) {
 	}
 }
 
+// Queued input can join user and peer lines. Skip the composite rather than
+// attributing a worker directive (or its resulting tool work) to the user.
+func containsPeerMessage(msg string) bool {
+	for _, line := range strings.Split(msg, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "[from kh:") {
+			return true
+		}
+	}
+	return false
+}
+
 // Message queues the pre-hook for a user message.
 func (l *Learner) Message(msg string) { l.MessageAt(msg, "", time.Now()) }
 
 // MessageAt preserves the event time and recent discussion supplied by chat.
 func (l *Learner) MessageAt(msg, contextSummary string, at time.Time) {
-	if strings.TrimSpace(msg) == "" || strings.HasPrefix(strings.TrimSpace(msg), "[from kh:") {
+	if strings.TrimSpace(msg) == "" || containsPeerMessage(msg) {
 		return
 	}
 	l.enqueue(func(ctx context.Context) { l.extract(ctx, msg, contextSummary, nil, "", at, false) })
@@ -90,9 +100,12 @@ func (l *Learner) Finished(steps []Step, reply string) {
 
 // FinishedAt supplies the query, bounded recent context, and event time.
 func (l *Learner) FinishedAt(msg, recentContext string, steps []Step, reply string, at time.Time) {
-	if strings.TrimSpace(reply) != "" && !strings.HasPrefix(strings.TrimSpace(msg), "[from kh:") {
+	if strings.TrimSpace(reply) != "" && !containsPeerMessage(msg) {
 		steps = append([]Step(nil), steps...)
 		l.enqueue(func(ctx context.Context) { l.extract(ctx, msg, recentContext, steps, reply, at, true) })
+		if procedureEligible(msg, steps) {
+			l.enqueue(func(ctx context.Context) { l.procedures(ctx, msg, recentContext, steps, reply, at) })
+		}
 	}
 	l.enqueue(l.summarize)
 }
@@ -199,7 +212,7 @@ func (l *Learner) extract(ctx context.Context, msg, recentContext string, steps 
 	}
 	var out struct{ Save []save }
 	if err := l.ask(ctx, system, prompt, &out); err != nil {
-		l.notice("Memory hook failed: extraction unavailable; no note saved.")
+		l.notice("Memory hook failed: extraction unavailable (" + err.Error() + "); no note saved.")
 		return
 	}
 	seen := shown(cur)
@@ -342,7 +355,7 @@ func (l *Learner) summarize(ctx context.Context) {
 		Keys     []string
 	}
 	if err := l.ask(ctx, summaryPrompt, "Current notes:\n"+listing(cur), &out); err != nil {
-		l.notice("Memory summary failed: extraction unavailable; previous summary retained.")
+		l.notice("Memory summary failed: extraction unavailable (" + err.Error() + "); previous summary retained.")
 		return
 	}
 	byKey := map[string]memory.Note{}
@@ -389,26 +402,6 @@ func contains(list []string, s string) bool {
 // ask runs one tool-less model call and decodes its JSON reply.
 func (l *Learner) ask(ctx context.Context, system, prompt string, v any) error {
 	return Ask(ctx, l.model, system, prompt, v)
-}
-
-func Ask(ctx context.Context, model Model, system, prompt string, v any) error {
-	out := &capture{}
-	p, err := model(system, out)
-	if err != nil {
-		return err
-	}
-	calls, err := p.Step(ctx, prompt, nil)
-	if err != nil {
-		return err
-	}
-	if len(calls) != 0 {
-		return fmt.Errorf("memory hook asked to run tools")
-	}
-	text := strings.TrimSpace(out.text.String())
-	if i, j := strings.Index(text, "{"), strings.LastIndex(text, "}"); i >= 0 && j > i {
-		text = text[i : j+1] // tolerate code fences or a stray sentence around the JSON
-	}
-	return json.Unmarshal([]byte(text), v)
 }
 
 type capture struct{ text strings.Builder }

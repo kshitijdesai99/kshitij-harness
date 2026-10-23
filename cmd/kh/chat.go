@@ -83,7 +83,12 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 		}
 	}
 	currentQuery := msg
+	var origin learn.RunOrigin
 	beforeMessage := func(ctx context.Context, query string) error {
+		origin.Observe(query)
+		// Fence immediately, even if this run is later cancelled or fails.
+		recent = origin.Context(recent)
+		c.recentContext = origin.Context(c.recentContext)
 		c.reloadMemory(ctx)
 		currentQuery = query
 		if c.learn != nil {
@@ -129,10 +134,14 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 		if r, ok := c.model.(provider.LastResponder); ok {
 			reply = r.LastResponse()
 		}
-		if c.learn != nil {
-			c.learn.FinishedAt(currentQuery, recent, steps, reply, time.Now())
+		// Tools and replies span message boundaries. A clean follow-up cannot
+		// relabel evidence from a peer-coordinated run for durable learning.
+		if origin.Eligible() {
+			if c.learn != nil {
+				c.learn.FinishedAt(currentQuery, recent, steps, reply, time.Now())
+			}
+			c.recentContext = memoryContext("User: "+currentQuery) + "\n" + memoryContext("Assistant: "+reply)
 		}
-		c.recentContext = memoryContext("User: "+currentQuery) + "\n" + memoryContext("Assistant: "+reply)
 	}
 	c.showMemory()
 	if s := c.model.Stats(); s.In > 0 {

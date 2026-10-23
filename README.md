@@ -1,6 +1,10 @@
 # kh
 
-A terminal coding assistant in Go: chat, run shell commands, edit files, and delegate work to native tmux agents.
+A lightweight coding harness with agent delegation and a database-backed memory architecture for continuous learning and relevant context retrieval.
+
+You set the direction; the main agent coordinates tasks, delegates to native tmux agents or external coding tools such as Claude Code, and verifies results. The human-as-CEO, agent-as-manager philosophy keeps routine coordination off your plate while allowing the main agent to implement and integrate changes when useful.
+
+kh provides chat, shell commands, file edits, shared memory, and agent coordination. The manager model is the working philosophy, not a guarantee of automatic delegation. See the [manual](manual/README.md) for implemented behavior and design decisions.
 
 ![kh terminal showing rendered Markdown responses](sample.png)
 
@@ -50,22 +54,21 @@ Optionally create `~/.kh/config.json`, specifying only overrides:
 
 CLI flags override configuration. Automatic command and requested folder-write approval is on by default. Use `--auto=false` for approval prompts in one session, or `/auto off` to persist that preference. `-i` remains a compatibility alias for interactive mode.
 
-On macOS, shell reads are allowed wherever OS permissions permit; writes are sandboxed to the project, configured tool/cache directories, and folders granted for the running session. Outside-folder edits and declared shell `write_dirs` are automatically approved unless auto is disabled. `/auto on` persists `"auto": true`; `--auto` enables it for one session. This keeps sandbox and pinned-path checks; it does not grant the whole filesystem at startup. Workers and new/forked chats inherit the active policy, not directory grants. `/auto off` restores command and new-folder prompts; existing grants remain until restart. `--nosandbox` disables shell write restrictions. Other Unix systems have no OS-level shell sandbox; approvals alone are not a security boundary.
+On macOS, shell writes are sandboxed to the project, configured tool/cache directories, and session-approved folders; automatic approval does not grant the entire filesystem. Other Unix systems have no OS-level shell sandbox, so approvals alone are not a security boundary. See [safety and sessions](manual/safety-and-sessions.md) for write grants, worker policy, and sandbox controls.
 
 ## Memory and agents
 
-kh selectively saves lasting instructions, established facts, accepted decisions, and gotchas in `~/.kh/memory.db`; it does not archive every discussion into memory. Notes keep discussion context, statement/save timestamps, and links to the versions they replace. Repo and global scopes remain separate. Delegated workers read shared memory; user-facing chats learn from exchanges. Use `kh memory status`, `search`, `get`, or `history` to inspect them; `kh memory explain "query"` shows retrieval candidates and fallback status. Saved chats live separately in `~/.kh/sessions`.
+kh aims to learn from every conversation while selectively saving useful memories, not archiving every discussion. Post-query/pre-answer and post-response hooks queue background learning in user-facing chats; delegated workers only retrieve shared memory. Reliable, well-referenced retrieval is the foundation for useful intelligence: applicable notes with provenance and on-demand detail matter more than collecting more notes. Runtime knowledge lives in `~/.kh/memory.db`, separate from saved chats in `~/.kh/sessions` and these explanatory docs. Use `kh memory status`, `search`, `get`, or `history` to inspect it; `kh memory explain "query"` shows retrieval candidates and fallback status.
 
-Search uses keywords by default, with no model downloads. Optional hybrid mode requires Ollama and Python 3.10+ with venv support. `/memory hybrid on` explicitly downloads and verifies Qwen3-Embedding 0.6B and Qwen3-Reranker 0.6B before enabling hybrid retrieval; `/memory hybrid off` immediately restores keyword-only retrieval without deleting models or vectors. Open chats pick up mode changes on their next message. Optional `memory_embedding_url`, `memory_embedding_model`, and `memory_reranker_url` settings override the local defaults. Startup only uses cached models; embedding or reranking failures fall back to keywords with a notice. `memory_max_tokens` bounds injected memory (estimated as characters/4); context and history are fetched on demand. Managed runtime files live in `~/.kh/hybrid`, which remains writable under the shell sandbox without granting access to config or login files.
+Search uses keywords by default, with no model downloads. Optional `/memory hybrid on` sets up verified local embedding and reranking models; it requires Ollama and Python 3.10+ with venv support. `/memory hybrid off` restores keyword-only retrieval. Failures fall back to keywords with a notice; `/memory explain` shows the last retrieval’s diagnostic details.
 
-If hybrid retrieval falls back, the notice identifies the embedding or reranking stage. `kh memory explain "query"` reports which stages fell back; `/memory hybrid on` retries setup and verification. Reranking waits up to 16 seconds for busy workers and allows 8 seconds for inference, within a 25-second request budget. Keyword-only mode needs neither service.
+Background learning also recognizes useful workflows demonstrated by successful tool results and saves them as named procedures without a review prompt. Full procedures and inert script assets live in the database; compact hints are retrieved first, and the memory tool's `load` action fetches the full item on demand. Saving or loading never executes them. See [memory and procedures](manual/memory.md) for controls, provenance, and hybrid retrieval details.
 
-Chat notices show compact stage counts, loaded memory names, and retrieval time. `/memory explain` displays the last retrieval’s full IDs and scores without searching again. Common standalone greetings, check-ins, and acknowledgments skip topic search, as does knowledge already present in the chat; corrections, required summary notes, and explicit named references still load. Successful reranking can return no relevant memories rather than filling quotas with weak matches.
+Ask kh to delegate work using native agents. Workers share project files: assign separate files or coordinate edits. Their tmux panes close after successful tasks; failures stay visible, and `keep` retains a worker for follow-ups. Internal agent messages appear in amber, distinct from your query color. External coding CLIs run through shell tools, not a native MCP integration. See [delegation and tools](manual/delegation.md).
 
-Managed rerankers authenticate their helper revision. Normal startup never replaces a different build’s helper; `/memory hybrid on` explicitly upgrades it gracefully. Scoring requests reject a mismatched revision instead of silently using the wrong prompt. Unknown or legacy helpers without an ownership handshake are never terminated automatically; the error explains the one-time manual stop needed before adopting the managed lifecycle.
+## Manual
 
-Named procedural references keep full procedures and inert script assets in the same database. Names, aliases, and topics retrieve compact hints; the memory tool's `load` action fetches the full item on demand. `kh memory reference demo` stores a sound example without playing it. Use `reference put/get/export/import/asset` to manage individual versioned references; imports never execute assets or overwrite existing topics. Execute requested assets only through normal approved, sandboxed commands—not during retrieval.
-
-See the [memory architecture](memory-architecture.svg) for retrieval, saving, and reference-loading flows.
-
-Ask kh to delegate work using native agents. Workers share project files: assign separate files or coordinate edits. Their tmux panes close after successful tasks; failures stay visible, and `keep` retains a worker for follow-ups.
+- [Architecture](manual/architecture.md): turn loop, providers, and presentation.
+- [Memory and procedures](manual/memory.md): database-backed knowledge and retrieval.
+- [Delegation and tools](manual/delegation.md): manager workflow, workers, and external tools.
+- [Safety and sessions](manual/safety-and-sessions.md): approvals, sandbox boundaries, resume, and updates.

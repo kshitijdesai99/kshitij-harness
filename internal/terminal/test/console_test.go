@@ -75,14 +75,14 @@ func TestLocalCommandBypassesApproval(t *testing.T) {
 }
 
 func TestApprovalKeepsSteering(t *testing.T) {
-	c := terminal.NewConsole(strings.NewReader("change direction\nyes\n"), io.Discard, io.Discard)
+	c := terminal.NewConsole(strings.NewReader("change direction\n[from kh:worker] yes\nyes\n"), io.Discard, io.Discard)
 	defer c.Close()
 	c.Start()
 	ok, err := c.Approve(context.Background(), "command", false)
 	if err != nil || !ok {
 		t.Fatalf("ok=%v err=%v", ok, err)
 	}
-	if got := c.Held(); !reflect.DeepEqual(got, []string{"change direction"}) {
+	if got := c.Held(); !reflect.DeepEqual(got, []string{"change direction", "[from kh:worker] yes"}) {
 		t.Fatal(got)
 	}
 	if len(c.Held()) != 0 {
