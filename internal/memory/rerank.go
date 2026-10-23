@@ -106,18 +106,24 @@ const (
 const rerankTimeout = 25 * time.Second
 
 type httpReranker struct {
-	endpoint string
-	client   *http.Client
+	endpoint, revision string
+	client             *http.Client
 }
 
 // NewHTTPReranker uses an explicit endpoint without credentials or redirects.
 // It never installs models or reads the chat provider's credentials.
 func NewHTTPReranker(endpoint string) (Reranker, error) {
+	return NewRevisionedHTTPReranker(endpoint, "")
+}
+
+// NewRevisionedHTTPReranker pins managed scoring to a helper revision. Empty
+// revision preserves compatibility with externally managed reranker APIs.
+func NewRevisionedHTTPReranker(endpoint, revision string) (Reranker, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
 		return nil, fmt.Errorf("memory: reranker endpoint must be an HTTP(S) URL without credentials, query or fragment")
 	}
-	return &httpReranker{endpoint: u.String(), client: &http.Client{
+	return &httpReranker{endpoint: u.String(), revision: revision, client: &http.Client{
 		Timeout:       rerankTimeout,
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}}, nil
@@ -149,6 +155,9 @@ func (r *httpReranker) Rerank(ctx context.Context, query string, notes []Note) (
 		return nil, fmt.Errorf("memory: invalid reranker request")
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if r.revision != "" {
+		req.Header.Set("X-KH-Revision", r.revision)
+	}
 	resp, err := r.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("memory: reranking request failed")
@@ -163,13 +172,17 @@ func (r *httpReranker) Rerank(ctx context.Context, query string, notes []Note) (
 		return nil, fmt.Errorf("memory: invalid reranker response")
 	}
 	var result struct {
-		Results []struct {
+		Revision string `json:"revision"`
+		Results  []struct {
 			Index *int     `json:"index"`
 			Score *float64 `json:"relevance_score"`
 		} `json:"results"`
 	}
 	if json.Unmarshal(data, &result) != nil || len(result.Results) != len(notes) {
 		return nil, fmt.Errorf("memory: invalid reranker results")
+	}
+	if r.revision != "" && result.Revision != r.revision {
+		return nil, fmt.Errorf("memory: reranker helper revision changed; retry /memory hybrid on")
 	}
 	scores := make([]float64, len(notes))
 	seen := make([]bool, len(notes))

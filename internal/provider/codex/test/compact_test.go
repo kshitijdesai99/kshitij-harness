@@ -64,6 +64,9 @@ func TestCompactSummarizesWithoutToolsAndResumes(t *testing.T) {
 		if len(request.Tools) != 0 || request.ToolChoice != "none" || !strings.Contains(request.Instructions, "Do not use tools") {
 			t.Fatalf("unsafe compaction request: %s", body)
 		}
+		if !strings.Contains(request.Instructions, "not new user requests") || !strings.Contains(request.Instructions, "Omit unrelated recalled topics") {
+			t.Fatalf("compaction could promote recalled noise into user goals: %s", body)
+		}
 		if strings.Contains(strings.ToLower(request.Instructions), "agents") || strings.Contains(strings.ToLower(request.Instructions), "curl") {
 			t.Fatalf("operational rules retained in compaction: %s", body)
 		}

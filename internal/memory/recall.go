@@ -199,7 +199,11 @@ func (s *Store) recall(ctx context.Context, repo, query string, seen map[int64]b
 	if trace != nil {
 		searchTrace = &trace.Search
 	}
-	if reason := topicSearchSkipReason(query); reason != "" {
+	reason := topicSearchSkipReason(query)
+	if reason == "" && used >= total {
+		reason = "memory budget exhausted"
+	}
+	if reason != "" {
 		if searchTrace != nil {
 			searchTrace.SkipReason = reason
 		}
@@ -218,24 +222,45 @@ func (s *Store) recall(ctx context.Context, repo, query string, seen map[int64]b
 	return Header + "\n" + strings.Join(lines, "\n"), nil
 }
 
+// Social units must cover the whole message. Unknown words, code, filenames,
+// and mixed task requests conservatively retain ordinary retrieval.
+const socialGreeting = `(?:hi|hey|hello|greetings|good (?:morning|afternoon|evening))(?: (?:there|folks|everyone|friend))?`
+const socialCheckin = `(?:whats up|what is up|whatsup|sup|hows it going|how is it going|how are you(?: doing| feeling)?|hows your day(?: going)?|how is your day(?: going)?|how have you been)`
+const socialAck = `(?:thanks(?: a lot| so much| very much)?|thank you(?: so much| very much)?|ok|okay|got it|sounds good|all good|understood|cool|no problem|(?:im|i am) (?:good|fine|well|okay))`
+const socialUnit = `(?:` + socialGreeting + `|` + socialCheckin + `|` + socialAck + `)`
+
+var socialMessage = regexp.MustCompile(`^` + socialUnit + `(?: (?:and )?` + socialUnit + `){0,2}$`)
+
 // topicSearchSkipReason only gates automatic topic recall, not explicit searches,
-// corrections, required summary notes, or named references. Exact phrases avoid
-// suppressing short topics and mixed messages such as "hey, fix the tests".
+// corrections, required summary notes, or named references. Whole-message matching
+// preserves short topics and mixed requests such as "hey, fix the tests".
 func topicSearchSkipReason(query string) string {
-	q := strings.Join(strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	}), " ")
-	switch q {
-	case "":
-		return "no topic"
-	case "hi", "hey", "hello", "hi there", "hey there", "hello there", "greetings",
-		"good morning", "good afternoon", "good evening",
-		"thanks", "thank you", "thanks a lot", "thank you very much",
-		"ok", "okay", "got it", "sounds good":
-		return "standalone greeting or acknowledgment"
-	default:
-		return ""
+	for _, word := range strings.Fields(query) {
+		if strings.Contains(strings.Trim(word, ".!?;:\"'"), ".") {
+			return "" // Filenames and dotted identifiers are not small talk.
+		}
 	}
+	var normalized strings.Builder
+	for _, r := range strings.ToLower(query) {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsSpace(r):
+			normalized.WriteRune(r)
+		case r == '\'' || r == '’':
+			// Match contractions both with and without an apostrophe.
+		case strings.ContainsRune(".,!?;:\"", r) || unicode.Is(unicode.So, r) || r == '\uFE0F':
+			normalized.WriteByte(' ')
+		default:
+			return "" // Code punctuation is not a conversational separator.
+		}
+	}
+	q := strings.Join(strings.Fields(normalized.String()), " ")
+	if q == "" {
+		return "no topic"
+	}
+	if socialMessage.MatchString(q) {
+		return "standalone greeting or acknowledgment"
+	}
+	return ""
 }
 
 // referenceMentions inspects names/aliases only, never full procedures/assets.

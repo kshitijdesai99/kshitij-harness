@@ -40,6 +40,8 @@ type chat struct {
 	forkState         []byte // last completed conversation; never read a streaming model
 	forkModel         string
 	forkEffort        string
+
+	lastMemoryDiagnostic string // last retrieval only; no query or note bodies
 }
 
 func (c *chat) turn(ctx context.Context, msg string) error {
@@ -95,7 +97,9 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 			}
 			retrievalStart := time.Now()
 			relevant, trace, err := c.memory.RecallWithTrace(ctx, c.repo, query, memory.Seen(state), c.budget)
-			c.ui.Notice(fmt.Sprintf("%s (%s)", trace.Diagnostic(err), time.Since(retrievalStart).Round(time.Millisecond)))
+			elapsed := time.Since(retrievalStart).Round(time.Millisecond)
+			c.lastMemoryDiagnostic = fmt.Sprintf("%s (%s)", trace.Diagnostic(err), elapsed)
+			c.ui.Notice(fmt.Sprintf("%s (%s)", trace.Summary(err), elapsed))
 			if err != nil {
 				return fmt.Errorf("retrieve memory: %w", err)
 			}

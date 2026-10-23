@@ -1,4 +1,6 @@
 """Exercise the embedded server without torch, model downloads, or fixed ports."""
+import hashlib
+import hmac
 import http.client
 import importlib.util
 import json
@@ -16,6 +18,7 @@ spec.loader.exec_module(runtime)
 
 class ServerTests(unittest.TestCase):
     def setUp(self):
+        runtime.Handler.draining.clear()
         runtime.Handler.scorer = staticmethod(lambda q, docs: [
             {"index": i, "relevance_score": 0.5} for i in range(len(docs))])
         self.server = runtime.ThreadingHTTPServer(("127.0.0.1", 0), runtime.Handler)
@@ -27,10 +30,10 @@ class ServerTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join()
 
-    def request(self, path="/rerank", data=None, method="POST"):
+    def request(self, path="/rerank", data=None, method="POST", headers=None):
         conn = http.client.HTTPConnection(*self.server.server_address, timeout=2)
         try:
-            conn.request(method, path, json.dumps(data))
+            conn.request(method, path, json.dumps(data), headers or {})
             response = conn.getresponse()
             return response.status, json.loads(response.read())
         finally:
@@ -38,11 +41,56 @@ class ServerTests(unittest.TestCase):
 
     def test_health_identity_and_response_shape(self):
         status, data = self.request("/health", method="GET")
-        self.assertEqual((status, data), (200, {"model": runtime.MODEL, "ready": True}))
+        self.assertEqual((status, data), (200, {"model": runtime.MODEL, "ready": True, "revision": runtime.REVISION}))
         status, data = self.request(data={"query": "q", "documents": ["a", "b"]})
         self.assertEqual(status, 200)
+        self.assertEqual(data["revision"], runtime.REVISION)
         self.assertEqual([r["index"] for r in data["results"]], [0, 1])
         self.assertEqual(data["results"][0]["relevance_score"], 0.5)
+
+    def test_revision_header_fences_managed_inference(self):
+        scorer = Mock(return_value=[])
+        runtime.Handler.scorer = staticmethod(scorer)
+        for secret in ("", "kh-helper-v1:" + "f" * 64):
+            with self.subTest(secret=bool(secret)), patch.object(runtime, "SECRET", secret):
+                for headers, expected in (({}, 409 if secret else 200),
+                                          ({"X-KH-Revision": "wrong"}, 409),
+                                          ({"X-KH-Revision": runtime.REVISION}, 200)):
+                    scorer.reset_mock()
+                    status, data = self.request(data={"query": "q", "documents": ["d"]}, headers=headers)
+                    self.assertEqual(status, expected)
+                    self.assertEqual(data["revision"], runtime.REVISION)
+                    self.assertEqual(scorer.call_count, 1 if expected == 200 else 0)
+
+    def test_managed_shutdown_requires_secret_and_drains_inference(self):
+        secret, challenge = "test-private-secret", "fresh-challenge"
+        with patch.object(runtime, "SECRET", secret):
+            status, health = self.request("/health", method="GET", headers={"X-KH-Challenge": challenge})
+            self.assertEqual(status, 200)
+            proof = hmac.new(secret.encode(), ("health:" + challenge + ":" + runtime.REVISION).encode(), hashlib.sha256).hexdigest()
+            self.assertEqual(health["proof"], proof)
+            for headers in ({}, {"Authorization": "Bearer é"}, {"Authorization": "Bearer " + proof}):
+                self.assertEqual(self.request("/shutdown", headers=headers)[0], 403)
+            # Health is an unauthenticated signing oracle: even a challenge
+            # containing the shutdown prefix must not mint control authority.
+            _, oracle = self.request("/health", method="GET", headers={"X-KH-Challenge": "shutdown:" + challenge})
+            with patch.object(self.server, "shutdown") as rejected:
+                self.assertEqual(self.request("/shutdown", headers={"Authorization": "Bearer " + oracle["proof"], "X-KH-Challenge": challenge})[0], 403)
+                self.assertFalse(rejected.called)
+            auth = hmac.new(secret.encode(), ("shutdown:" + challenge + ":" + runtime.REVISION).encode(), hashlib.sha256).hexdigest()
+            with patch.object(self.server, "shutdown") as shutdown:
+                runtime.Handler.inference_lock.acquire()
+                try:
+                    self.assertEqual(self.request("/shutdown", headers={"Authorization": "Bearer " + auth, "X-KH-Challenge": challenge})[0], 200)
+                    self.assertFalse(shutdown.called, "must drain active inference before shutdown")
+                    self.assertEqual(self.request(data={"query": "q", "documents": ["d"]}, headers={"X-KH-Revision": runtime.REVISION})[0], 503)
+                finally:
+                    runtime.Handler.inference_lock.release()
+                for _ in range(100):
+                    if shutdown.called:
+                        break
+                    time.sleep(0.01)
+                self.assertTrue(shutdown.called)
 
     def test_invalid_requests(self):
         for data in [None, [], {}, {"query": "", "documents": ["d"]},
@@ -70,7 +118,8 @@ class ServerTests(unittest.TestCase):
         status, body = self.request(data={"query": "q", "documents": ["d"]})
         self.assertEqual(status, 500)
         self.assertNotIn("private", str(body))
-        self.assertFalse(runtime.Handler.inference_lock.locked())
+        self.assertTrue(runtime.Handler.inference_lock.acquire(timeout=1))
+        runtime.Handler.inference_lock.release()
 
     def test_concurrent_callers_wait_and_health_remains_responsive(self):
         entered, release, waiting = threading.Event(), threading.Event(), threading.Event()

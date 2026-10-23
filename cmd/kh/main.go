@@ -358,7 +358,7 @@ func (c *chat) command(ctx context.Context, line string) {
 			model, effort = p.Use("", arg)
 		}
 	default:
-		fmt.Println("/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/new   open a fresh session in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message\n/auto [on|off]   persist automatic command and folder approval; existing grants remain until restart\n/memory hybrid on|off   enable local hybrid retrieval or keyword-only memory")
+		fmt.Println("/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/new   open a fresh session in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message\n/auto [on|off]   persist automatic command and folder approval; existing grants remain until restart\n/memory hybrid on|off   enable local hybrid retrieval or keyword-only memory\n/memory explain   show the last retrieval’s full candidate IDs and scores")
 		return
 	}
 	fmt.Println(terminal.Color(os.Stdout, terminal.Muted, fmt.Sprintf("(model %s, effort %s)", model, effort)))

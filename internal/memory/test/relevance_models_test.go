@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"kh/internal/hybrid"
 	"kh/internal/memory"
 )
 
@@ -81,7 +82,7 @@ func TestLocalModelMemoryRelevance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := memory.NewHTTPReranker("http://127.0.0.1:11435/rerank")
+	r, err := memory.NewRevisionedHTTPReranker(hybrid.DefaultEndpoint, hybrid.HelperRevision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,6 +92,8 @@ func TestLocalModelMemoryRelevance(t *testing.T) {
 	}
 	for _, tc := range []struct{ query, want string }{
 		{"hey", ""}, {"hello!", ""}, {"thanks", ""},
+		{"whats up", ""}, {"what's up?", ""}, {"what’s up", ""},
+		{"how's it going?", ""}, {"hello, how are you?", ""}, {"okay, thanks", ""},
 		{"Tell me a joke", ""}, {"Why is the sky blue?", ""}, {"How do I bake sourdough bread?", ""},
 		{"audio", "audio"}, {"tests", "tests"}, {"resume", "resume"}, {"slug", "slug"},
 		{"hi audio", "audio"}, {"hey washer drainage", "washer"},

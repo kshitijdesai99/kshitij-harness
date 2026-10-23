@@ -246,7 +246,12 @@ func configureMemory(s *memory.Store, cfg config.Config) error {
 	if !cfg.HybridMemory() {
 		return disableHybrid(s)
 	}
-	r, err := memory.NewHTTPReranker(or(cfg.MemoryRerankerURL, hybrid.DefaultEndpoint))
+	endpoint := or(cfg.MemoryRerankerURL, hybrid.DefaultEndpoint)
+	revision := ""
+	if endpoint == hybrid.DefaultEndpoint {
+		revision = hybrid.HelperRevision
+	}
+	r, err := memory.NewRevisionedHTTPReranker(endpoint, revision)
 	if err != nil {
 		return err
 	}
@@ -284,7 +289,7 @@ func startMemory(ctx context.Context, s *memory.Store, cfg config.Config) bool {
 	// Mixed/custom endpoints are externally managed: do not require unrelated
 	// local services or caches to use a healthy configured pipeline.
 	if cfg.HybridMemory() && managedEmbedding && managedReranker {
-		startup, cancel := context.WithTimeout(ctx, 60*time.Second)
+		startup, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		err := hybrid.Start(startup)
 		cancel()
 		if err != nil {
@@ -335,8 +340,15 @@ func (c *chat) restoreMemory() {
 }
 
 func (c *chat) memoryCommand(ctx context.Context, args []string) error {
+	if len(args) == 1 && args[0] == "explain" {
+		if c.lastMemoryDiagnostic == "" {
+			return fmt.Errorf("no retrieval details recorded since startup")
+		}
+		c.ui.Notice(c.lastMemoryDiagnostic)
+		return nil
+	}
 	if len(args) != 2 || args[0] != "hybrid" || (args[1] != "on" && args[1] != "off") {
-		return fmt.Errorf("usage: /memory hybrid on|off")
+		return fmt.Errorf("usage: /memory hybrid on|off or /memory explain")
 	}
 	cfg, err := config.Load()
 	if err != nil {

@@ -191,6 +191,8 @@ func TestMemoryHybridCLI(t *testing.T) {
 		if calls.Load() != 0 {
 			t.Fatal("disabled startup contacted models")
 		}
+		stdin.Write([]byte("/memory explain\n"))
+		waitFor("no retrieval details recorded since startup", 1)
 		setMode(true)
 		stdin.Write([]byte("context\n"))
 		waitFor("error: not logged in", 1)
@@ -201,12 +203,19 @@ func TestMemoryHybridCLI(t *testing.T) {
 		if calls.Load() < 2 {
 			t.Fatalf("reload did not enable both services: %d calls", calls.Load())
 		}
+		beforeExplain := calls.Load()
+		stdin.Write([]byte("/memory explain\n"))
+		waitFor("scores:", 1)
+		if calls.Load() != beforeExplain {
+			t.Fatal("explain reran retrieval instead of showing the last trace")
+		}
 		setMode(false)
 		before := calls.Load()
 		stdin.Write([]byte("context\n"))
 		waitFor("error: not logged in", 2)
-		waitFor("Memory search: ok; keyword: ok", 2)
-		waitFor("semantic: off; rerank: off", 1)
+		waitFor("Memory search: skipped;", 1)
+		waitFor("already in chat", 1)
+		waitFor("semantic: not run; rerank: not run", 1)
 		if calls.Load() != before {
 			t.Fatal("disabled reload contacted models")
 		}

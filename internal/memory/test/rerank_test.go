@@ -489,8 +489,58 @@ func TestRerankRecallReservesKindsBeforeCandidateCap(t *testing.T) {
 	}})
 	seen := map[int64]bool{}
 	out, err := s.Recall(context.Background(), repo, "car", seen, memory.Budget{TopInstructions: 1, TopGotchas: 1, TotalChars: 4000})
-	if err != nil || batchSize != 64 || !gotchaScored || !seen[gotcha.ID] || len(seen) != 2 || !strings.Contains(out, "instruction car-instruction-") || !strings.Contains(out, gotcha.Text) {
+	if err != nil || batchSize != 32 || !gotchaScored || !seen[gotcha.ID] || len(seen) != 2 || !strings.Contains(out, "instruction car-instruction-") || !strings.Contains(out, gotcha.Text) {
 		t.Fatalf("kind reservation: batch=%d gotchaScored=%v seen=%v output=%q err=%v", batchSize, gotchaScored, seen, out, err)
+	}
+}
+
+func TestRecallCandidateBudgetPreservesDefaultKindReservations(t *testing.T) {
+	s := open(t)
+	want := map[string]int{"instruction": 10, "gotcha": 10, "fact": 5, "decision": 5, "reference": 5}
+	for kind, count := range want {
+		for i := 0; i < count; i++ {
+			n := memory.Note{Repo: repo, Kind: kind, Key: fmt.Sprintf("car-%s-%d", kind, i), Text: "car automobile", Source: "you"}
+			if kind == "reference" {
+				if _, err := s.PutReference(context.Background(), memory.Reference{Note: n, Procedure: "A procedure."}, 0); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				add(t, s, n)
+			}
+		}
+	}
+	got := map[string]int{}
+	configureRerank(t, s, &fakeReranker{fn: func(ctx context.Context, query string, notes []memory.Note) ([]float64, error) {
+		for _, n := range notes {
+			got[n.Kind]++
+		}
+		return (&fakeReranker{}).Rerank(ctx, query, notes)
+	}})
+	_, trace, err := s.RecallWithTrace(context.Background(), repo, "automobile", nil, memory.Budget{TopInstructions: 10, TopGotchas: 10, TopKnowledge: 5, TotalChars: 20000})
+	if err != nil || !reflect.DeepEqual(got, want) || len(trace.LoadedIDs) != 35 {
+		t.Fatalf("kind reservations: got=%v want=%v trace=%+v err=%v", got, want, trace, err)
+	}
+}
+
+func TestHTTPRerankerPinsManagedRevision(t *testing.T) {
+	for _, revision := range []string{"", "other", "expected"} {
+		t.Run(revision, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("X-KH-Revision") != "expected" {
+					t.Error("missing expected helper revision")
+				}
+				json.NewEncoder(w).Encode(map[string]any{"revision": revision, "results": []map[string]any{{"index": 0, "relevance_score": .9}}})
+			}))
+			defer server.Close()
+			r, err := memory.NewRevisionedHTTPReranker(server.URL, "expected")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = r.Rerank(context.Background(), "car", []memory.Note{{Text: "car"}})
+			if (err == nil) != (revision == "expected") {
+				t.Fatalf("revision=%q err=%v", revision, err)
+			}
+		})
 	}
 }
 

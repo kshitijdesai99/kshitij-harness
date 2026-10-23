@@ -39,9 +39,9 @@ func TestRecallDiagnostics(t *testing.T) {
 			if !strings.Contains(diagnostic, want) || !strings.Contains(diagnostic, fmt.Sprintf("keyword: ok [%d]", n.ID)) || strings.Contains(diagnostic, "private") {
 				t.Fatal(diagnostic)
 			}
-			// Search can find candidates while injecting nothing already seen.
+			// Fully seen requested knowledge must skip expensive search altogether.
 			again, next, err := s.RecallWithTrace(context.Background(), repo, "car", memory.Seen(state(t, text)), b)
-			if err != nil || again != "" || len(next.LoadedIDs) != 0 || len(next.Search.LexicalIDs) != 1 {
+			if err != nil || again != "" || len(next.LoadedIDs) != 0 || next.Search.Started || !strings.Contains(next.Search.SkipReason, "already in chat") {
 				t.Fatalf("seen: %q %+v %v", again, next, err)
 			}
 			// Selected candidates that do not fit must not be reported as loaded.

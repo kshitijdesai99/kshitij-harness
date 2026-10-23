@@ -33,7 +33,7 @@ func TestRecallSkipsStandaloneSocialMessages(t *testing.T) {
 					t.Fatalf("explicit greeting search: %v %v", notes, err)
 				}
 			}
-			for _, q := range []string{"hey", "Hey!", "hi", "hello there", "good morning", "thank you!", "thanks", "OK", "got it", "sounds good"} {
+			for _, q := range []string{"hey", "Hey!", "hi", "hello there", "good morning", "thank you!", "thanks", "OK", "got it", "sounds good", "whats up", "what's up?", "what’s up", "how's it going?", "how are you doing", "hello, how are you?", "thanks so much", "okay, thanks", "hey 👋", "I'm fine, thank you"} {
 				text, trace, err := s.RecallWithTrace(context.Background(), repo, q, nil, memory.Budget{TopKnowledge: 5})
 				if err != nil || text != "" || trace.Search.Started || trace.Search.SkipReason == "" || len(trace.LoadedIDs) != 0 || !strings.Contains(trace.Diagnostic(err), "skipped") {
 					t.Fatalf("%q: %q %+v %v", q, text, trace, err)
@@ -178,7 +178,7 @@ func TestRerankIneligibleTopScoreCannotSuppressLiveRequestedNotes(t *testing.T) 
 }
 
 func TestRecallDoesNotSkipShortTopicsOrMixedGreetings(t *testing.T) {
-	for _, q := range []string{"audio", "tests", "washer", "slug", "hi audio", "hey, washer drainage?", "thanks, fix the slug"} {
+	for _, q := range []string{"audio", "tests", "washer", "slug", "hi audio", "hey, washer drainage?", "thanks, fix the slug", "hi, fix tests", "thanks but audio still broken", "go", "C++", "thanks.go", "hello.friend", "hello()", "what's up with audio?"} {
 		t.Run(q, func(t *testing.T) {
 			s := open(t)
 			n := add(t, s, memory.Note{Kind: "fact", Key: "topic", Text: q + " relevant preference"})

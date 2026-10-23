@@ -32,7 +32,7 @@ type SearchTrace struct {
 	RerankScores                                               []RerankScore
 	RejectedIDs                                                []int64
 	RelevanceCutoff                                            float64
-	SkipReason                                                 string
+	SkipReason, RerankSkipReason                               string
 }
 
 // RerankScore retains relevance evidence without retaining query or note text.
@@ -73,9 +73,6 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 		}
 		return nil, nil
 	}
-	if trace != nil {
-		trace.Started = true
-	}
 	limit = min(limit, 100)
 	candidates := min(limit*4, 400)
 	// Chronological ordering and per-kind selection must happen before the
@@ -86,6 +83,29 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 			return nil, err
 		}
 		candidates = len(all)
+		if quotas != nil {
+			requested, unseen := 0, 0
+			for _, n := range all {
+				if quotas[n.Kind] > 0 {
+					requested++
+					if !excluded[n.ID] {
+						unseen++
+					}
+				}
+			}
+			if unseen == 0 {
+				if trace != nil {
+					trace.SkipReason = "no memories in requested kinds"
+					if requested > 0 {
+						trace.SkipReason = fmt.Sprintf("all %d requested memories already in chat", requested)
+					}
+				}
+				return nil, nil
+			}
+		}
+	}
+	if trace != nil {
+		trace.Started = true
 	}
 	var lexical []Note
 	if match := ftsQuery(query); match != "" {
@@ -199,6 +219,16 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 		for _, n := range live {
 			eligible[n.ID] = semanticEligible(n, opts.Since, opts.Until)
 		}
+		// Reduce interactive scoring without truncating reservations that fit
+		// the existing hard ceiling (35 slots with the default quotas).
+		batchLimit := 64
+		if quotas != nil {
+			reserved := 0
+			for _, quota := range quotas {
+				reserved += max(0, quota)
+			}
+			batchLimit = min(64, max(32, reserved))
+		}
 		var batch []Note
 		chosen := map[int64]bool{}
 		counts := map[string]int{}
@@ -206,10 +236,10 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 		// budget, so frequent instructions cannot crowd out facts or gotchas.
 		appendCandidates := func(reserve bool) {
 			for _, n := range rankedNotes {
-				if len(batch) == 64 {
+				if len(batch) == batchLimit {
 					break
 				}
-				if !eligible[n.note.ID] || excluded[n.note.ID] || chosen[n.note.ID] {
+				if !eligible[n.note.ID] || excluded[n.note.ID] || chosen[n.note.ID] || (quotas != nil && quotas[n.note.Kind] <= 0) {
 					continue
 				}
 				if reserve && counts[n.note.Kind] >= quotas[n.note.Kind] {
@@ -265,6 +295,18 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 			}
 		} else {
 			reranker.succeeded()
+			if trace != nil {
+				seen := 0
+				for _, n := range rankedNotes {
+					if excluded[n.note.ID] {
+						seen++
+					}
+				}
+				trace.RerankSkipReason = "no matching memories"
+				if len(rankedNotes) > 0 {
+					trace.RerankSkipReason = fmt.Sprintf("no eligible matches; %d already in chat, %d filtered", seen, len(rankedNotes)-seen)
+				}
+			}
 		}
 	}
 	// Embedding work can overlap a replacement or forget in another process.

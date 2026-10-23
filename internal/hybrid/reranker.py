@@ -3,6 +3,8 @@
 Scoring follows https://huggingface.co/Qwen/Qwen3-Reranker-0.6B:
 left-pad the instructional chat prompt, compare final-token yes/no logits.
 """
+import hashlib
+import hmac
 import json
 import math
 import os
@@ -12,11 +14,19 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MODEL = "Qwen/Qwen3-Reranker-0.6B"
+# Go supplies the digest of the exact embedded source, not a manually bumped tag.
+REVISION = os.environ.get("KH_RERANKER_REVISION", "unmanaged")
+SECRET = os.environ.pop("KH_RERANKER_SECRET", "")
+
 MAX_BODY = 2 * 1024 * 1024
 # Allow a burst of three full-budget workers: two queued, one inferring.
 # Keep the Go client's 25s deadline above the combined 24s service budget.
 LOCK_WAIT_SECONDS = 16
 INFERENCE_SECONDS = 8
+
+
+def signature(message):
+    return hmac.new(SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 
 def download(cache):
@@ -85,6 +95,7 @@ def load_scorer(cache):
 class Handler(BaseHTTPRequestHandler):
     scorer = None
     inference_lock = threading.Lock()
+    draining = threading.Event()
 
     def setup(self):
         super().setup()
@@ -108,11 +119,36 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path != "/health":
             return self.reply(404, {"error": "not found"})
-        self.reply(200, {"model": MODEL, "ready": True})
+        data = {"model": MODEL, "ready": True, "revision": REVISION}
+        challenge = self.headers.get("X-KH-Challenge", "")
+        if SECRET and 0 < len(challenge) <= 128:
+            data["proof"] = signature("health:" + challenge + ":" + REVISION)
+        self.reply(200, data)
+
+    def shutdown_managed(self):
+        challenge = self.headers.get("X-KH-Challenge", "")
+        auth = self.headers.get("Authorization", "")
+        if (not SECRET or not 0 < len(challenge) <= 128 or
+                not hmac.compare_digest(auth.encode(), ("Bearer " + signature(
+                    "shutdown:" + challenge + ":" + REVISION)).encode())):
+            return self.reply(403, {"error": "managed authentication required"})
+        if not self.draining.is_set():
+            self.draining.set()
+            # Do not terminate an active model call or accept more inference.
+            def drain():
+                with self.inference_lock:
+                    self.server.shutdown()
+            threading.Thread(target=drain, daemon=True).start()
+        self.reply(200, {"stopping": True})
 
     def do_POST(self):
+        if self.path == "/shutdown":
+            return self.shutdown_managed()
         if self.path != "/rerank":
             return self.reply(404, {"error": "not found"})
+        revision = self.headers.get("X-KH-Revision")
+        if (revision is not None and revision != REVISION) or (SECRET and revision != REVISION):
+            return self.reply(409, {"error": "helper revision mismatch", "revision": REVISION})
         try:
             length = int(self.headers.get("Content-Length", "0"))
             if length <= 0 or length > MAX_BODY:
@@ -127,14 +163,18 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError()
         except (ValueError, TypeError, UnicodeDecodeError):
             return self.reply(400, {"error": "expected query and 1..128 document strings"})
+        if self.draining.is_set():
+            return self.reply(503, {"error": "local reranker is stopping"})
         if not self.inference_lock.acquire(timeout=LOCK_WAIT_SECONDS):
             return self.reply(503, {"error": "local reranker is busy"})
         try:
+            if self.draining.is_set():
+                return self.reply(503, {"error": "local reranker is stopping"})
             try:
                 results = self.scorer(query, docs)
             except Exception:
                 return self.reply(500, {"error": "local reranker inference failed"})
-            self.reply(200, {"model": MODEL, "results": results})
+            self.reply(200, {"model": MODEL, "revision": REVISION, "results": results})
         finally:
             self.inference_lock.release()
 
@@ -149,6 +189,9 @@ if __name__ == "__main__":
         # Bind before expensive loading: competing processes cannot load twice.
         server = ThreadingHTTPServer(("127.0.0.1", 11435), Handler)
         Handler.scorer = staticmethod(load_scorer(cache))
-        server.serve_forever()
+        try:
+            server.serve_forever()
+        finally:
+            server.server_close()
     else:
         raise SystemExit("unknown mode")
