@@ -4,7 +4,9 @@ A lightweight coding harness with agent delegation and a database-backed memory 
 
 You set the direction; the main agent coordinates tasks, delegates to native tmux agents or external coding tools such as Claude Code, and verifies results. The human-as-CEO, agent-as-manager philosophy keeps routine coordination off your plate while allowing the main agent to implement and integrate changes when useful.
 
-kh provides chat, shell commands, file edits, shared memory, and agent coordination. The manager model is the working philosophy, not a guarantee of automatic delegation. See the [manual](manual/README.md) for implemented behavior and design decisions.
+kh provides chat, shell commands, file edits, shared memory, and agent coordination. The manager model is the working philosophy, not a guarantee of automatic delegation.
+
+Start with the [feature index](features/README.md) to see what exists, when it began, and what followed. Each feature links to its own description, development history, limitations, and source/test evidence. See the [manual](manual/README.md) for operating details and design decisions.
 
 ![kh terminal showing rendered Markdown responses](sample.png)
 
