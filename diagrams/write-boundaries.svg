@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title description" font-family="Arial, Helvetica, sans-serif">
+  <title id="title">Write approvals and execution boundaries</title>
+  <desc id="description">Requests pass automatic or manual approval and session folder grants before bash or edit. Bash uses the macOS write sandbox when enabled, otherwise no OS sandbox. Edit uses pinned-path checks. Denied approvals, invalid paths and blocked writes stop the affected operation.</desc>
+  <rect width="1400" height="900" fill="#f8fafc"/>
+  <text x="60" y="58" font-size="32" font-weight="700" fill="#0f172a">Write approvals and execution boundaries</text>
+  <text x="60" y="92" font-size="19" fill="#475569">Permission comes first. Shell and structured edits then follow different enforcement paths.</text>
+
+  <!-- Explicit arrowheads; blue routes are allowed requests. -->
+  <line x1="300" y1="230" x2="368" y2="230" stroke="#2563eb" stroke-width="3"/>
+  <polygon points="380,230 367,223 367,237" fill="#2563eb"/>
+  <line x1="740" y1="215" x2="838" y2="215" stroke="#2563eb" stroke-width="3"/>
+  <polygon points="850,215 837,208 837,222" fill="#2563eb"/>
+  <text x="762" y="197" font-size="17" fill="#2563eb">allowed</text>
+  <polyline points="690,300 690,495 838,495" fill="none" stroke="#2563eb" stroke-width="3"/>
+  <polygon points="850,495 837,488 837,502" fill="#2563eb"/>
+  <text x="708" y="477" font-size="17" fill="#2563eb">allowed</text>
+  <polyline points="1070,215 1105,215 1105,170 1128,170" fill="none" stroke="#2563eb" stroke-width="3"/>
+  <polygon points="1140,170 1127,163 1127,177" fill="#2563eb"/>
+  <polyline points="1070,235 1105,235 1105,340 1128,340" fill="none" stroke="#2563eb" stroke-width="3"/>
+  <polygon points="1140,340 1127,333 1127,347" fill="#2563eb"/>
+  <line x1="1070" y1="495" x2="1128" y2="495" stroke="#059669" stroke-width="3"/>
+  <polygon points="1140,495 1127,488 1127,502" fill="#059669"/>
+
+  <!-- Failures stop only the affected operation, not earlier writes. -->
+  <line x1="480" y1="300" x2="480" y2="648" stroke="#c2410c" stroke-width="2.5" stroke-dasharray="8 6"/>
+  <polygon points="480,660 473,647 487,647" fill="#c2410c"/>
+  <rect x="399" y="390" width="162" height="30" fill="#f8fafc"/>
+  <text x="411" y="411" font-size="17" fill="#c2410c">denied / invalid</text>
+  <polyline points="1360,170 1380,170 1380,790 560,790 560,772" fill="none" stroke="#c2410c" stroke-width="2.5" stroke-dasharray="8 6"/>
+  <polygon points="560,760 553,773 567,773" fill="#c2410c"/>
+  <rect x="1020" y="775" width="170" height="30" fill="#f8fafc"/>
+  <text x="1030" y="796" font-size="17" fill="#c2410c">blocked write</text>
+  <polyline points="1250,560 1250,710 752,710" fill="none" stroke="#c2410c" stroke-width="2.5" stroke-dasharray="8 6"/>
+  <polygon points="740,710 753,703 753,717" fill="#c2410c"/>
+  <rect x="946" y="695" width="160" height="30" fill="#f8fafc"/>
+  <text x="956" y="716" font-size="17" fill="#c2410c">check fails</text>
+
+  <rect x="60" y="170" width="240" height="130" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="80" y="209" font-size="22" font-weight="700" fill="#0f172a">Tool request</text>
+  <text x="80" y="242" font-size="18" fill="#334155">bash: command +</text>
+  <text x="80" y="269" font-size="18" fill="#334155">outside write_dirs</text>
+  <text x="80" y="292" font-size="18" fill="#334155">edit: destination paths</text>
+
+  <rect x="380" y="170" width="360" height="130" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="400" y="209" font-size="22" font-weight="700" fill="#0f172a">Auto / manual approval</text>
+  <text x="400" y="242" font-size="18" fill="#334155">Command policy + folder grants</text>
+  <text x="400" y="269" font-size="18" fill="#334155">Outside grants pin existing folders</text>
+  <text x="400" y="292" font-size="18" fill="#334155">Grant only the requested folders</text>
+
+  <rect x="850" y="165" width="220" height="100" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="870" y="205" font-size="22" font-weight="700" fill="#0f172a">bash</text>
+  <text x="870" y="238" font-size="18" fill="#334155">Shell subprocess</text>
+
+  <rect x="1140" y="115" width="220" height="110" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="1160" y="151" font-size="21" font-weight="700" fill="#0f172a">macOS sandbox</text>
+  <text x="1160" y="181" font-size="18" fill="#334155">Darwin + enabled</text>
+  <text x="1160" y="208" font-size="18" fill="#334155">Restricts shell writes</text>
+
+  <rect x="1140" y="285" width="220" height="110" rx="14" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="1160" y="321" font-size="21" font-weight="700" fill="#0f172a">No OS sandbox</text>
+  <text x="1160" y="351" font-size="18" fill="#334155">Other OS or disabled</text>
+  <text x="1160" y="378" font-size="18" fill="#334155">OS permissions apply</text>
+
+  <rect x="850" y="445" width="220" height="100" rx="14" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+  <text x="870" y="485" font-size="22" font-weight="700" fill="#0f172a">edit</text>
+  <text x="870" y="518" font-size="18" fill="#334155">Structured file changes</text>
+
+  <rect x="1140" y="430" width="220" height="130" rx="14" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+  <text x="1160" y="469" font-size="19" font-weight="700" fill="#0f172a">Pinned-path checks</text>
+  <text x="1160" y="502" font-size="18" fill="#334155">Rooted file access</text>
+  <text x="1160" y="529" font-size="18" fill="#334155">Reject path redirection</text>
+
+  <rect x="380" y="660" width="360" height="100" rx="14" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="400" y="700" font-size="22" font-weight="700" fill="#0f172a">Stop affected operation</text>
+  <text x="400" y="733" font-size="18" fill="#334155">Report denial or failure; no rollback</text>
+
+  <text x="60" y="852" font-size="18" fill="#475569">Blue: permitted request · Green: rooted edit access · Dashed orange: denial or failure.</text>
+</svg>

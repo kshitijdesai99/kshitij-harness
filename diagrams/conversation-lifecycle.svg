@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="790" viewBox="0 0 1400 790" role="img" aria-labelledby="title description" font-family="Arial, Helvetica, sans-serif">
+  <title id="title">Conversation lifecycle</title>
+  <desc id="description">Save writes history; resume starts a new process. Attach returns to the same live process. Fork copies a completed checkpoint; new starts fresh. Parallel chats share files, not isolated worktrees.</desc>
+  <rect width="1400" height="790" fill="#f8fafc"/>
+  <text x="60" y="58" font-size="32" font-weight="700" fill="#0f172a">Conversation lifecycle</text>
+  <text x="60" y="94" font-size="19" fill="#475569">Saved history, live attachment, and parallel chats are different operations.</text>
+  <g fill="none" stroke="#2563eb" stroke-width="3">
+    <path d="M280 220 H388"/><path d="M670 220 H758"/><path d="M1040 220 H1148"/>
+    <path d="M530 280 V388"/><path d="M670 450 H758"/>
+    <path d="M280 635 H388"/>
+  </g>
+  <g fill="#2563eb">
+    <polygon points="400,220 387,213 387,227"/><polygon points="770,220 757,213 757,227"/><polygon points="1160,220 1147,213 1147,227"/>
+    <polygon points="530,400 523,387 537,387"/><polygon points="770,450 757,443 757,457"/><polygon points="400,635 387,628 387,642"/>
+  </g>
+  <g font-size="18" fill="#2563eb" text-anchor="middle">
+    <text x="340" y="201">attach</text><text x="720" y="201">save</text><text x="1100" y="201">resume</text>
+    <text x="585" y="345">checkpoint</text><text x="720" y="431">/fork</text><text x="340" y="616">open</text>
+  </g>
+  <g stroke="#93c5fd" stroke-width="1.5" fill="#eff6ff">
+    <rect x="60" y="160" width="220" height="120" rx="14"/>
+    <rect x="400" y="160" width="270" height="120" rx="14"/>
+    <rect x="770" y="160" width="270" height="120" rx="14"/>
+    <rect x="1160" y="160" width="180" height="120" rx="14"/>
+    <rect x="400" y="400" width="270" height="110" rx="14"/>
+    <rect x="770" y="400" width="270" height="110" rx="14"/>
+    <rect x="60" y="580" width="220" height="110" rx="14"/>
+    <rect x="400" y="580" width="270" height="110" rx="14"/>
+  </g>
+  <g fill="#0f172a" font-size="22" font-weight="700">
+    <text x="80" y="211">Terminal</text><text x="420" y="211">Same live process</text><text x="790" y="211">Saved history</text>
+    <text x="1180" y="211">New process</text><text x="420" y="445">Completed checkpoint</text><text x="790" y="445">Branch chat</text>
+    <text x="80" y="625">/new</text><text x="420" y="625">Fresh chat</text>
+  </g>
+  <g fill="#334155" font-size="18">
+    <text x="80" y="246">tmux attach</text><text x="420" y="246">Keeps running</text><text x="790" y="246">Provider-owned state</text>
+    <text x="1180" y="246">-r or -s ID</text><text x="420" y="478">No partial replies</text><text x="790" y="478">New right-hand pane</text><text x="420" y="658">New right-hand pane</text>
+  </g>
+  <text x="60" y="735" font-size="18" fill="#475569">-r selects the newest creation ID, not the most recently saved chat.</text>
+  <text x="60" y="767" font-size="18" fill="#475569">Parallel chats share project files — not isolated worktrees. Unfinished tool calls are excluded from forks.</text>
+</svg>

@@ -7,7 +7,7 @@ Introduced **2026-09-28** · commit `84d64c8` (initial shell execution, not a se
 ## Current behavior
 
 - Invoke installed CLIs such as Claude Code through `bash`. Each requires its own installation, login, and suitable environment.
-- Commands remain subject to [approvals](write-approvals.md) and the [shell’s write policy](shell-sandbox.md). Long-running work may need background execution followed by status checks; the [coordinator](native-agents.md#integrate-and-verify) must inspect results and verify changes rather than trusting a subprocess’s success message.
+- Commands remain subject to [approval and write boundaries](write-approvals.md#write-boundaries) and the [shell’s write policy](shell-sandbox.md). Long-running work may need background execution followed by status checks; the [coordinator](native-agents.md#integrate-and-verify) must inspect results and verify changes rather than trusting a subprocess’s success message.
 - This is not a native Claude provider, MCP client, or managed external-agent protocol. Codex is the only implemented native model adapter.
 
 ## Evolution

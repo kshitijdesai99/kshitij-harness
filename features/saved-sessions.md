@@ -11,6 +11,12 @@ Introduced **2026-09-28** · commit `3354dc0`.
 - Resume replays history in a new chat process; it does not [reattach a running tmux chat](tmux-chats.md). Failed partial replies are not completed checkpoints.
 - The [memory database](knowledge-store.md) is separate from saved conversation history. See [provider-owned state](provider-state.md) for history ownership and [compaction](compaction.md) for summarizing working context.
 
+## Conversation lifecycle
+
+![Conversation lifecycle: save, resume, attach, fork, and new](../diagrams/conversation-lifecycle.svg)
+
+Save writes provider history; resume starts a new process, while tmux attachment reconnects to the same live process. Forks use completed checkpoints, not partial replies or unfinished tool calls; parallel chats share project files rather than isolated worktrees. `/new` starts fresh. `-r` chooses the newest creation ID, not the latest save time.
+
 ## Evolution
 
 | Date | Change | Commit |

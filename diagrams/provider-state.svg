@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="820" viewBox="0 0 1400 820" role="img" aria-labelledby="title description" font-family="Arial, Helvetica, sans-serif">
+  <title id="title">Provider-owned state</title>
+  <desc id="description">Supplied inputs enter Step. Complete replies remain in history; failures retain inputs but discard partial replies and unpaired calls. Save and Load exchange history with a checkpoint; restored history can be replayed.</desc>
+  <rect width="1400" height="820" fill="#f8fafc"/>
+  <text x="60" y="58" font-size="32" font-weight="700" fill="#0f172a">Provider-owned state</text>
+  <text x="60" y="94" font-size="19" fill="#475569">Codex only · Conversation history is not durable memory</text>
+
+  <!-- Explicit triangle heads; no SVG markers. -->
+  <g fill="none" stroke="#2563eb" stroke-width="3">
+    <path d="M320 255 H398"/>
+    <path d="M650 235 H710 V190 H758"/>
+    <path d="M1030 190 H1070 V260 H1108"/>
+    <path d="M1340 300 H1360 V645 H1112"/>
+    <path d="M1000 590 V500 H1200 V387"/>
+    <path d="M1280 375 V555 H540 V578"/>
+  </g>
+  <g fill="#2563eb">
+    <polygon points="410,255 397,248 397,262"/>
+    <polygon points="770,190 757,183 757,197"/>
+    <polygon points="1120,260 1107,253 1107,267"/>
+    <polygon points="1100,645 1113,638 1113,652"/>
+    <polygon points="1200,375 1193,388 1207,388"/>
+    <polygon points="540,590 533,577 547,577"/>
+  </g>
+  <g fill="none" stroke="#8b5cf6" stroke-width="3" stroke-dasharray="8 6">
+    <path d="M650 280 H710 V385 H758"/>
+    <path d="M1030 385 H1070 V335 H1108"/>
+  </g>
+  <g fill="#8b5cf6">
+    <polygon points="770,385 757,378 757,392"/>
+    <polygon points="1120,335 1107,328 1107,342"/>
+  </g>
+  <g fill="#f8fafc">
+    <rect x="1200" y="628" width="88" height="32"/>
+    <rect x="1080" y="482" width="84" height="32"/>
+    <rect x="690" y="539" width="142" height="32"/>
+  </g>
+  <g font-size="18" fill="#2563eb">
+    <text x="1213" y="650">Save</text>
+    <text x="1092" y="504">Load</text>
+    <text x="699" y="561">Replay history</text>
+  </g>
+
+  <g fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5">
+    <rect x="60" y="200" width="260" height="110" rx="14"/>
+    <rect x="410" y="200" width="240" height="110" rx="14"/>
+    <rect x="770" y="140" width="260" height="100" rx="14"/>
+    <rect x="1120" y="225" width="220" height="150" rx="14"/>
+    <rect x="800" y="590" width="300" height="110" rx="14"/>
+    <rect x="400" y="590" width="280" height="110" rx="14"/>
+  </g>
+  <rect x="770" y="320" width="260" height="130" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <g font-size="22" font-weight="700" fill="#0f172a">
+    <text x="80" y="244">Supplied inputs</text>
+    <text x="430" y="244">Provider.Step</text>
+    <text x="790" y="182">Complete</text>
+    <text x="790" y="360">Failed / canceled</text>
+    <text x="1140" y="267">Retained history</text>
+    <text x="820" y="634">Saved checkpoint</text>
+    <text x="420" y="634">Replay</text>
+  </g>
+  <g font-size="18" fill="#334155">
+    <text x="80" y="278">User message / tool results</text>
+    <text x="430" y="278">Append inputs first</text>
+    <text x="790" y="216">Retain reply + calls</text>
+    <text x="790" y="393">Discard partial reply</text>
+    <text x="790" y="422">and unpaired calls</text>
+    <text x="1140" y="301">Supplied inputs stay</text>
+    <text x="1140" y="331">Complete output stays</text>
+    <text x="820" y="668">Opaque provider state</text>
+    <text x="420" y="668">Present restored history</text>
+  </g>
+  <text x="60" y="754" font-size="19" fill="#475569">Displayed partial text may still flush despite history rollback. Recovery is bounded, not universal.</text>
+</svg>

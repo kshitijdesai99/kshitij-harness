@@ -4,6 +4,12 @@ Reuse established lessons across chats without treating transcripts as permanent
 
 Introduced **2026-09-29** · commit `14dd3e6`.
 
+## Architecture
+
+![Memory architecture and the database's role](../diagrams/memory-architecture.svg)
+
+[Memory overview SVG](../diagrams/memory-architecture.svg): the shared database supplies recall and receives selective background learning. See the [system architecture](architecture.md#application-and-turn-loop) for surrounding components; this page owns storage details.
+
 ## Current behavior
 
 SQLite at `~/.kh/memory.db` is the runtime source of truth for repo/global instructions, facts, decisions, and gotchas. Conversations live separately in `~/.kh/sessions`; documentation is not a second runtime knowledge store. Retrieved notes are reference data subordinate to current user requests.

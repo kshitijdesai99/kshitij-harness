@@ -12,6 +12,10 @@ Optional `memory_embedding_url`, `memory_embedding_model`, and `memory_reranker_
 
 Applicability filtering can return no relevant notes rather than filling a quota. Embedding/reranking failures fall back to keywords with stage-specific notices; [retrieval diagnostics](retrieval-diagnostics.md) expose fallback status. Retry `/memory hybrid on` to repeat setup and verification. The [managed helper](hybrid-runtime.md) owns runtime files, contention limits, and revision/upgrade policy.
 
+## Retrieval path
+
+See the [retrieval flow](keyword-recall.md#retrieval-flow) for the required-recall path and optional topic search. A model-stage failure uses keyword fallback; a successful relevance filter can select zero topic notes without triggering fallback. Neither outcome removes corrections, named-reference hints, or summary-required notes already selected within budget.
+
 ## Evolution
 
 | Date | Change | Commit |

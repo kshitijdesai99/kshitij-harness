@@ -12,6 +12,14 @@ After pasted-image handling succeeds, each actual nonempty initial, steering, or
 
 After a successful, uncanceled eligible run, `Learner.FinishedAt` receives the current query, bounded recent context, observed tool results, reply, and event time. A nonempty reply queues durable-note extraction and eligible [procedure extraction](procedure-learning.md), followed by a summary check. Failed or canceled turns skip this completion hook. Extraction can decline or fail; [queue limits and summary rebuilding](learning-queue.md) also make saves non-guaranteed.
 
+## Learning flow
+
+![Eligible query and completion events enqueue selective learning; guarded saves and separate summary checks run in the background.](../diagrams/learning-flow.svg)
+
+Dashed arrows schedule work, not dependencies the answer waits for. The query hook runs before recall and provider execution; failed or canceled runs can already have queued query work but do not schedule completion work. Peer coordination permanently fences that run's completion evidence and recent context, even after clean steering; a separate clean query can still reach the pre-hook.
+
+The flow follows [chat wiring](../cmd/kh/chat.go), [queue and extraction](../internal/learn/learn.go), and the [run-origin fence](../internal/learn/origin.go). Completion note/procedure extraction requires a nonempty reply; its summary check is separately queued and rebuilds only when current notes changed.
+
 ## Evolution
 
 | Date | Change | Commit |

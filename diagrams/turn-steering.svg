@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="820" viewBox="0 0 1400 820" role="img" aria-labelledby="title description" font-family="Arial, Helvetica, sans-serif">
+  <title id="title">Turn execution and steering</title>
+  <desc id="description">Solid blue arrows show execution and tool results. Dashed purple arrows show submitted steering: replies cancel and await cleanup; tools finish first. Queued messages pass through image processing and the hook, with results retained for the next Step.</desc>
+  <rect width="1400" height="820" fill="#f8fafc"/>
+  <text x="60" y="58" font-size="32" font-weight="700" fill="#0f172a">Turn execution and steering</text>
+  <text x="60" y="94" font-size="19" fill="#475569">Blue solid: execution / results · Purple dashed: submitted steering</text>
+
+  <!-- Explicit triangle heads; all labels crossing paths have background masks. -->
+  <g fill="none" stroke="#2563eb" stroke-width="3">
+    <path d="M290 355 H388"/>
+    <path d="M700 355 H778"/>
+    <path d="M1030 355 H1138"/>
+    <path d="M960 410 V548"/>
+    <path d="M780 615 H712"/>
+    <path d="M550 560 V495 H830 V422"/>
+  </g>
+  <g fill="#2563eb">
+    <polygon points="400,355 387,348 387,362"/>
+    <polygon points="790,355 777,348 777,362"/>
+    <polygon points="1150,355 1137,348 1137,362"/>
+    <polygon points="960,560 953,547 967,547"/>
+    <polygon points="700,615 713,608 713,622"/>
+    <polygon points="830,410 823,423 837,423"/>
+  </g>
+  <g fill="none" stroke="#8b5cf6" stroke-width="3" stroke-dasharray="8 6">
+    <path d="M900 300 V175 H712"/>
+    <path d="M550 230 V288"/>
+    <path d="M400 615 H350 V450 H550 V422"/>
+  </g>
+  <g fill="#8b5cf6">
+    <polygon points="700,175 713,168 713,182"/>
+    <polygon points="550,300 543,287 557,287"/>
+    <polygon points="550,410 543,423 557,423"/>
+  </g>
+
+  <g fill="#f8fafc">
+    <rect x="744" y="202" width="310" height="31"/>
+    <rect x="1038" y="327" width="104" height="26"/>
+    <rect x="968" y="461" width="123" height="28"/>
+    <rect x="582" y="455" width="228" height="29"/>
+    <rect x="361" y="420" width="179" height="25"/>
+  </g>
+  <g font-size="18">
+    <text x="758" y="223" fill="#7c3aed">Enter during reply</text>
+    <text x="1045" y="347" fill="#2563eb">No calls</text>
+    <text x="977" y="481" fill="#2563eb">Tool calls</text>
+    <text x="593" y="478" fill="#2563eb">Results → next Step</text>
+    <text x="370" y="440" fill="#7c3aed">Queued steering</text>
+  </g>
+
+  <g fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5">
+    <rect x="60" y="300" width="230" height="110" rx="14"/>
+    <rect x="400" y="300" width="300" height="110" rx="14"/>
+    <rect x="790" y="300" width="240" height="110" rx="14"/>
+    <rect x="1150" y="300" width="190" height="110" rx="14"/>
+    <rect x="780" y="560" width="270" height="110" rx="14"/>
+    <rect x="400" y="560" width="300" height="110" rx="14"/>
+  </g>
+  <rect x="400" y="120" width="300" height="110" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <g font-size="22" font-weight="700" fill="#0f172a">
+    <text x="80" y="344">Submitted message</text>
+    <text x="420" y="344">Image → message hook</text>
+    <text x="810" y="344">Provider.Step</text>
+    <text x="1170" y="362">Complete</text>
+    <text x="800" y="604">Concurrent batch</text>
+    <text x="420" y="604">Ordered results</text>
+    <text x="420" y="164">Cancel reply</text>
+  </g>
+  <g font-size="18" fill="#334155">
+    <text x="80" y="378">Enter, not draft typing</text>
+    <text x="420" y="378">Nonempty messages only</text>
+    <text x="810" y="378">Message + results</text>
+    <text x="800" y="638">Finish running tools</text>
+    <text x="420" y="638">Preserve call order / IDs</text>
+    <text x="420" y="198">Await provider cleanup</text>
+  </g>
+  <text x="60" y="731" font-size="19" fill="#475569">During tools: finish the batch; retain results through steering; pair them in the next Step.</text>
+  <text x="60" y="763" font-size="19" fill="#475569">Empty-message result steps skip the hook. Steering does not undo completed side effects.</text>
+</svg>

@@ -10,6 +10,10 @@ When automatic learning is enabled, one worker processes a bounded 32-job queue 
 
 Summaries rebuild from current notes only when those notes change. Startup queues a catch-up summary check; shutdown allows up to 30 seconds for queued work before cancellation. [Hook scheduling](learning-hooks.md) does not wait for a save, and separate processes still need [store revision checks](memory-history.md) to avoid stale updates.
 
+## Queue in context
+
+See the [learning flow](learning-hooks.md#learning-flow) for enqueue events, full-queue drops, extraction, and guarded saves. Summary checks are separate jobs, not an extraction output or an unconditional consequence of a save. Startup also queues a catch-up check; extraction can decline or fail, and any queued job can be dropped when the queue is full.
+
 ## Evolution
 
 | Date | Change | Commit |

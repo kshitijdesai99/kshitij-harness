@@ -10,6 +10,14 @@ Keyword-only retrieval is the default and requires no model downloads. After eac
 
 Common standalone greetings, check-ins, acknowledgments, and knowledge already present in chat avoid unnecessary topic retrieval. Corrections, required summary notes, and explicitly named references still load. Selection favors applicable notes with [provenance and replacement relationships](memory-history.md), not the volume of saved knowledge. Retrieval can miss or fail; relevance and completeness are not guaranteed. [Optional hybrid reranking](hybrid-retrieval.md) can reject weak matches rather than filling a quota. Use [diagnostics](retrieval-diagnostics.md) to inspect selection; current user requests override retrieved reference data.
 
+## Retrieval flow
+
+![Recall before answering: required recall survives topic-search skips; bounded new context and diagnostics follow.](../diagrams/retrieval-flow.svg)
+
+Corrections, named-reference hints, and summary-required notes are considered before the topic-search gate, not bypassed by it. They still respect seen tracking and the context budget. Only successfully injected notes become seen; budget-skipped notes remain eligible later.
+
+The diagram follows [chat wiring](../cmd/kh/chat.go), [recall ordering](../internal/memory/recall.go), and [topic selection](../internal/memory/search.go). Search-stage failure and a successful search with no relevant topic notes are different outcomes.
+
 ## Evolution
 
 | Date | Change | Commit |

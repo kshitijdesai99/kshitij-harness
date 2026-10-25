@@ -7,8 +7,8 @@ Introduced **2026-09-29** · commit `277c243` (worker launch and auto-policy inh
 ## Current behavior
 
 - Successful one-shot workers close their panes; failures remain visible. Set `keep` when spawning to leave a worker open for follow-up messages.
-- Workers inherit active [model and effort](model-settings.md), auto-approval, and [sandbox policy](shell-sandbox.md). [Write approvals](write-approvals.md) owns approval defaults and directory-grant inheritance.
-- Shared files require [manager/peer coordination](native-agents.md#integrate-and-verify); automatic pane closure is not proof that a worker’s changes are correct.
+- Workers inherit active [model and effort](model-settings.md), auto-approval, and [sandbox policy](shell-sandbox.md), **not directory grants**. See [write approvals](write-approvals.md).
+- Shared files require [manager/peer coordination](native-agents.md#coordination-diagram); automatic pane closure is not proof that a worker’s changes are correct.
 
 ## Evolution
 

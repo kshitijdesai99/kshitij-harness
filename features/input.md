@@ -12,7 +12,7 @@ Introduced 2026-10-01 · commit `b3d387a` (query history; multiline drafts came 
 
 Incoming agent messages are delivered independently of the human editor. They do not append to or submit an unfinished draft, change its cursor position, enter its history, or become part of an active multiline draft or paste. Your draft is submitted only when you press Enter. Peer messages also bypass slash-command and approval-answer parsing.
 
-Existing sender and receiver chats must [restart onto the updated build](startup-rebuild.md#restart-onto-a-new-build) to use isolated delivery. Updated senders reject receivers without live support instead of falling back to simulated typing. See [native agents](native-agents.md) for coordination.
+Existing sender and receiver chats must [restart onto the updated build](startup-rebuild.md#restart-onto-a-new-build) to use isolated delivery. Updated senders reject receivers without live support instead of falling back to simulated typing. See the [agent coordination diagram](native-agents.md#coordination-diagram) for parent/peer delivery separate from the human draft.
 
 ## Evolution
 

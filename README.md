@@ -2,7 +2,7 @@
 
 A lightweight coding harness with agent delegation and a database-backed memory architecture for continuous learning and relevant context retrieval.
 
-You set the direction; the main agent coordinates tasks, delegates to native tmux agents or external coding tools such as Claude Code, and verifies results. The human-as-CEO, agent-as-manager philosophy keeps routine coordination off your plate while allowing the main agent to implement and integrate changes when useful.
+You set the direction; the main agent manages the work, delegates implementation and inspection to native tmux agents or external coding tools such as Claude Code, and coordinates verification of their results. Workers execute scoped tasks so routine implementation and inspection stay off the main chat's plate.
 
 kh provides chat, shell commands, file edits, shared memory, and agent coordination. The manager model is the working philosophy, not a guarantee of automatic delegation.
 
@@ -49,6 +49,10 @@ Optionally create `~/.kh/config.json`, specifying only overrides:
 CLI flags override configuration. Automatic approval is on by default; it does not remove write boundaries. Read [approval controls](features/write-approvals.md) and [sandbox limits](features/shell-sandbox.md) before running autonomous work.
 
 ## Memory and agents
+
+![Memory overview: recall for answers and selective background learning](diagrams/memory-architecture.svg)
+
+[Memory overview SVG](diagrams/memory-architecture.svg): answers use relevant recall; useful lessons are saved separately in the background. See [architecture](features/architecture.md) for system boundaries.
 
 kh learns selectively from conversations and retrieves useful knowledge with provenance. Runtime notes and reusable procedures live in the database, separately from chat history and these docs. See [knowledge storage](features/knowledge-store.md), [learning](features/learning-hooks.md), [retrieval](features/keyword-recall.md), and [procedures](features/procedure-loading.md). Keyword search works without model downloads; hybrid retrieval is optional.
 

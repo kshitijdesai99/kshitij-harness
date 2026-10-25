@@ -8,7 +8,7 @@ Introduced **2026-10-23** · commit `f802b27`.
 
 Use `kh memory reference put/get/export/import/asset` to manage database-native references. Export/import carries procedure content and provenance; import neither executes assets nor overwrites existing topics. `kh memory reference demo` stores a sound example without playing it.
 
-References remain scoped, versioned knowledge rather than executable installations; the [inert-reference boundary](procedure-loading.md) applies to bundles as well. See [procedure learning](procedure-learning.md) for automatic creation and versioned improvements.
+References remain scoped, versioned knowledge rather than executable installations; the shared [procedure flow and inert-reference boundary](procedure-loading.md#procedure-flow) applies to bundles as well. Put/import populate the database reference directly; they do not run the learning extractor or execute content. Recall supplies compact hints, not the full body; explicit loading is a separate read. See [procedure learning](procedure-learning.md) for automatic creation and versioned improvements.
 
 ## Inspect and transfer an existing reference
 

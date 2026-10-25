@@ -27,16 +27,9 @@ Use this map to find the owning package; linked feature pages explain behavior a
 
 The [CLI](../cmd/kh/main.go) selects configuration, opens stores, and assembles tools. The [chat lifecycle](../cmd/kh/chat.go) manages retrieval, learning, persistence, and controls. The [runner](../internal/agent/loop.go) needs only the provider's `Step` method:
 
-```text
-Submitted user message → Image handling / pre-message hook → Model
-                                                             ↕
-                                                   Tools / delegated agents
-                                                             ↓
-                                                   Reply + saved conversation
+![Chat and memory flow: recall for the answer, selective learning in the background](../diagrams/memory-architecture.svg)
 
-Eligible user messages + successful response/tool evidence
-  → Background learning → Versioned notes / procedures → Future retrieval
-```
+[Memory overview SVG](../diagrams/memory-architecture.svg): recall supplies the answer path; selective learning saves useful knowledge in the background. See [knowledge storage](knowledge-store.md) for database details.
 
 The [execution loop](execution.md) runs tool batches concurrently and returns results in call order. Shared files require explicit dependency coordination. See [learning hooks](learning-hooks.md) for message timing and [native agents](native-agents.md) for delegation.
 

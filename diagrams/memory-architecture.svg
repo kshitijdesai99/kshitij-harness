@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="860" viewBox="0 0 1400 860" role="img" aria-labelledby="title description" font-family="Arial, Helvetica, sans-serif">
+  <title id="title">How kh uses memory</title>
+  <desc id="description">The answer path goes from a submitted message through memory recall to the model and tools, then an answer. Eligible messages and successful responses feed selective background learning, which saves versioned notes and procedures in shared SQLite memory. The database supplies recall for future questions. Learning never blocks the answer. Workers retrieve only, and loading procedures never executes scripts.</desc>
+  <rect width="1400" height="860" fill="#f8fafc"/>
+  <text x="60" y="58" font-size="32" font-weight="700" fill="#0f172a">How kh uses memory</text>
+  <text x="60" y="92" font-size="19" fill="#475569">Two paths share one database. Your answer does not wait for learning.</text>
+
+  <!-- Answer path, left to right. -->
+  <text x="60" y="145" font-size="18" font-weight="700" fill="#2563eb">1 · ANSWER THE QUESTION</text>
+  <line x1="300" y1="232" x2="378" y2="232" stroke="#2563eb" stroke-width="3"/>
+  <polygon points="390,232 377,225 377,239" fill="#2563eb"/>
+  <line x1="650" y1="232" x2="728" y2="232" stroke="#2563eb" stroke-width="3"/>
+  <polygon points="740,232 727,225 727,239" fill="#2563eb"/>
+  <line x1="1000" y1="232" x2="1078" y2="232" stroke="#2563eb" stroke-width="3"/>
+  <polygon points="1090,232 1077,225 1077,239" fill="#2563eb"/>
+
+  <rect x="60" y="175" width="240" height="115" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="80" y="219" font-size="22" font-weight="700" fill="#0f172a">Your message</text>
+  <text x="80" y="252" font-size="18" fill="#334155">Submitted with Enter</text>
+
+  <rect x="390" y="175" width="260" height="115" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="410" y="219" font-size="21" font-weight="700" fill="#0f172a">Recall relevant memory</text>
+  <text x="410" y="252" font-size="18" fill="#334155">Only useful, new context</text>
+
+  <rect x="740" y="175" width="260" height="115" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="760" y="219" font-size="22" font-weight="700" fill="#0f172a">Model + tools</text>
+  <text x="760" y="252" font-size="18" fill="#334155">Uses request + memory</text>
+
+  <rect x="1090" y="175" width="250" height="115" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="1110" y="219" font-size="22" font-weight="700" fill="#0f172a">Answer</text>
+  <text x="1110" y="252" font-size="18" fill="#334155">History saved separately</text>
+
+  <!-- Enqueue events, not a dependency that the answer waits on. -->
+  <line x1="180" y1="290" x2="180" y2="568" stroke="#8b5cf6" stroke-width="2.5" stroke-dasharray="8 6"/>
+  <polygon points="180,580 173,567 187,567" fill="#8b5cf6"/>
+  <polyline points="1215,290 1215,350 270,350 270,568" stroke="#8b5cf6" stroke-width="2.5" stroke-dasharray="8 6" fill="none"/>
+  <polygon points="270,580 263,567 277,567" fill="#8b5cf6"/>
+  <rect x="480" y="319" width="480" height="28" fill="#f8fafc"/>
+  <text x="488" y="339" font-size="18" fill="#7c3aed">Queue eligible work — do not wait for a save</text>
+
+  <!-- The background lane saves useful knowledge to the shared database. -->
+  <text x="470" y="540" font-size="18" font-weight="700" fill="#7c3aed">2 · LEARN IN THE BACKGROUND</text>
+  <line x1="360" y1="640" x2="458" y2="640" stroke="#8b5cf6" stroke-width="3"/>
+  <polygon points="470,640 457,633 457,647" fill="#8b5cf6"/>
+  <line x1="800" y1="640" x2="898" y2="640" stroke="#8b5cf6" stroke-width="3"/>
+  <polygon points="910,640 897,633 897,647" fill="#8b5cf6"/>
+
+  <rect x="60" y="580" width="300" height="120" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="80" y="620" font-size="22" font-weight="700" fill="#0f172a">Eligible evidence</text>
+  <text x="80" y="651" font-size="18" fill="#334155">Message + successful response</text>
+  <text x="80" y="679" font-size="18" fill="#334155">and tool results</text>
+
+  <rect x="470" y="580" width="330" height="120" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="490" y="620" font-size="22" font-weight="700" fill="#0f172a">Learn selectively</text>
+  <text x="490" y="651" font-size="18" fill="#334155">Useful lessons, not transcripts</text>
+  <text x="490" y="679" font-size="18" fill="#334155">May choose to save nothing</text>
+
+  <rect x="910" y="580" width="430" height="120" rx="14" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+  <text x="930" y="620" font-size="22" font-weight="700" fill="#0f172a">Shared memory (SQLite)</text>
+  <text x="930" y="651" font-size="18" fill="#334155">Versioned notes + procedures</text>
+  <text x="930" y="679" font-size="18" fill="#334155">History and provenance retained</text>
+
+  <!-- One read loop, routed outside the event flow to avoid crossings. -->
+  <polyline points="1340,640 1370,640 1370,140 520,140 520,163" stroke="#059669" stroke-width="3" fill="none"/>
+  <polygon points="520,175 513,162 527,162" fill="#059669"/>
+  <rect x="855" y="112" width="345" height="26" fill="#f8fafc"/>
+  <text x="865" y="131" font-size="18" fill="#047857">Available for future questions</text>
+
+  <text x="60" y="755" font-size="17" fill="#475569">Learning: user-facing chats only. Workers retrieve; peer-coordinated, failed or canceled completions are excluded.</text>
+  <text x="60" y="790" font-size="17" fill="#475569">Search: keywords by default; optional local hybrid falls back to keywords when a model stage fails.</text>
+  <text x="60" y="825" font-size="17" fill="#475569">Procedures are reference data. Loading one never executes its scripts.</text>
+</svg>

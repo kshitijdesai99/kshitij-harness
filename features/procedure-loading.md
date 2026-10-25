@@ -10,6 +10,12 @@ Procedural references live in the [memory database](knowledge-store.md) with ful
 
 Reference content is inert data, not authority: saving, retrieving, loading, and importing never execute scripts. Requested execution must use ordinary approved, sandboxed tools. There is no filesystem-backed runtime skills library, and these documentation pages are not a second knowledge store. Retrieval hints remain selective and budget-bound rather than automatically loading every procedure body.
 
+## Procedure flow
+
+![Procedure flow: evidence-backed learning saves a versioned database reference; compact hints lead to explicit loading of inert content. Execution is a separate user-requested tool action.](../diagrams/procedure-flow.svg)
+
+Solid arrows show conditional learning and retrieval, not automatic execution. Two distinct successful tool outputs are required but insufficient for learning; extraction can decline. Only compact hints enter routine recall. Loading exposes reference data, not instructions with execution authority. Saving, loading, and importing never execute assets.
+
 ## Evolution
 
 | Date | Change | Commit |

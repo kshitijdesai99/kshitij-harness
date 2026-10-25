@@ -10,6 +10,10 @@ Use `kh memory status` to inspect configuration/runtime status and `kh memory ex
 
 Diagnostics expose stage counts, candidate/loaded IDs, scores, rejection details, timing, and fallback or skip reasons. Per-message summaries are bounded; the detailed view retains more evidence. A successful pipeline stage does not prove relevance, and an empty load can reflect either no new applicable knowledge or the context budget. These controls are not a unified event trace or a record of every learning attempt.
 
+## Trace in context
+
+The [retrieval flow](keyword-recall.md#retrieval-flow) separates required recall, skipped topic search, model-stage fallback, and zero relevant topic results. The trace records the actual recall, including loaded IDs outside topic search; selected candidates are not necessarily injected when seen tracking or the total budget excludes them. In-chat explain reuses that trace rather than running retrieval again.
+
 ## Evolution
 
 | Date | Change | Commit |

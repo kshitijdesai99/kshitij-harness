@@ -12,6 +12,7 @@ Use this file as the entry point for repository work. Read the relevant guide in
 
 ## Working rules
 
+- The main user-facing chat acts as manager: plan, delegate implementation and inspection to workers, coordinate their evidence, and report verified outcomes. Assigned workers execute their scoped tasks; this rule does not require them to delegate recursively.
 - Keep changes scoped, verify behavior before claiming success, and report checks actually performed.
-- Update the relevant canonical guide and feature history when behavior changes; link to existing explanations instead of copying them.
+- Update the relevant canonical guide and feature history when behavior changes; link to existing explanations instead of copying them. Keep simple SVG architecture and flow diagrams in [`diagrams/`](diagrams/), following the [visual explanation guidance](features/CONTRIBUTING.md#visual-explanations).
 - These files explain the repository. Runtime knowledge and procedures belong in the memory database, not Markdown-backed skills or executable documentation.

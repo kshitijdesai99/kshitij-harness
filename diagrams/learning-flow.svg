@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="940" viewBox="0 0 1400 940" role="img" aria-labelledby="title description" font-family="Arial, Helvetica, sans-serif">
+  <title id="title">Selective background learning</title>
+  <desc id="description">Eligible query and completion events enqueue asynchronous work. The queue can drop jobs. Extraction and guarded saves are distinct from separately queued summary checks.</desc>
+  <rect width="1400" height="940" fill="#f8fafc"/>
+  <text x="60" y="60" font-size="32" font-weight="700" fill="#0f172a">Selective background learning</text>
+  <text x="60" y="100" font-size="19" fill="#475569">User-facing chats with learning enabled. Workers retrieve only.</text>
+
+  <polyline points="280,300 280,340 580,340 580,368" stroke="#8b5cf6" stroke-width="3" stroke-dasharray="8 6" fill="none"/>
+  <polygon points="580,380 573,367 587,367" fill="#8b5cf6"/>
+  <polyline points="1010,300 1010,340 700,340 700,368" stroke="#8b5cf6" stroke-width="3" stroke-dasharray="8 6" fill="none"/>
+  <polygon points="700,380 693,367 707,367" fill="#8b5cf6"/>
+  <line x1="840" y1="430" x2="988" y2="430" stroke="#8b5cf6" stroke-width="3"/>
+  <polygon points="1000,430 987,423 987,437" fill="#8b5cf6"/>
+  <text x="875" y="410" font-size="18" fill="#7c3aed">full</text>
+  <line x1="640" y1="480" x2="640" y2="548" stroke="#8b5cf6" stroke-width="3"/>
+  <polygon points="640,560 633,547 647,547" fill="#8b5cf6"/>
+  <text x="660" y="525" font-size="18" fill="#7c3aed">extraction job</text>
+  <polyline points="440,615 280,615 280,738" stroke="#8b5cf6" stroke-width="3" fill="none"/>
+  <polygon points="280,750 273,737 287,737" fill="#8b5cf6"/>
+  <text x="300" y="700" font-size="18" fill="#7c3aed">supported proposal</text>
+  <polyline points="840,460 930,460 930,710 1070,710 1070,738" stroke="#059669" stroke-width="3" fill="none"/>
+  <polygon points="1070,750 1063,737 1077,737" fill="#059669"/>
+  <rect x="947" y="666" width="235" height="28" fill="#f8fafc"/>
+  <text x="957" y="687" font-size="18" fill="#047857">separate summary job</text>
+
+  <rect x="60" y="160" width="440" height="140" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="80" y="200" font-size="22" font-weight="700" fill="#0f172a">Query pre-hook</text>
+  <text x="80" y="234" font-size="18" fill="#334155">Actual message, before recall + provider</text>
+  <text x="80" y="266" font-size="18" fill="#334155">Peer-containing input excluded</text>
+  <rect x="740" y="160" width="540" height="140" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="760" y="200" font-size="22" font-weight="700" fill="#0f172a">Eligible completion</text>
+  <text x="760" y="234" font-size="18" fill="#334155">Failed / canceled: no post-hook</text>
+  <text x="760" y="266" font-size="18" fill="#334155">Peer coordination fences reply, tools + later context</text>
+  <rect x="440" y="380" width="400" height="100" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="460" y="419" font-size="22" font-weight="700" fill="#0f172a">Bounded async queue</text>
+  <text x="460" y="451" font-size="18" fill="#334155">Serial worker; answer never waits</text>
+  <rect x="1000" y="380" width="280" height="100" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="1020" y="419" font-size="22" font-weight="700" fill="#0f172a">Drop job + notice</text>
+  <text x="1020" y="451" font-size="18" fill="#334155">Do not block chat</text>
+  <rect x="440" y="560" width="400" height="110" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="460" y="599" font-size="22" font-weight="700" fill="#0f172a">Selective extraction</text>
+  <text x="460" y="629" font-size="18" fill="#334155">May decline or fail</text>
+  <text x="460" y="654" font-size="18" fill="#334155">Nonempty reply: eligible procedures too</text>
+  <rect x="60" y="750" width="440" height="115" rx="14" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+  <text x="80" y="790" font-size="22" font-weight="700" fill="#0f172a">Guarded save</text>
+  <text x="80" y="823" font-size="18" fill="#334155">Evidence + kind + revision checks</text>
+  <text x="80" y="849" font-size="18" fill="#334155">Unsupported / stale changes rejected</text>
+  <rect x="850" y="750" width="440" height="115" rx="14" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+  <text x="870" y="790" font-size="22" font-weight="700" fill="#0f172a">Summary check</text>
+  <text x="870" y="823" font-size="18" fill="#334155">Startup + eligible completion</text>
+  <text x="870" y="849" font-size="18" fill="#334155">Rebuild from changed current notes</text>
+  <text x="60" y="913" font-size="18" fill="#475569">Dashed: enqueue events. Purple: queued work / proposals. Green: separately queued summary check.</text>
+</svg>

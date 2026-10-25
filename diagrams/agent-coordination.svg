@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title description" font-family="Arial, Helvetica, sans-serif">
+  <title id="title">Agent coordination</title>
+  <desc id="description">Human direction reaches a manager, which spawns workers without waiting for completion. Dashed arrows show independent parent and peer messages, not draft submission. Dotted lines show shared file access, not isolated worktrees.</desc>
+  <rect width="1400" height="900" fill="#f8fafc"/>
+  <text x="60" y="58" font-size="32" font-weight="700" fill="#0f172a">Agent coordination</text>
+  <text x="60" y="96" font-size="19" fill="#475569">Delegate work; verify evidence before claiming success.</text>
+
+  <!-- Solid arrows: human direction and nonblocking spawn. -->
+  <line x1="320" y1="280" x2="418" y2="280" stroke="#2563eb" stroke-width="3"/>
+  <polygon points="430,280 417,273 417,287" fill="#2563eb"/>
+  <text x="338" y="263" font-size="18" fill="#1d4ed8">direct</text>
+  <polyline points="730,270 820,270 820,245 988,245" fill="none" stroke="#2563eb" stroke-width="3"/>
+  <polygon points="1000,245 987,238 987,252" fill="#2563eb"/>
+  <polyline points="730,310 820,310 820,495 988,495" fill="none" stroke="#2563eb" stroke-width="3"/>
+  <polygon points="1000,495 987,488 987,502" fill="#2563eb"/>
+  <rect x="833" y="285" width="145" height="30" fill="#f8fafc"/>
+  <text x="843" y="327" font-size="18" fill="#1d4ed8">spawn: no task wait</text>
+
+  <!-- Dashed arrows: independent send to parent or peer. -->
+  <polyline points="1160,180 1160,140 580,140 580,208" fill="none" stroke="#059669" stroke-width="3" stroke-dasharray="8 6"/>
+  <polygon points="580,220 573,207 587,207" fill="#059669"/>
+  <rect x="725" y="124" width="265" height="30" fill="#f8fafc"/>
+  <text x="739" y="146" font-size="18" fill="#047857">send to parent</text>
+  <line x1="1160" y1="312" x2="1160" y2="418" stroke="#059669" stroke-width="3" stroke-dasharray="8 6"/>
+  <polygon points="1160,300 1153,313 1167,313" fill="#059669"/>
+  <polygon points="1160,430 1153,417 1167,417" fill="#059669"/>
+  <rect x="1080" y="350" width="160" height="30" fill="#f8fafc"/>
+  <text x="1094" y="372" font-size="18" fill="#047857">peer send</text>
+
+  <!-- Dotted lines: shared file access, not a message or scheduling path. -->
+  <polyline points="580,350 580,610 890,610 890,650" fill="none" stroke="#94a3b8" stroke-width="2.5" stroke-dasharray="3 7"/>
+  <polyline points="1320,245 1360,245 1360,610 1020,610 1020,650" fill="none" stroke="#94a3b8" stroke-width="2.5" stroke-dasharray="3 7"/>
+  <polyline points="1160,550 1160,610 1020,610" fill="none" stroke="#94a3b8" stroke-width="2.5" stroke-dasharray="3 7"/>
+
+  <rect x="60" y="220" width="260" height="130" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="80" y="264" font-size="23" font-weight="700" fill="#0f172a">Human</text>
+  <text x="80" y="303" font-size="18" fill="#334155">Draft stays untouched</text>
+  <rect x="430" y="220" width="300" height="130" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="450" y="264" font-size="23" font-weight="700" fill="#0f172a">Manager</text>
+  <text x="450" y="303" font-size="18" fill="#334155">Assign, coordinate, verify</text>
+  <rect x="1000" y="180" width="320" height="120" rx="14" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+  <text x="1020" y="225" font-size="23" font-weight="700" fill="#0f172a">Worker A</text>
+  <text x="1020" y="264" font-size="18" fill="#334155">Independent task</text>
+  <rect x="1000" y="430" width="320" height="120" rx="14" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+  <text x="1020" y="475" font-size="23" font-weight="700" fill="#0f172a">Worker B</text>
+  <text x="1020" y="514" font-size="18" fill="#334155">Independent task</text>
+  <rect x="760" y="650" width="470" height="95" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="780" y="687" font-size="23" font-weight="700" fill="#0f172a">Shared project files</text>
+  <text x="780" y="720" font-size="18" fill="#334155">Coordinate overlapping edits</text>
+
+  <text x="60" y="430" font-size="18" fill="#1d4ed8">Solid arrows: direction / spawn, not task completion.</text>
+  <text x="60" y="470" font-size="18" fill="#047857">Dashed arrows: send to any peer or parent;</text>
+  <text x="60" y="500" font-size="18" fill="#047857">independent of the human draft.</text>
+  <text x="60" y="550" font-size="18" fill="#475569">Dotted lines: shared file access.</text>
+  <text x="60" y="800" font-size="19" fill="#334155">Success closes workers; keep or failure retains them. Outcomes are not verification.</text>
+  <text x="60" y="840" font-size="19" fill="#334155">Policy is inherited; directory grants are not.</text>
+</svg>

@@ -4,13 +4,22 @@ Control command execution and outside-project writes with explicit, session-scop
 
 Introduced **2026-09-28** · commit `84d64c8` (command approvals; folder grants followed).
 
+## Write boundaries
+
+![Requests pass approval and folder grants, then branch into shell sandboxing or pinned edit-path checks; failures stop the affected operation.](../diagrams/write-boundaries.svg)
+
 ## Current behavior
 
 Automatic command and requested-folder approval is **on by default**. `--auto=false` enables prompts for one session; `--auto` enables automatic approval for one session. `/auto off` and `/auto on` persist the preference. Flags override configuration.
 
-Shell calls must declare desired existing outside write folders with `write_dirs`; [edits](edit-path-safety.md) request outside-folder access automatically. Configured shell-writable directories are not implicit edit grants. Auto approval retains [sandbox](shell-sandbox.md) and pinned-path checks; it does not grant the entire filesystem at startup.
+- Shell calls declare desired existing outside write folders with `write_dirs`; [edits](edit-path-safety.md) request outside-folder access automatically.
+- Configured shell tool/cache write permissions are **not edit grants**. Explicitly approved session folder grants are shared by bash and edit.
+- Auto approval retains [sandbox](shell-sandbox.md) and pinned-path checks; it does not grant the entire filesystem at startup.
 
-Turning auto off restores command and new-folder prompts, but existing grants last until the process [restarts](startup-rebuild.md#restart-onto-a-new-build). [Workers](worker-lifecycle.md) and [new/forked chats](chat-branches.md) inherit active policy, **not directory grants**. Approval is not a correctness guarantee, and without an OS sandbox prompts alone are not a security boundary.
+- Turning auto off restores command and new-folder approval policy; configured safe commands can still run without a prompt. Existing grants last until the process [restarts](startup-rebuild.md#restart-onto-a-new-build).
+- [Workers](worker-lifecycle.md) and [new/forked chats](chat-branches.md) inherit active policy, **not directory grants**. Grants belong only to the process that approved them.
+- Denied approval or invalid folder requests stop the tool before execution. Failed edit-path checks stop the edit; blocked shell writes fail without rolling back earlier command effects.
+- Approval is not a correctness guarantee. Without an OS sandbox, prompts alone are not a security boundary.
 
 ## Evolution
 

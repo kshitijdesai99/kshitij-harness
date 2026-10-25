@@ -6,7 +6,9 @@ Introduced **2026-09-28** · commit `83bb8cd`.
 
 ## Current behavior
 
-On macOS, shell write sandboxing is enabled by default. Writable locations include the project, configured tool/cache directories, and session-approved folders; see [approval and write boundaries](write-approvals.md) for declaring outside writes. Reads still obey OS permissions. `--nosandbox` disables shell write restrictions. Other Unix systems have **no OS-level shell sandbox**; approval prompts alone are not a security boundary.
+- On macOS (Darwin), shell write sandboxing is enabled by default; `--nosandbox` disables it. Other Unix systems have **no OS-level shell sandbox**.
+- Writable locations include the project, configured tool/cache directories, and session-approved folders. See the [approval and write boundaries diagram](write-approvals.md#write-boundaries) for the execution paths.
+- Configured shell tool/cache permissions do not authorize structured edits. Reads still obey OS permissions; approval prompts alone are not a security boundary.
 
 These are execution controls, not proof that a command is safe or model output is correct. [External CLIs](external-clis.md) run under the same shell policy, with their own behavior and credentials. Retrieved memories and [procedure assets](procedure-loading.md) are reference data, never authorization to execute.
 

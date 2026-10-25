@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="720" viewBox="0 0 1400 720" role="img" aria-labelledby="title description" font-family="Arial, Helvetica, sans-serif">
+  <title id="title">Compaction lifecycle</title>
+  <desc id="description">Summarize a private copy, validate, replace live context, then save. Failure before replacement retains original history. Persistence failure after replacement does not roll back compacted live context.</desc>
+  <rect width="1400" height="720" fill="#f8fafc"/>
+  <text x="60" y="58" font-size="32" font-weight="700" fill="#0f172a">Compaction lifecycle</text>
+  <text x="60" y="94" font-size="19" fill="#475569">The live-context replacement is the boundary — persistence happens afterward.</text>
+  <g fill="none" stroke="#2563eb" stroke-width="3">
+    <path d="M260 230 H308"/><path d="M530 230 H578"/><path d="M800 230 H848"/><path d="M1070 230 H1118"/>
+  </g>
+  <g fill="#2563eb">
+    <polygon points="320,230 307,223 307,237"/><polygon points="590,230 577,223 577,237"/><polygon points="860,230 847,223 847,237"/><polygon points="1130,230 1117,223 1117,237"/>
+  </g>
+  <g stroke="#93c5fd" stroke-width="1.5" fill="#eff6ff">
+    <rect x="60" y="170" width="200" height="120" rx="14"/><rect x="320" y="170" width="210" height="120" rx="14"/>
+    <rect x="590" y="170" width="210" height="120" rx="14"/><rect x="860" y="170" width="210" height="120" rx="14"/>
+    <rect x="1130" y="170" width="210" height="120" rx="14"/>
+  </g>
+  <g fill="#0f172a" font-size="22" font-weight="700">
+    <text x="80" y="219">Original history</text><text x="340" y="219">Private summary</text><text x="610" y="219">Validate</text><text x="880" y="219">Replace live</text><text x="1150" y="219">Save session</text>
+  </g>
+  <g fill="#334155" font-size="18">
+    <text x="80" y="254">Still live</text><text x="340" y="254">Copy; no tools</text><text x="610" y="254">Usable, shorter text</text><text x="880" y="254">Summary context</text><text x="1150" y="254">Persist new history</text>
+  </g>
+  <g fill="none" stroke="#8b5cf6" stroke-width="3">
+    <path d="M425 290 V370 H365 V488"/><path d="M695 290 V420 H535 V488"/>
+    <path d="M1235 290 V488"/>
+  </g>
+  <g fill="#8b5cf6">
+    <polygon points="365,500 358,487 372,487"/><polygon points="535,500 528,487 542,487"/><polygon points="1235,500 1228,487 1242,487"/>
+  </g>
+  <g font-size="18" fill="#7c3aed">
+    <text x="445" y="345">Failure / cancellation</text><text x="550" y="450">Rejected / cancelled</text><text x="1050" y="400">Persistence failure</text>
+  </g>
+  <rect x="250" y="500" width="450" height="110" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <rect x="920" y="500" width="420" height="110" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="275" y="545" font-size="22" font-weight="700" fill="#0f172a">Retain original history</text>
+  <text x="275" y="578" font-size="18" fill="#334155">No live replacement occurred</text>
+  <text x="945" y="545" font-size="22" font-weight="700" fill="#0f172a">Keep compacted live context</text>
+  <text x="945" y="578" font-size="18" fill="#334155">Report error; no rollback</text>
+  <text x="60" y="675" font-size="18" fill="#475569">Summarization is not lossless. Saving the summary is not an archive of the original conversation.</text>
+</svg>

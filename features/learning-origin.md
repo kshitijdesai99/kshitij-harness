@@ -10,6 +10,10 @@ Startup creates a learner only in user-facing chats with [automatic saving enabl
 
 Once a run includes peer coordination, its tool evidence, final reply, and recent learning context are excluded from post-response learning, even if a user steers later. Separate clean user queries still receive the [pre-hook](learning-hooks.md). This conservative boundary deliberately forgoes some learning to avoid attributing worker directives to the user.
 
+## Origin fence in context
+
+The [learning flow](learning-hooks.md#learning-flow) distinguishes query eligibility from completion eligibility. A peer-containing composite skips query extraction; any peer contribution makes the whole run ineligible for post-response learning. That fence also excludes recent learning context after failure or cancellation, without stopping shared recall. Cancellation excludes the completion hook, not query work already queued before it.
+
 ## Evolution
 
 | Date | Change | Commit |

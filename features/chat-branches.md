@@ -10,6 +10,8 @@ Introduced **2026-10-05** · commit `388e256` (`/fork`).
 - Forking does not steer or interrupt the original task. Partial replies and unfinished tool calls are excluded.
 - New and forked chats follow [approval-policy inheritance](write-approvals.md). Parallel chats share project files; a conversation fork is not an isolated worktree.
 
+See the [conversation lifecycle diagram](saved-sessions.md#conversation-lifecycle) for completed checkpoints, fresh chats, saved history, and live attachment.
+
 ## Evolution
 
 | Date | Change | Commit |

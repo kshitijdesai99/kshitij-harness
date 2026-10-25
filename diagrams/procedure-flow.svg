@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="800" viewBox="0 0 1400 800" role="img" aria-labelledby="title description" font-family="Arial, Helvetica, sans-serif">
+  <title id="title">Procedure flow</title>
+  <desc id="description">Successful evidence can yield a versioned reference. Recall offers hints; explicit loading exposes inert content. Execution requires a separate user request and ordinary approved tools.</desc>
+  <rect width="1400" height="800" fill="#f8fafc"/>
+  <text x="60" y="58" font-size="32" font-weight="700" fill="#0f172a">Procedure flow</text>
+  <text x="60" y="95" font-size="19" fill="#475569">Evidence → stored knowledge → on-demand reference data</text>
+
+  <!-- Solid arrows: conditional data flow, never execution. -->
+  <line x1="430" y1="210" x2="478" y2="210" stroke="#8b5cf6" stroke-width="3"/>
+  <polygon points="490,210 477,203 477,217" fill="#8b5cf6"/>
+  <line x1="860" y1="210" x2="908" y2="210" stroke="#8b5cf6" stroke-width="3"/>
+  <polygon points="920,210 907,203 907,217" fill="#8b5cf6"/>
+  <polyline points="1105,280 1105,330 245,330 245,378" fill="none" stroke="#059669" stroke-width="3"/>
+  <polygon points="245,390 238,377 252,377" fill="#059669"/>
+  <rect x="560" y="314" width="285" height="30" fill="#f8fafc"/>
+  <text x="575" y="336" font-size="18" fill="#047857">Selective, budget-bound recall</text>
+  <line x1="430" y1="450" x2="478" y2="450" stroke="#2563eb" stroke-width="3"/>
+  <polygon points="490,450 477,443 477,457" fill="#2563eb"/>
+  <line x1="860" y1="450" x2="908" y2="450" stroke="#2563eb" stroke-width="3"/>
+  <polygon points="920,450 907,443 907,457" fill="#2563eb"/>
+
+  <rect x="60" y="150" width="370" height="130" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="80" y="190" font-size="22" font-weight="700" fill="#0f172a">Successful evidence</text>
+  <text x="80" y="224" font-size="18" fill="#334155">Two distinct successful tool outputs</text>
+  <text x="80" y="253" font-size="18" fill="#334155">Required, not sufficient</text>
+
+  <rect x="490" y="150" width="370" height="130" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="510" y="190" font-size="22" font-weight="700" fill="#0f172a">Eligible extraction</text>
+  <text x="510" y="224" font-size="18" fill="#334155">Useful, verified workflow only</text>
+  <text x="510" y="253" font-size="18" fill="#334155">May decline; save only if validated</text>
+
+  <rect x="920" y="150" width="420" height="130" rx="14" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+  <text x="940" y="190" font-size="22" font-weight="700" fill="#0f172a">Versioned DB reference</text>
+  <text x="940" y="224" font-size="18" fill="#334155">Reusable procedure + provenance</text>
+  <text x="940" y="253" font-size="18" fill="#334155">CLI put/import also store here</text>
+
+  <rect x="60" y="390" width="370" height="120" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="80" y="433" font-size="22" font-weight="700" fill="#0f172a">Compact hint</text>
+  <text x="80" y="469" font-size="18" fill="#334155">Description + load ID, not body</text>
+
+  <rect x="490" y="390" width="370" height="120" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="510" y="433" font-size="22" font-weight="700" fill="#0f172a">Explicit load</text>
+  <text x="510" y="469" font-size="18" fill="#334155">Memory: ID or name/alias</text>
+
+  <rect x="920" y="390" width="420" height="120" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="940" y="433" font-size="22" font-weight="700" fill="#0f172a">Inert body / assets</text>
+  <text x="940" y="469" font-size="18" fill="#334155">Reference data, never authority</text>
+
+  <!-- Dashed branch: an additional user request, not an automatic next step. -->
+  <line x1="1130" y1="510" x2="1130" y2="638" stroke="#d97706" stroke-width="3" stroke-dasharray="8 6"/>
+  <polygon points="1130,650 1123,637 1137,637" fill="#d97706"/>
+  <rect x="968" y="551" width="324" height="30" fill="#f8fafc"/>
+  <text x="981" y="573" font-size="18" font-weight="700" fill="#b45309">Only on separate user request</text>
+  <rect x="920" y="650" width="420" height="110" rx="14" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.5"/>
+  <text x="940" y="692" font-size="22" font-weight="700" fill="#0f172a">Normal-tool execution</text>
+  <text x="940" y="728" font-size="18" fill="#334155">Existing approval + sandbox rules</text>
+
+  <text x="60" y="624" font-size="18" fill="#475569">Solid arrows: conditional data flow.</text>
+  <text x="60" y="660" font-size="18" fill="#b45309">Dashed arrow: separate execution branch, never automatic.</text>
+  <text x="60" y="718" font-size="20" font-weight="700" fill="#0f172a">Save / load / import never execute.</text>
+</svg>

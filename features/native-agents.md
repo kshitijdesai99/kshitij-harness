@@ -12,11 +12,17 @@ Introduced **2026-09-29** · commit `277c243` (tmux sub-agent commands).
 - Peer messages are attributed and displayed distinctly from human input; they are not human approval responses and [do not submit or modify the user's draft](input.md#peer-messages-and-drafts). Workers retrieve shared memory without learning delegated prompts as user instructions; see [learning-origin filtering](learning-origin.md).
 - See [worker lifecycle](worker-lifecycle.md) for successful/failed pane behavior, `keep`, and inherited policy.
 
+## Coordination diagram
+
+![Human directs a manager; workers spawn without waiting and send independently of the human draft. All share project files.](../diagrams/agent-coordination.svg)
+
+Solid arrows show direction or spawn, not completion. Dashed arrows show `send` to a parent or peer; dotted lines show shared file access. Assign independent ownership; worker reports and pane outcomes still need verification.
+
 ## Human as CEO, main agent as manager
 
-Keep direction and important choices with the human. The main agent should plan, delegate, oversee evidence, resolve conflicts, and present the result. It may do integration or focused implementation itself; delegation reduces cognitive burden rather than forbidding the manager from touching code.
+Keep direction and important choices with the human. The main user-facing agent manages the work: plan, delegate implementation and inspection, oversee evidence, resolve conflicts, and present the result. Workers execute their assigned scope, including integration and checks; they are not required to delegate recursively.
 
-This is guidance, not a deterministic scheduler or a promise that every task launches workers. A useful request is:
+This operating guidance does not add a deterministic scheduler or automatic runtime delegation. A useful request is:
 
 > Split this change into independent tasks, delegate implementation and review, integrate the results, and report what you verified. Ask me only for decisions you cannot make safely.
 
