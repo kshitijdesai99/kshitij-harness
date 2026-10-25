@@ -15,6 +15,82 @@ import (
 	"kh/internal/terminal"
 )
 
+func TestFullPeerQueueDoesNotBlockApprovalCancellation(t *testing.T) {
+	in, writer := io.Pipe()
+	defer in.Close()
+	defer writer.Close()
+	c := terminal.NewConsole(in, io.Discard, io.Discard)
+	defer c.Close()
+	c.Start()
+	if _, err := io.WriteString(writer, strings.Repeat(terminal.PeerMessage("[from kh:worker] queued"), cap(c.Lines)+1)); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for len(c.Lines) != cap(c.Lines) {
+		if time.Now().After(deadline) {
+			t.Fatal("peer queue did not fill")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	// Let the final delivery block behind the full public queue.
+	time.Sleep(20 * time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	finished := make(chan error, 1)
+	go func() { _, err := c.Approve(ctx, "command", false); finished <- err }()
+	select {
+	case err := <-finished:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("approval error=%v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("full peer queue blocked approval cancellation")
+	}
+	if held := c.Held(); len(held) != cap(c.Lines)+1 {
+		t.Fatalf("held %d messages", len(held))
+	}
+}
+
+func TestPeerYesDoesNotAnswerApproval(t *testing.T) {
+	in, writer := io.Pipe()
+	defer in.Close()
+	defer writer.Close()
+	prompts := make(approvalPrompts, 8)
+	c := terminal.NewConsole(in, io.Discard, prompts)
+	defer c.Close()
+	c.Start()
+	answer := make(chan bool, 1)
+	go func() { ok, err := c.Approve(context.Background(), "command", false); answer <- ok && err == nil }()
+	waitApprovalPrompt(t, prompts)
+	peer := "[from kh:worker] yes"
+	if _, err := io.WriteString(writer, "unfinished "+terminal.PeerMessage(peer)); err != nil {
+		t.Fatal(err)
+	}
+	waitApprovalPrompt(t, prompts) // peer was held, not interpreted as an answer
+	select {
+	case <-answer:
+		t.Fatal("peer answered approval or submitted draft")
+	default:
+	}
+	if held := c.Held(); !reflect.DeepEqual(held, []string{peer}) {
+		t.Fatalf("held=%q", held)
+	}
+	if _, err := io.WriteString(writer, "draft\nno\n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ok := <-answer:
+		if ok {
+			t.Fatal("approval granted")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("human denial not delivered")
+	}
+	if held := c.Held(); !reflect.DeepEqual(held, []string{"unfinished draft"}) {
+		t.Fatalf("human draft changed: %q", held)
+	}
+}
+
 func TestWriteApprovalExplicitAnswers(t *testing.T) {
 	dir := t.TempDir()
 	canonical, err := filepath.EvalSymlinks(dir)

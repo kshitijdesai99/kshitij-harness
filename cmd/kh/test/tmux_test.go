@@ -9,7 +9,27 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"kh/internal/terminal"
 )
+
+// Exercise the real console transport rather than a sleeping pane's input echo.
+func TestTmuxInputProcess(t *testing.T) {
+	if os.Getenv("KH_TMUX_INPUT_HELPER") != "1" {
+		return
+	}
+	console := terminal.NewConsole(os.Stdin, os.Stdout, os.Stderr)
+	defer console.Close()
+	console.Start()
+	// The integration fixture advertises the same live-receiver capability.
+	if out, err := exec.Command("tmux", "set-option", "-p", "-t", os.Getenv("TMUX_PANE"), "@kh_peer_input", strconv.Itoa(os.Getpid())).CombinedOutput(); err != nil {
+		t.Fatalf("advertise input: %s: %v", out, err)
+	}
+	fmt.Println("CONSOLE_READY")
+	for line := range console.Lines {
+		fmt.Println(line)
+	}
+}
 
 // A private tmux socket keeps this test away from the user's tmux sessions.
 func TestTmuxAgents(t *testing.T) {
@@ -52,8 +72,19 @@ func testTmuxAgents(t *testing.T, source string) {
 		}
 		return strings.TrimSpace(string(b))
 	}
-	runTmux("new-session", "-d", "-s", "kh", "-n", "main", "-x", "240", "-y", "90", "sleep 60")
+	helper := "env KH_TMUX_INPUT_HELPER=1 KH_AUTO_REBUILD=0 " + "'" + strings.ReplaceAll(os.Args[0], "'", "'\\''") + "' -test.run=^TestTmuxInputProcess$"
+	runTmux("new-session", "-d", "-s", "kh", "-n", "main", "-x", "240", "-y", "90", helper)
 	defer runTmux("kill-server")
+	waitConsole := func(pane string) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for !strings.Contains(runTmux("capture-pane", "-p", "-t", pane), "CONSOLE_READY") {
+			if time.Now().After(deadline) {
+				t.Fatal("console did not become ready")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
 	// Simulate a server left running since another checkout/configuration.
 	// Subsequent kh invocations still have the original process environment.
 	for key, value := range map[string]string{
@@ -66,6 +97,7 @@ func testTmuxAgents(t *testing.T, source string) {
 	socket := runTmux("display-message", "-p", "#{socket_path}")
 	mainPane := runTmux("display-message", "-p", "-t", "kh:main.0", "#{pane_id}")
 	runTmux("set-option", "-p", "-t", mainPane, "@kh_name", "main")
+	waitConsole(mainPane)
 	khFrom := func(pane string, args ...string) (string, error) {
 		t.Helper()
 		cmd := exec.Command(binary, args...)
@@ -77,6 +109,29 @@ func testTmuxAgents(t *testing.T, source string) {
 	kh := func(args ...string) (string, error) { return khFrom(mainPane, args...) }
 	if s, err := kh("agents"); err != nil || !strings.Contains(s, "kh:main  unknown") {
 		t.Fatalf("agents: %q %v", s, err)
+	}
+	// A reused legacy pane must reject delivery instead of corrupting a draft.
+	runTmux("set-option", "-p", "-t", mainPane, "@kh_peer_input", "")
+	if s, err := kh("send", "kh:main", "must not inject"); err == nil || !strings.Contains(s, "not ready for isolated peer input") {
+		t.Fatalf("legacy receiver accepted: %q %v", s, err)
+	}
+	dead := exec.Command("true")
+	if err := dead.Run(); err != nil {
+		t.Fatal(err)
+	}
+	runTmux("set-option", "-p", "-t", mainPane, "@kh_peer_input", strconv.Itoa(dead.Process.Pid))
+	if s, err := kh("send", "kh:main", "must not inject after crash"); err == nil || !strings.Contains(s, "not ready for isolated peer input") {
+		t.Fatalf("dead receiver accepted: %q %v", s, err)
+	}
+	runTmux("set-option", "-p", "-t", mainPane, "@kh_peer_input", runTmux("display-message", "-p", "-t", mainPane, "#{pane_pid}"))
+	owner := runTmux("display-message", "-p", "-t", mainPane, "#{@kh_peer_input}")
+	for _, args := range [][]string{{"-provider", "codex"}, {"-p", "-provider", "codex", "nested task"}} {
+		// Both EOF chat and failed one-shot turns inherit the pane environment,
+		// but redirected input/output never own its interactive receiver.
+		_, _ = kh(args...)
+		if got := runTmux("display-message", "-p", "-t", mainPane, "#{@kh_peer_input}"); got != owner {
+			t.Fatalf("redirected child changed receiver: got=%q want=%q", got, owner)
+		}
 	}
 	if s, err := kh("send", "kh:main", "hello from test"); err != nil {
 		t.Fatalf("send: %s %v", s, err)
@@ -125,6 +180,10 @@ func testTmuxAgents(t *testing.T, source string) {
 	if s, err := kh("send", "kh:main", "bad\nmessage"); err == nil {
 		t.Fatalf("accepted multiline: %q", s)
 	}
+	// Startup routing is checked above; use a real console as the receiver so
+	// these transport checks need neither provider credentials nor input echo.
+	runTmux("respawn-pane", "-k", "-t", docsPane, helper)
+	waitConsole(docsPane)
 	// The invoker's identity must not depend on which pane the user focuses.
 	runTmux("select-pane", "-t", docsPane)
 	if s, err := kh("spawn", "tests", "run isolated tests"); err != nil {
@@ -134,6 +193,8 @@ func testTmuxAgents(t *testing.T, source string) {
 		t.Fatalf("second spawn changed focus: %s", active)
 	}
 	testsPane := runTmux("display-message", "-p", "-t", "kh:main.2", "#{pane_id}")
+	runTmux("respawn-pane", "-k", "-t", testsPane, helper)
+	waitConsole(testsPane)
 	if count := runTmux("display-message", "-p", "-t", "kh:main", "#{window_panes}"); count != "3" {
 		t.Fatalf("want three panes: %s", count)
 	}
@@ -182,9 +243,10 @@ func testTmuxAgents(t *testing.T, source string) {
 		t.Fatalf("accepted terminal control input: %q", s)
 	}
 	// Logical addresses also work in an existing, non-kh tmux session.
-	runTmux("new-session", "-d", "-s", "work", "-n", "chat", "-x", "240", "-y", "90", "sleep 60")
+	runTmux("new-session", "-d", "-s", "work", "-n", "chat", "-x", "240", "-y", "90", helper)
 	workMain := runTmux("display-message", "-p", "-t", "work:chat.0", "#{pane_id}")
 	runTmux("set-option", "-p", "-t", workMain, "@kh_name", "main")
+	waitConsole(workMain)
 	if s, err := khFrom(workMain, "spawn", "docs", "independent session worker"); err != nil {
 		t.Fatalf("existing session spawn: %q %v", s, err)
 	}

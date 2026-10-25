@@ -6,10 +6,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"unicode"
+
+	"github.com/chzyer/readline"
 
 	"kh/internal/config"
 	"kh/internal/session"
+	"kh/internal/terminal"
 	"kh/internal/tools"
 )
 
@@ -168,6 +172,16 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 		if err != nil {
 			return "", err
 		}
+		// Never fall back to raw keys: a legacy receiver would append them to
+		// the human draft. The PID also rejects markers left by a crashed chat.
+		capability, err := tmuxContext(ctx, "display-message", "-p", "-t", pane, "#{@kh_peer_input}")
+		if err != nil {
+			return "", err
+		}
+		pid, parseErr := strconv.Atoi(capability)
+		if parseErr != nil || pid <= 0 || syscall.Kill(pid, 0) != nil {
+			return "", fmt.Errorf("%s is not ready for isolated peer input; wait if it is starting, or restart it onto the new build", args[1])
+		}
 		sender, err := agentAddress(ctx)
 		if err != nil {
 			return "", err
@@ -175,8 +189,9 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 		// Attribution also prevents a peer's "yes" from answering a bash approval.
 		// Hex-byte transport preserves UTF-8 and literal trailing semicolons:
 		// tmux otherwise interprets a final ';' as a command separator, even
-		// in a send-keys argument. Include Enter in the same server command.
-		message := "[from " + sender + "] " + args[2] + "\r"
+		// in a send-keys argument. The console consumes this frame separately
+		// from the human editor; never inject Enter or append to its draft.
+		message := terminal.PeerMessage("[from " + sender + "] " + args[2])
 		keys := []string{"send-keys", "-H", "-t", pane}
 		const hex = "0123456789abcdef"
 		for i := 0; i < len(message); i++ {
@@ -296,6 +311,29 @@ func findAgentPane(ctx context.Context, name string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("agent kh:%s not found", name)
+}
+
+// Advertise only a live terminal receiver, not redirected children sharing its
+// pane environment. Clear only our own marker; PID checks reject crashed chats.
+func setPeerInput(active bool) error {
+	if os.Getenv("TMUX") == "" || !readline.IsTerminal(int(os.Stdin.Fd())) || !readline.IsTerminal(int(os.Stdout.Fd())) {
+		return nil
+	}
+	pane, err := currentPane(context.Background())
+	if err != nil {
+		return err
+	}
+	self := strconv.Itoa(os.Getpid())
+	value := self
+	if !active {
+		owner, err := tmux("display-message", "-p", "-t", pane, "#{@kh_peer_input}")
+		if err != nil || owner != self {
+			return err // a nested/older chat must not clear another receiver
+		}
+		value = ""
+	}
+	_, err = tmux("set-option", "-p", "-t", pane, "@kh_peer_input", value)
+	return err
 }
 
 // Chats in an existing tmux session also receive a stable logical address.

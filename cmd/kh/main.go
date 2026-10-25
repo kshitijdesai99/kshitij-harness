@@ -244,6 +244,8 @@ func main() {
 		return true
 	})
 	console.Start()
+	exit(setPeerInput(true))
+	defer func() { _ = setPeerInput(false) }()
 	turn := func(msg string) error { return c.turn(ctx, msg) }
 
 	setAgentState("waiting")

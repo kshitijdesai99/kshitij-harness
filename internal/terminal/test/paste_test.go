@@ -98,6 +98,73 @@ func TestPasteSizeLimitAndIncompletePaste(t *testing.T) {
 	}
 }
 
+func TestPeerMessagesBypassDraftAndPaste(t *testing.T) {
+	peer := "[from kh:worker] café [paste 0123456789abcdef: 1 lines]"
+	input := "draft " + terminal.PeerMessage(peer) + pasteStart + "first\n" + terminal.PeerMessage(peer) + "second" + pasteFinish + " end\n"
+	for _, in := range []io.Reader{strings.NewReader(input), fragmentedInput{strings.NewReader(input)}} {
+		got, diagnostics := collectInput(in)
+		want := []string{peer, peer, "draft first\nsecond end"}
+		if !reflect.DeepEqual(got, want) || diagnostics != "" {
+			t.Fatalf("got=%q diagnostics=%q", got, diagnostics)
+		}
+	}
+	got, diagnostics := collectInput(strings.NewReader(terminal.PeerMessage(peer)))
+	if !reflect.DeepEqual(got, []string{peer}) || diagnostics != "" {
+		t.Fatalf("peer at EOF: got=%q diagnostics=%q", got, diagnostics)
+	}
+	// EOF in a frame must not submit a partial human draft or peer payload.
+	got, diagnostics = collectInput(strings.NewReader("draft " + "\x1b]kh-peer;YWJj"))
+	if len(got) != 0 || !strings.Contains(diagnostics, "incomplete peer message") {
+		t.Fatalf("incomplete frame: got=%q diagnostics=%q", got, diagnostics)
+	}
+}
+
+func TestPeerDoesNotSubmitPlainDraftBeforeEnter(t *testing.T) {
+	in, writer := io.Pipe()
+	defer in.Close()
+	defer writer.Close()
+	c := terminal.NewConsole(in, io.Discard, io.Discard)
+	defer c.Close()
+	c.Start()
+	peer := "[from kh:worker] independent"
+	if _, err := io.WriteString(writer, "unfinished "+terminal.PeerMessage(peer)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-c.Lines:
+		if got != peer {
+			t.Fatalf("got=%q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("peer waited for human Enter")
+	}
+	select {
+	case got := <-c.Lines:
+		t.Fatalf("draft submitted without Enter: %q", got)
+	case <-time.After(30 * time.Millisecond):
+	}
+	if _, err := io.WriteString(writer, "draft\n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-c.Lines:
+		if got != "unfinished draft" {
+			t.Fatalf("draft changed: %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("human Enter not delivered")
+	}
+}
+
+func TestPeerFramesRejectInvalidAndOversizedPayloads(t *testing.T) {
+	for _, input := range []string{"\x1b]kh-peer;!\a", terminal.PeerMessage(strings.Repeat("x", (4<<20)+1))} {
+		got, diagnostics := collectInput(strings.NewReader("draft " + input))
+		if len(got) != 0 || !strings.Contains(diagnostics, "peer message") {
+			t.Fatalf("invalid frame escaped: got=%q diagnostics=%q", got, diagnostics)
+		}
+	}
+}
+
 func TestPasteEscapeSequencePreservation(t *testing.T) {
 	// A false end-marker prefix and adjacent ESC must remain payload data.
 	payload := "a\x1b[20x\x1b\x1b[Aend"

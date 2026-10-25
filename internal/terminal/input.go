@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"bufio"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -30,6 +31,8 @@ type Console struct {
 	approval     chan struct{}
 	activity     *Activity
 	command      func(string) bool
+	deliveryMu   sync.Mutex
+	inputClosed  bool
 }
 
 func NewConsole(in io.Reader, out, err io.Writer) *Console {
@@ -84,6 +87,19 @@ func (c *Console) send(line string) bool {
 	if c.command != nil && c.command(line) {
 		return true
 	}
+	return c.deliver(line)
+}
+
+// deliver is shared by submitted human input and out-of-band peer messages.
+// Peer messages deliberately bypass commands, paste expansion, and history.
+func (c *Console) deliver(line string) bool {
+	// readline's cancelable reader can finish a frame after the read loop
+	// exits. Serialize delivery with channel closure, including that late read.
+	c.deliveryMu.Lock()
+	defer c.deliveryMu.Unlock()
+	if c.inputClosed {
+		return false
+	}
 	select {
 	case c.lines <- line:
 		return true
@@ -93,14 +109,19 @@ func (c *Console) send(line string) bool {
 }
 
 func (c *Console) read() {
-	defer close(c.lines)
+	defer func() {
+		c.deliveryMu.Lock()
+		c.inputClosed = true
+		close(c.lines)
+		c.deliveryMu.Unlock()
+	}()
 	in, inOK := c.in.(*os.File)
 	out, outOK := c.out.(*os.File)
 	if !inOK || !outOK || !readline.IsTerminal(int(in.Fd())) || !readline.IsTerminal(int(out.Fd())) {
 		c.readPlain()
 		return
 	}
-	stdin := readline.NewCancelableStdin(newTerminalReader(in, c.pastes))
+	stdin := readline.NewCancelableStdin(newTerminalReader(c.peerInput(in), c.pastes))
 	var continuation atomic.Bool
 	prompt := Color(c.out, Query, "> ")
 	rl, err := readline.NewEx(&readline.Config{
@@ -190,7 +211,7 @@ func (c *Console) read() {
 }
 
 func (c *Console) readPlain() {
-	r := bufio.NewReader(newPasteReader(c.in, c.pastes))
+	r := bufio.NewReader(newPasteReader(c.peerInput(c.in), c.pastes))
 	for {
 		line, err := r.ReadString('\n')
 		if err != nil && err != io.EOF {
@@ -204,6 +225,87 @@ func (c *Console) readPlain() {
 			return
 		}
 	}
+}
+
+// PeerMessage frames a message for tmux delivery without simulating user keys.
+// Decode it below paste handling so arrival during a paste cannot become payload.
+func PeerMessage(message string) string {
+	return peerPrefix + base64.RawStdEncoding.EncodeToString([]byte(message)) + "\a"
+}
+
+const peerPrefix = "\x1b]kh-peer;"
+
+func (c *Console) peerInput(in io.Reader) io.Reader {
+	return &peerReader{in: bufio.NewReader(in), deliver: c.deliver}
+}
+
+type peerReader struct {
+	in      *bufio.Reader
+	deliver func(string) bool
+	pending []byte
+}
+
+func (r *peerReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	for len(r.pending) == 0 {
+		b, err := r.in.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		if b != peerPrefix[0] {
+			// Pass through an available run of ordinary bytes without adding a
+			// per-keystroke allocation or waiting for more terminal input.
+			p[0] = b
+			buffered, _ := r.in.Peek(min(r.in.Buffered(), len(p)-1))
+			for i, next := range buffered {
+				if next == peerPrefix[0] {
+					buffered = buffered[:i]
+					break
+				}
+			}
+			n := copy(p[1:], buffered)
+			_, _ = r.in.Discard(n)
+			return n + 1, nil
+		}
+		sequence := []byte{b}
+		for len(sequence) < len(peerPrefix) && string(sequence) == peerPrefix[:len(sequence)] {
+			b, err = r.in.ReadByte()
+			if err != nil {
+				break
+			}
+			sequence = append(sequence, b)
+		}
+		if string(sequence) != peerPrefix {
+			r.pending = sequence
+			break
+		}
+		var encoded strings.Builder
+		for {
+			b, err = r.in.ReadByte()
+			if err != nil {
+				return 0, fmt.Errorf("incomplete peer message: %w", err)
+			}
+			if b == '\a' {
+				break
+			}
+			if encoded.Len() >= base64.RawStdEncoding.EncodedLen(pasteLimit) {
+				return 0, fmt.Errorf("peer message exceeds the 4 MiB limit")
+			}
+			encoded.WriteByte(b)
+		}
+		message, err := base64.RawStdEncoding.DecodeString(encoded.String())
+		if err != nil {
+			return 0, fmt.Errorf("invalid peer message: %w", err)
+		}
+		if !r.deliver(string(message)) {
+			return 0, io.EOF
+		}
+	}
+	n := copy(p, r.pending)
+	r.pending = r.pending[n:]
+	return n, nil
 }
 
 type queryPainter struct{ out io.Writer }
