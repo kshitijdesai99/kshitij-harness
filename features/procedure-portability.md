@@ -8,7 +8,26 @@ Introduced **2026-10-23** · commit `f802b27`.
 
 Use `kh memory reference put/get/export/import/asset` to manage database-native references. Export/import carries procedure content and provenance; import neither executes assets nor overwrites existing topics. `kh memory reference demo` stores a sound example without playing it.
 
-References remain scoped, versioned knowledge rather than executable installations; the [inert-reference boundary](procedure-loading.md) applies to bundles as well. Consult the CLI source below for command details, and [procedure learning](procedure-learning.md) for automatic creation and versioned improvements.
+References remain scoped, versioned knowledge rather than executable installations; the [inert-reference boundary](procedure-loading.md) applies to bundles as well. See [procedure learning](procedure-learning.md) for automatic creation and versioned improvements.
+
+## Inspect and transfer an existing reference
+
+Replace the paths, `my-procedure`, and `script.sh` with an existing reference's name (or numeric ID) and asset name. Run inspection/export in the source repository; run import from the destination repository so `repo` selects its scope.
+
+```sh
+cd /path/to/source-repo
+kh memory reference get my-procedure
+kh memory reference asset my-procedure script.sh
+kh memory reference export my-procedure > /absolute/path/reference.json
+
+cd /path/to/destination-repo
+kh memory reference import repo < /absolute/path/reference.json
+kh memory reference get my-procedure
+```
+
+`get` displays the procedure and inert assets; `asset` only prints source. These inspection and transfer commands do not execute scripts; execution is a separate, explicitly requested action under the [ordinary tool policy](write-approvals.md). Use `import global` instead of `import repo` only for a reference intended for all repositories. Import refuses to overwrite an existing topic.
+
+The runtime database remains authoritative. Exported JSON is a transfer artifact, not a maintained documentation file or reference store.
 
 ## Evolution
 

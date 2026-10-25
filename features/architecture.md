@@ -2,6 +2,27 @@
 
 Understand how kh connects model orchestration, tools, conversation state, and learning. Operating instructions and history live on each feature's owning page.
 
+## Source map
+
+Use this map to find the owning package; linked feature pages explain behavior and history.
+
+| Package / source | Responsibility | Feature guide |
+|---|---|---|
+| [`cmd/kh`](../cmd/kh/) | CLI entry points, chat lifecycle, and application wiring | [Chat modes](chat-modes.md), [native agents](native-agents.md) |
+| [`internal/agent`](../internal/agent/) | Model/tool turn orchestration | [Execution loop](execution.md) |
+| [`internal/backend`](../internal/backend/) | Provider construction and selection | [Provider state](provider-state.md) |
+| [`internal/config`](../internal/config/) | Defaults and persisted configuration | [Model settings](model-settings.md) |
+| [`internal/help`](../internal/help/) | Standalone help requests | [Help](help.md) |
+| [`internal/hybrid`](../internal/hybrid/) | Managed local retrieval services | [Hybrid runtime](hybrid-runtime.md) |
+| [`internal/image`](../internal/image/) | Image attachment reading and clipboard snapshots | [Images](images.md) |
+| [`internal/learn`](../internal/learn/) | Background extraction and learning safeguards | [Learning queue](learning-queue.md), [origin protections](learning-origin.md) |
+| [`internal/memory`](../internal/memory/) | Versioned storage, retrieval, and reference bundles | [Knowledge store](knowledge-store.md), [hybrid retrieval](hybrid-retrieval.md), [portability](procedure-portability.md) |
+| [`internal/provider`](../internal/provider/) | Provider contract and protocol adapters | [Provider state](provider-state.md), [connection recovery](connection-recovery.md) |
+| [`internal/repomap`](../internal/repomap/) | Repository context generation | [Repository map](repository-map.md) |
+| [`internal/session`](../internal/session/) | Saved session files and state | [Saved sessions](saved-sessions.md) |
+| [`internal/terminal`](../internal/terminal/) | Input, rendering, and terminal feedback | [Input](input.md), [Markdown](markdown.md), [feedback](terminal-feedback.md) |
+| [`internal/tools`](../internal/tools/) | Tool implementations, approvals, and filesystem safety | [Shell](shell.md), [editing](editing.md), [write approvals](write-approvals.md) |
+
 ## Application and turn loop
 
 The [CLI](../cmd/kh/main.go) selects configuration, opens stores, and assembles tools. The [chat lifecycle](../cmd/kh/chat.go) manages retrieval, learning, persistence, and controls. The [runner](../internal/agent/loop.go) needs only the provider's `Step` method:

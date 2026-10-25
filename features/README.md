@@ -4,6 +4,8 @@ Use this index to see what kh does, when each capability first appeared, and wha
 
 **Introduced** means the first implementation in Git, not the date its documentation was written. “What followed” is a short signpost, not a complete changelog; dates and commit references live on the linked page. Baseline: `dee1c86`, inspected October 25, 2026. Source/test links are evidence, not a claim of fresh passing tests.
 
+Shared guides: [Architecture](architecture.md) · [Development](development.md) · [Maintenance](CONTRIBUTING.md)
+
 ## Execution and context
 
 | Feature | Introduced | What followed |
@@ -57,7 +59,7 @@ Use this index to see what kh does, when each capability first appeared, and wha
 | Feature | Introduced | What followed |
 |---|---|---|
 | [Keyword recall](keyword-recall.md) | 2026-09-29 | Bounded context and less redundant recall |
-| [Hybrid retrieval](hybrid-retrieval.md) | 2026-10-16 | Managed local models and applicability scoring |
+| [Hybrid retrieval](hybrid-retrieval.md) | 2026-10-16 | Managed local models, [runtime](hybrid-runtime.md), and applicability scoring |
 | [Retrieval diagnostics](retrieval-diagnostics.md) | 2026-10-23 | Candidate scores, rejection and fallback details |
 | [Procedure learning](procedure-learning.md) | 2026-10-23 | No later changes at baseline |
 | [Procedure loading](procedure-loading.md) | 2026-10-23 | Relevance diagnostics and autonomous population |
