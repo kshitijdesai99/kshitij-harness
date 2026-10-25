@@ -19,6 +19,6 @@ Codex built-in search is enabled by default through `web_search`. Search runs pr
 ## Inspect
 
 - [Codex client](../internal/provider/codex/client.go) and [configuration](../internal/config/config.go).
-- [Provider architecture](../manual/architecture.md#provider-owned-history) and [delegation/tool boundaries](../manual/delegation.md).
+- [Provider architecture](architecture.md#provider-owned-history) and [delegation/tool boundaries](native-agents.md).
 
 [Feature index](README.md)

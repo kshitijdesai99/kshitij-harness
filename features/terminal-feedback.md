@@ -22,6 +22,6 @@ Terminal feedback includes activity indicators, distinct commentary/tool/peer st
 
 - [Renderer](../internal/terminal/render.go), [activity](../internal/terminal/activity.go), and [colors](../internal/terminal/color.go)
 - [Color tests](../internal/terminal/test/color_test.go) and [activity tests](../internal/terminal/test/activity_test.go)
-- [Presentation and context](../manual/architecture.md#presentation-and-context)
+- [Presentation and context](architecture.md#presentation-and-context)
 
 [Feature index](README.md)

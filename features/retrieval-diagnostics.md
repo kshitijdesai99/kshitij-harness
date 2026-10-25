@@ -6,7 +6,7 @@ Introduced **2026-10-23** · commit `24e64b7`.
 
 ## Current behavior
 
-Use `kh memory status` to inspect configuration/runtime status and `kh memory explain "QUERY"` to examine a query's retrieval. In chat, `/memory explain` displays the last recall without rerunning it.
+Use `kh memory status` to inspect configuration/runtime status and `kh memory explain "QUERY"` to examine a query's retrieval, including [hybrid fallback](hybrid-retrieval.md). In chat, `/memory explain` displays the last recall's IDs and scores without searching again. Use [memory controls](memory-controls.md) to inspect stored notes themselves rather than the selection trace.
 
 Diagnostics expose stage counts, candidate/loaded IDs, scores, rejection details, timing, and fallback or skip reasons. Per-message summaries are bounded; the detailed view retains more evidence. A successful pipeline stage does not prove relevance, and an empty load can reflect either no new applicable knowledge or the context budget. These controls are not a unified event trace or a record of every learning attempt.
 
@@ -21,6 +21,5 @@ Diagnostics expose stage counts, candidate/loaded IDs, scores, rejection details
 
 - Source: [diagnostic formatting](../internal/memory/diagnostic.go), [recall](../internal/memory/recall.go), [CLI](../cmd/kh/memory.go), [chat](../cmd/kh/chat.go).
 - Tests: [diagnostics](../internal/memory/test/diagnostic_test.go), [recall efficiency](../internal/memory/test/recall_efficiency_test.go).
-- Manual: [retrieval and diagnostics](../manual/memory.md#retrieval-and-diagnostics).
 
 [Feature index](README.md)

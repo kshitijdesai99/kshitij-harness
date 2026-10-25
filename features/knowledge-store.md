@@ -6,9 +6,16 @@ Introduced **2026-09-29** · commit `14dd3e6`.
 
 ## Current behavior
 
-- SQLite at `~/.kh/memory.db` stores repo/global instructions, facts, decisions, and gotchas, separately from saved conversations.
-- Retrieved notes are reference data; current user requests take precedence. Workers share retrieval, but delegated prompts are not learned as user instructions.
-- Background hooks selectively save knowledge; saving may decline or fail and is not an exhaustive archive. Keyword retrieval works by default; optional hybrid retrieval is a separate capability.
+SQLite at `~/.kh/memory.db` is the runtime source of truth for repo/global instructions, facts, decisions, and gotchas. Conversations live separately in `~/.kh/sessions`; documentation is not a second runtime knowledge store. Retrieved notes are reference data subordinate to current user requests.
+
+| Table | Purpose |
+|---|---|
+| `notes` | Append-only topic versions, scope, provenance, replacement links, and forgotten markers. |
+| `notes_fts` | FTS5 keyword index over note keys and text. |
+| `notes_vectors` | Optional vector cache keyed by note and model/endpoint identity, with content hashes to detect changes. |
+| `reference_payloads` | Full procedures, aliases, inert assets, portable IDs, versions, and import provenance linked to a note version. |
+
+SQLite WAL supports shared reads while another process writes. See [version history](memory-history.md) for current-version and stale-write rules, [controls](memory-controls.md) for forgetting/purging, and [procedure loading](procedure-loading.md) for database-native workflows. [Learning hooks](learning-hooks.md) selectively retain knowledge; [keyword recall](keyword-recall.md) works without model downloads.
 
 ## Evolution
 
@@ -21,6 +28,6 @@ Introduced **2026-09-29** · commit `14dd3e6`.
 
 ## Inspect
 
-[Store](../internal/memory/memory.go) · [Store tests](../internal/memory/test/memory_test.go) · [Database and learning details](../manual/memory.md#database-as-source-of-truth)
+[Store/schema](../internal/memory/memory.go) · [Vector cache](../internal/memory/semantic.go) · [Reference transactions](../internal/memory/references.go) · [Store tests](../internal/memory/test/memory_test.go)
 
 [Feature index](README.md)

@@ -6,9 +6,19 @@ Introduced **2026-10-04** · commit `c8de1bf` (explicit rebuild; automatic start
 
 ## Current behavior
 
-Normal session startup rebuilds and re-executes the invoked executable. `--rebuild` builds and exits; utility commands do not trigger the startup rebuild. This requires the checkout, Go, and a writable executable directory. `KH_SOURCE_DIR` locates moved sources; `KH_AUTO_REBUILD=0` skips automatic rebuilding.
+Normal session startup rebuilds and re-executes the invoked executable from local sources. This requires Go, the kh checkout, and a writable executable directory. Set `KH_SOURCE_DIR=/path/to/kshitij-harness` if sources move, or `KH_AUTO_REBUILD=0` to skip rebuilding. Failed builds stop startup without replacing the old binary. Utility commands do not trigger this startup rebuild.
 
-Failed builds stop startup without replacing the old binary. Existing chats keep their running build: restart and resume saved history to use an update. Rebuilding alone does not update a live process.
+`kh --rebuild` explicitly rebuilds and exits; it takes no other flags or task. Automatic rebuilds use the invoked binary's source checkout, not an unrelated working checkout; explicit rebuilds prefer the current checkout unless `KH_SOURCE_DIR` is set.
+
+## Restart onto a new build
+
+Existing chats keep their running build. Rebuilding alone does not replace a live process, and attaching to its [tmux session](tmux-chats.md) does not update it.
+
+1. Stop active work and exit the old chat with Ctrl-D on empty input.
+2. Start kh again in the same working folder, using `kh -s SESSION_ID` to select the [saved conversation](saved-sessions.md); `kh -r` selects the newest by creation ID.
+3. Startup rebuilds and runs the new executable unless disabled above.
+
+Restarting also ends process-lifetime [folder grants](write-approvals.md). Change history belongs in the [release notes](../release-notes/).
 
 ## Evolution
 
@@ -21,6 +31,5 @@ Failed builds stop startup without replacing the old binary. Existing chats keep
 
 - [Rebuild implementation](../cmd/kh/rebuild.go)
 - [Rebuild tests](../cmd/kh/test/rebuild_test.go)
-- [Updates and restart](../manual/safety-and-sessions.md#updates-and-restart)
 
 [Feature index](README.md)

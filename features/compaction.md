@@ -19,6 +19,6 @@ Introduced **2026-10-04** · commit `c8de1bf`.
 
 ## Inspect
 
-[Compaction implementation](../internal/provider/codex/compact.go) · [Provider tests](../internal/provider/codex/test/compact_test.go) · [CLI tests](../cmd/kh/test/compact_test.go) · [Provider-owned history](../manual/architecture.md#provider-owned-history)
+[Compaction implementation](../internal/provider/codex/compact.go) · [Provider tests](../internal/provider/codex/test/compact_test.go) · [CLI tests](../cmd/kh/test/compact_test.go) · [Saved sessions](saved-sessions.md)
 
 [Feature index](README.md)

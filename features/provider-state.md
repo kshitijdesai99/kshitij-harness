@@ -22,6 +22,6 @@ The backend-neutral provider contract owns stepping, saved state, loading, and r
 
 - [Provider contract](../internal/provider/provider.go) and [Codex stream handling](../internal/provider/codex/stream.go)
 - [Stream tests](../internal/provider/codex/test/stream_test.go)
-- [Provider-owned history](../manual/architecture.md#provider-owned-history) and [saved sessions](../manual/safety-and-sessions.md#saved-history-versus-running-chats)
+- [Provider-owned history](architecture.md#provider-owned-history) and [saved sessions](saved-sessions.md)
 
 [Feature index](README.md)

@@ -8,7 +8,9 @@ Introduced **2026-10-16** · commit `46c225b` (semantic/keyword hybrid support).
 
 Hybrid retrieval is opt-in through `/memory hybrid on`; keyword-only retrieval remains the default. Explicit setup downloads and verifies Qwen3-Embedding 0.6B and Qwen3-Reranker 0.6B, requiring Ollama and Python 3.10+ with venv support. Startup uses cached models only. `/memory hybrid off` restores keywords without deleting models or vectors; open chats apply changes on their next message.
 
-Vectors fill lazily with bounded backfill, not continuous indexing. Applicability filtering can return no relevant notes. Embedding/reranking failures fall back to keywords with stage-specific diagnostics. The [managed helper](hybrid-runtime.md) documents contention limits and revision/upgrade policy; overrides and setup details belong in the manual.
+Optional `memory_embedding_url`, `memory_embedding_model`, and `memory_reranker_url` configuration settings override defaults. The vector cache fills lazily during semantic searches, with bounded backfill for missing or changed vectors; it is not a continuous indexer.
+
+Applicability filtering can return no relevant notes rather than filling a quota. Embedding/reranking failures fall back to keywords with stage-specific notices; [retrieval diagnostics](retrieval-diagnostics.md) expose fallback status. Retry `/memory hybrid on` to repeat setup and verification. The [managed helper](hybrid-runtime.md) owns runtime files, contention limits, and revision/upgrade policy.
 
 ## Evolution
 
@@ -24,6 +26,5 @@ Vectors fill lazily with bounded backfill, not continuous indexing. Applicabilit
 
 - Source: [semantic search](../internal/memory/semantic.go), [ranking](../internal/memory/search.go), [managed runtime](../internal/hybrid/runtime.go).
 - Tests: [hybrid search](../internal/memory/test/hybrid_test.go), [relevance](../internal/memory/test/relevance_test.go), [runtime](../internal/hybrid/test/runtime_test.go).
-- Manual: [optional local hybrid search](../manual/memory.md#optional-local-hybrid-search).
 
 [Feature index](README.md)

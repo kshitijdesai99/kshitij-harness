@@ -6,7 +6,13 @@ Introduced 2026-10-01 · commit `b3d387a` (query history; multiline drafts came 
 
 ## Current behavior
 
-Shift+Enter or Ctrl-J adds a line to a draft; arrow keys recall previous input. Paste handling supports composing longer requests. Shift+Enter depends on terminal support, so Ctrl-J is the alternative when the modified key is unavailable.
+**Enter** sends the whole draft. **Shift+Enter** adds a line, shown with a `... ` continuation prompt; **Ctrl-J** is the fallback when the terminal cannot distinguish Shift+Enter. **Up/Down** recall and navigate input history. Multiline pasted content is a message, not a batch of slash commands. See [steering and stopping](steering.md) for controls during active work.
+
+## Peer messages and drafts
+
+Incoming agent messages are delivered independently of the human editor. They do not append to or submit an unfinished draft, change its cursor position, enter its history, or become part of an active multiline draft or paste. Your draft is submitted only when you press Enter. Peer messages also bypass slash-command and approval-answer parsing.
+
+Existing sender and receiver chats must [restart onto the updated build](startup-rebuild.md#restart-onto-a-new-build) to use isolated delivery. Updated senders reject receivers without live support instead of falling back to simulated typing. See [native agents](native-agents.md) for coordination.
 
 ## Evolution
 
@@ -15,10 +21,11 @@ Shift+Enter or Ctrl-J adds a line to a draft; arrow keys recall previous input. 
 | 2026-10-01 | Added interactive query history with arrow-key recall. | `b3d387a` |
 | 2026-10-01 | Moved console input into the terminal layer and forwarded raw-mode Ctrl-C to turn cancellation. | `60e2bd1` |
 | 2026-10-10 | Added Shift+Enter/Ctrl-J multiline drafts and refined paste handling. | `ded650e` |
+| 2026-10-25 | Separated framed peer delivery from unfinished human drafts, paste/history, and approval parsing. | `dee1c86` |
 
 ## Inspect
 
 - [Input implementation](../internal/terminal/input.go), [input tests](../internal/terminal/test/input_test.go), and [paste tests](../internal/terminal/test/paste_test.go).
-- [Essential input controls](../README.md#use).
+- [Chat modes](chat-modes.md) and [image attachments](images.md).
 
 [Feature index](README.md)

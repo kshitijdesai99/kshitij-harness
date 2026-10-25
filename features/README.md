@@ -1,8 +1,8 @@
 # Features
 
-Use this index to see what kh does, when each capability first appeared, and what followed. Each feature has its own page for purpose, current behavior, limitations, evidence, and dated development history.
+Use this index to see what kh does, when each capability first appeared, and what followed. Each feature has one owning page for operating instructions, limitations, evidence, and dated development history—no separate manual to maintain.
 
-**Introduced** means the first implementation in Git, not the date its documentation was written. “What followed” is a short signpost, not a complete changelog; dates and commit references live on the linked page. Baseline: `23e7a86`, inspected October 25, 2026. Source/test links are evidence, not a claim of fresh passing tests.
+**Introduced** means the first implementation in Git, not the date its documentation was written. “What followed” is a short signpost, not a complete changelog; dates and commit references live on the linked page. Baseline: `dee1c86`, inspected October 25, 2026. Source/test links are evidence, not a claim of fresh passing tests.
 
 ## Execution and context
 
@@ -20,7 +20,7 @@ Use this index to see what kh does, when each capability first appeared, and wha
 |---|---|---|
 | [Chat and headless modes](chat-modes.md) | 2026-09-28 | Interactive default and explicit `-p` mode |
 | [Steering and stopping](steering.md) | 2026-09-28 | Reply interruption and safer cleanup |
-| [Input composition and history](input.md) | 2026-10-01 | Terminal input separation and multiline drafts |
+| [Input composition and history](input.md) | 2026-10-01 | Multiline drafts and isolated peer delivery |
 | [Model and effort settings](model-settings.md) | 2026-09-28 | Persistent settings across chats |
 | [Help](help.md) | 2026-09-28 | Contextual, tool-less one-off help |
 
@@ -37,7 +37,7 @@ Use this index to see what kh does, when each capability first appeared, and wha
 
 | Feature | Introduced | What followed |
 |---|---|---|
-| [Native agents](native-agents.md) | 2026-09-29 | Named routing and native agent tool |
+| [Native agents](native-agents.md) | 2026-09-29 | Named routing, native tool, isolated peer transport |
 | [Worker lifecycle and policy](worker-lifecycle.md) | 2026-09-29 | Auto-closing panes and unified approval policy |
 | [External coding CLIs](external-clis.md) | 2026-09-28 | Documented coordination through shell tools |
 
@@ -91,6 +91,6 @@ Use this index to see what kh does, when each capability first appeared, and wha
 
 ## Using and maintaining this catalog
 
-- For how the systems connect, see [architecture](../manual/architecture.md); for everyday use, see the [project README](../README.md).
+- For how the systems connect, see [architecture](architecture.md); for setup, see the [project README](../README.md); for implementation/test conventions, see [development](development.md).
 - For recent changes across features, see [dated release notes](../release-notes/). Feature pages keep the history of their own capability.
 - Follow the [maintenance guide](CONTRIBUTING.md) when adding, changing, splitting, replacing, or retiring a feature. Keep detailed history out of this index.

@@ -6,9 +6,11 @@ Introduced **2026-10-05** · commit `0a203a6`.
 
 ## Current behavior
 
-Automatic learning is enabled in user-facing chats unless `memory_model` is `off`; retrieval remains available when saving is off. After pasted-image handling, each actual nonempty initial, steering, or queued user message reaches `Runner.BeforeMessage` before the provider step. Empty tool-result steps do not trigger it.
+Automatic learning selectively extracts lasting instructions, established facts, accepted decisions, and gotchas, rather than archiving every exchange. See [saving controls](memory-controls.md) and [origin eligibility](learning-origin.md).
 
-The pre-hook queues extraction with recent discussion and event time. Successful, uncanceled responses supply bounded reply/tool evidence to the completion hook. Neither hook is an exhaustive archive or guaranteed save; origin filtering excludes delegated and peer-derived instructions.
+After pasted-image handling succeeds, each actual nonempty initial, steering, or queued user message reaches `Runner.BeforeMessage` before `provider.Step`; empty tool-result steps do not trigger it. The chat callback queues `Learner.MessageAt` with the query, recent discussion, and event time, then retrieves applicable memory before the provider step. Answering does not wait for extraction to save.
+
+After a successful, uncanceled eligible run, `Learner.FinishedAt` receives the current query, bounded recent context, observed tool results, reply, and event time. A nonempty reply queues durable-note extraction and eligible [procedure extraction](procedure-learning.md), followed by a summary check. Failed or canceled turns skip this completion hook. Extraction can decline or fail; [queue limits and summary rebuilding](learning-queue.md) also make saves non-guaranteed.
 
 ## Evolution
 
@@ -23,6 +25,5 @@ The pre-hook queues extraction with recent discussion and event time. Successful
 
 - Source: [chat wiring](../cmd/kh/chat.go), [runner](../internal/agent/loop.go), [learner](../internal/learn/learn.go).
 - Tests: [message hooks](../internal/agent/test/message_hook_test.go), [selective learning](../internal/learn/test/selective_test.go).
-- Manual: [hook and background-job pipeline](../manual/memory.md#hook-and-background-job-pipeline).
 
 [Feature index](README.md)

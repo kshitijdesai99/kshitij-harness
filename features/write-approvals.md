@@ -6,9 +6,11 @@ Introduced **2026-09-28** · commit `84d64c8` (command approvals; folder grants 
 
 ## Current behavior
 
-Automatic command and requested-folder approval is on by default. Use `--auto=false` for session prompts or `/auto off` to persist that preference; flags override configuration. Bash declares outside write folders with `write_dirs`; edits request access automatically. Grants last for the running process and remain after auto is turned off, until restart. Workers and new/forked chats inherit policy, not directory grants.
+Automatic command and requested-folder approval is **on by default**. `--auto=false` enables prompts for one session; `--auto` enables automatic approval for one session. `/auto off` and `/auto on` persist the preference. Flags override configuration.
 
-Auto retains sandbox and pinned-path checks; it does not pre-authorize the whole filesystem. Approval is not a correctness guarantee, and without an OS sandbox prompts alone are not a security boundary.
+Shell calls must declare desired existing outside write folders with `write_dirs`; [edits](edit-path-safety.md) request outside-folder access automatically. Configured shell-writable directories are not implicit edit grants. Auto approval retains [sandbox](shell-sandbox.md) and pinned-path checks; it does not grant the entire filesystem at startup.
+
+Turning auto off restores command and new-folder prompts, but existing grants last until the process [restarts](startup-rebuild.md#restart-onto-a-new-build). [Workers](worker-lifecycle.md) and [new/forked chats](chat-branches.md) inherit active policy, **not directory grants**. Approval is not a correctness guarantee, and without an OS sandbox prompts alone are not a security boundary.
 
 ## Evolution
 
@@ -24,6 +26,5 @@ Auto retains sandbox and pinned-path checks; it does not pre-authorize the whole
 
 - [Access control](../internal/tools/access.go) and [shell](../internal/tools/bash.go)
 - [Auto-policy tests](../internal/tools/test/auto_test.go) and [access tests](../internal/tools/test/access_test.go)
-- [Operating policy](../manual/safety-and-sessions.md#approval-and-write-boundaries)
 
 [Feature index](README.md)

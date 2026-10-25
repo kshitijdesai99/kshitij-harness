@@ -8,7 +8,8 @@ Introduced **2026-09-28** · commit `3354dc0`.
 
 - `kh --sessions` lists this folder’s saved chats; `kh -r` resumes the newest creation ID; `kh -s ID` selects one. Latest does not mean most recently saved.
 - Provider-owned history is saved after turns under `~/.kh/sessions`, scoped to the working folder with symlinks resolved.
-- Resume replays history in a new process; it does not reattach a running tmux chat. Failed partial replies are not completed checkpoints.
+- Resume replays history in a new chat process; it does not [reattach a running tmux chat](tmux-chats.md). Failed partial replies are not completed checkpoints.
+- The [memory database](knowledge-store.md) is separate from saved conversation history. See [provider-owned state](provider-state.md) for history ownership and [compaction](compaction.md) for summarizing working context.
 
 ## Evolution
 
@@ -21,6 +22,6 @@ Introduced **2026-09-28** · commit `3354dc0`.
 
 ## Inspect
 
-[Session store](../internal/session/session.go) · [CLI tests](../cmd/kh/test/sessions_test.go) · [Operating details](../manual/safety-and-sessions.md#saved-history-versus-running-chats)
+[Session store](../internal/session/session.go) · [CLI tests](../cmd/kh/test/sessions_test.go) · [Restart onto a new build](startup-rebuild.md#restart-onto-a-new-build)
 
 [Feature index](README.md)

@@ -19,6 +19,6 @@ Automatic: the runner asks the provider for the next step until no tool calls re
 ## Inspect
 
 - [Runner](../internal/agent/loop.go) and [hook/order tests](../internal/agent/test/message_hook_test.go).
-- [Architecture and turn loop](../manual/architecture.md#application-and-turn-loop).
+- [Architecture and turn loop](architecture.md#application-and-turn-loop).
 
 [Feature index](README.md)

@@ -8,7 +8,9 @@ Introduced **2026-10-23** · commit `6fc58c6`.
 
 This helper supports [optional hybrid retrieval](hybrid-retrieval.md), which owns setup requirements, mode controls, and keyword fallback behavior.
 
-The managed helper has queue/inference deadlines and authenticated revision checks. Startup does not replace a different helper revision; explicit setup can gracefully upgrade an authenticated owned helper. Unknown listeners are not stopped automatically. Retrieval diagnostics are available through `kh memory explain`; detailed setup belongs in the memory manual.
+Managed runtime files live in `~/.kh/hybrid`. Reranking has a 25-second request budget, including up to 16 seconds waiting for workers and 8 seconds for inference.
+
+The runtime authenticates helper revisions. Startup does not replace another build's helper; mismatched scoring requests fail rather than silently using a different prompt. Explicit hybrid setup can gracefully upgrade an authenticated owned helper. Unknown listeners and legacy helpers are not stopped automatically; an unknown legacy helper requires a manual stop. [Retrieval diagnostics](retrieval-diagnostics.md) expose helper/fallback status.
 
 ## Evolution
 
@@ -23,6 +25,6 @@ The managed helper has queue/inference deadlines and authenticated revision chec
 
 - [Runtime](../internal/hybrid/runtime.go) and [helper](../internal/hybrid/reranker.py)
 - [Runtime tests](../internal/hybrid/test/runtime_test.go) and [helper tests](../internal/hybrid/test/helper_test.py)
-- [Hybrid setup, limits, and fallback](../manual/memory.md#optional-local-hybrid-search)
+- [Hybrid setup and fallback](hybrid-retrieval.md)
 
 [Feature index](README.md)

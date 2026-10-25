@@ -22,6 +22,6 @@ Per-turn statistics show time to first token (TTFT), elapsed time, input/cache/o
 
 - [Turn display](../cmd/kh/chat.go) and [provider metrics contract](../internal/provider/provider.go)
 - [Codex implementation tests](../internal/provider/codex/test/codex_test.go)
-- [Presentation and context](../manual/architecture.md#presentation-and-context)
+- [Presentation and context](architecture.md#presentation-and-context)
 
 [Feature index](README.md)

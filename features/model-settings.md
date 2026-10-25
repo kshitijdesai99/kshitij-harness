@@ -6,7 +6,7 @@ Introduced 2026-09-28 · commit `84d64c8` (model flag; effort and in-chat contro
 
 ## Current behavior
 
-Use `/model` and `/effort` to inspect or change settings. Preferences persist in configuration; open chats follow changed preferences on later turns, rather than changing an in-progress reply. Only the Codex backend is implemented; model selection is not a choice among multiple implemented providers.
+Use `/model` or `/effort` without arguments to inspect settings; `/model ID` and `/effort low|medium|high` change them. Preferences persist in configuration, and open chats follow changes on later turns, not during an in-progress reply. CLI flags override configuration at launch. Only the Codex backend is implemented; model selection is not a choice among multiple implemented providers.
 
 ## Evolution
 
@@ -21,6 +21,6 @@ Use `/model` and `/effort` to inspect or change settings. Preferences persist in
 ## Inspect
 
 - [Commands](../cmd/kh/main.go), [configuration](../internal/config/config.go), and [provider tests](../cmd/kh/test/provider_test.go).
-- [Essential controls](../README.md#use) and [provider architecture](../manual/architecture.md#provider-owned-history).
+- [Provider-owned state](provider-state.md) and [worker policy inheritance](worker-lifecycle.md).
 
 [Feature index](README.md)

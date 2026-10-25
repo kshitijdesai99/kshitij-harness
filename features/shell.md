@@ -20,6 +20,6 @@ Use `bash`; command timeout and returned output cap are configurable. Approval a
 ## Inspect
 
 - [Shell implementation](../internal/tools/bash.go), [configuration](../internal/config/config.go), and [tool tests](../internal/tools/test/tools_test.go).
-- [Approval and write boundaries](../manual/safety-and-sessions.md#approval-and-write-boundaries).
+- [Approval and write boundaries](write-approvals.md).
 
 [Feature index](README.md)

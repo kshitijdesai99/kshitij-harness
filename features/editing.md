@@ -19,6 +19,6 @@ Use `edit` for exact-match replacements, new files, or ordered multi-file batche
 ## Inspect
 
 - [Edit implementation](../internal/tools/edit.go), [batch tests](../internal/tools/test/edit_batch_test.go), and [access tests](../internal/tools/test/edit_access_test.go).
-- [Approval and write boundaries](../manual/safety-and-sessions.md#approval-and-write-boundaries).
+- [Approval and write boundaries](write-approvals.md).
 
 [Feature index](README.md)

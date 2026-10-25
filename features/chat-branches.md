@@ -8,7 +8,7 @@ Introduced **2026-10-05** · commit `388e256` (`/fork`).
 
 - `/new` opens a fresh chat in a right-hand tmux pane; `/fork` opens a copy of the last completed conversation checkpoint there.
 - Forking does not steer or interrupt the original task. Partial replies and unfinished tool calls are excluded.
-- New and forked chats inherit active policy, not session-only directory grants. Parallel chats share project files; a conversation fork is not an isolated worktree.
+- New and forked chats follow [approval-policy inheritance](write-approvals.md). Parallel chats share project files; a conversation fork is not an isolated worktree.
 
 ## Evolution
 
@@ -20,6 +20,6 @@ Introduced **2026-10-05** · commit `388e256` (`/fork`).
 
 ## Inspect
 
-[Chat lifecycle](../cmd/kh/chat.go) · [Fork tests](../cmd/kh/test/fork_test.go) · [Session and policy details](../manual/safety-and-sessions.md)
+[Chat lifecycle](../cmd/kh/chat.go) · [Fork tests](../cmd/kh/test/fork_test.go) · [Saved sessions](saved-sessions.md) · [Live tmux chats](tmux-chats.md)
 
 [Feature index](README.md)

@@ -6,7 +6,7 @@ Introduced **2026-09-30** · commit `c344a45`.
 
 ## Current behavior
 
-Attach a file with `/image PATH`, use `/image` for the macOS clipboard, or let the model call `view_image`. Local PNG, JPEG, WebP, and GIF files up to 10 MB are supported. `view_image` accepts repository-relative, absolute, and `~/` paths, including files outside the project subject to OS read permissions; it does not read URLs or the clipboard. Clipboard capture requires Swift on macOS. Image input does not itself verify the model's interpretation.
+Attach a local file for the next message with `/image PATH`, use `/image` for the macOS clipboard, or ask the model to inspect a file with `view_image`, which sends actual image contents to the active model. Local PNG, JPEG, WebP, and GIF files up to 10 MB are supported. `view_image` accepts repository-relative, absolute, and `~/` paths, including files outside the project subject to OS read permissions; it does not read URLs or the clipboard. Clipboard capture requires Swift on macOS. Image input does not itself verify the model's interpretation.
 
 ## Evolution
 
@@ -20,6 +20,6 @@ Attach a file with `/image PATH`, use `/image` for the macOS clipboard, or let t
 
 - [Image tool](../internal/tools/image.go) and [image loader](../internal/image/image.go)
 - [Tool tests](../internal/tools/test/image_test.go) and [attachment tests](../cmd/kh/test/image_paste_test.go)
-- [Interactive controls](../README.md#use)
+- [Input controls](input.md)
 
 [Feature index](README.md)

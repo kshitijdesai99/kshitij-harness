@@ -6,7 +6,9 @@ Introduced 2026-09-28 · commit `3354dc0` (per-turn stopping; typed steering cam
 
 ## Current behavior
 
-Type during a reply to steer. Ctrl-C stops/discards the active reply; Ctrl-D on empty input exits. Running tools finish before steering is applied. Completed effects are not rolled back, so stopping a turn does not undo filesystem or external changes.
+Submitting a new message with Enter during a reply steers the model: kh cancels the partial reply, waits for provider cleanup, and submits the new message. Unsubmitted typing stays in the editor, including when [peer messages arrive](input.md#peer-messages-and-drafts). Already-running tools finish before steering takes effect so results remain paired with calls.
+
+**Ctrl-C** stops a task or discards the draft; **Ctrl-D** on empty input quits. Steering and stopping are **not a rollback**: completed filesystem or external changes are not undone. See [input controls](input.md) for composing a message.
 
 ## Evolution
 
@@ -20,6 +22,6 @@ Type during a reply to steer. Ctrl-C stops/discards the active reply; Ctrl-D on 
 ## Inspect
 
 - [Runner](../internal/agent/loop.go) and [steering tests](../internal/agent/test/loop_test.go).
-- [Turn-loop architecture](../manual/architecture.md#application-and-turn-loop) and [essential controls](../README.md#use).
+- [Turn execution](execution.md) and [provider-owned history](provider-state.md).
 
 [Feature index](README.md)

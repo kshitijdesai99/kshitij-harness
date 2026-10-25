@@ -19,6 +19,6 @@ Opt in through `map_cap`, whose default is `0` (off). The map supplies Git filen
 ## Inspect
 
 - [Map implementation](../internal/repomap/repomap.go), [configuration](../internal/config/config.go), and [map tests](../internal/repomap/test/self_test.go).
-- [Presentation and context architecture](../manual/architecture.md#presentation-and-context).
+- [Presentation and context architecture](architecture.md#presentation-and-context).
 
 [Feature index](README.md)

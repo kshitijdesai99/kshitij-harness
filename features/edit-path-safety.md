@@ -23,6 +23,6 @@ The edit gate coordinates calls within one process, not independent agents shari
 
 - [Edit implementation](../internal/tools/edit.go) and [pinned access](../internal/tools/access.go)
 - [Edit access tests](../internal/tools/test/edit_access_test.go) and [batch tests](../internal/tools/test/edit_batch_test.go)
-- [Write boundaries](../manual/safety-and-sessions.md#approval-and-write-boundaries)
+- [Approval and folder grants](write-approvals.md)
 
 [Feature index](README.md)

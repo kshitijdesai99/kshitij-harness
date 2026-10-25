@@ -8,7 +8,7 @@ Introduced **2026-10-23** · commit `f802b27`.
 
 Use `kh memory reference put/get/export/import/asset` to manage database-native references. Export/import carries procedure content and provenance; import neither executes assets nor overwrites existing topics. `kh memory reference demo` stores a sound example without playing it.
 
-References remain scoped, versioned knowledge rather than executable installations. Saving, retrieving, importing, and loading do not run scripts; any requested execution goes through normal approved, sandboxed tools. Consult the manual and CLI source for command details rather than treating a bundle as authority to act.
+References remain scoped, versioned knowledge rather than executable installations; the [inert-reference boundary](procedure-loading.md) applies to bundles as well. Consult the CLI source below for command details, and [procedure learning](procedure-learning.md) for automatic creation and versioned improvements.
 
 ## Evolution
 
@@ -21,6 +21,5 @@ References remain scoped, versioned knowledge rather than executable installatio
 
 - Source: [reference CLI](../cmd/kh/reference.go), [reference storage and bundles](../internal/memory/references.go).
 - Tests: [reference CLI](../cmd/kh/test/reference_test.go), [storage/import/export](../internal/memory/test/references_test.go).
-- Manual: [procedures are inert references](../manual/memory.md#procedures-are-inert-references).
 
 [Feature index](README.md)

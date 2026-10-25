@@ -20,6 +20,6 @@ Use `/help` for chat commands, `kh --help` for CLI usage, or `kh --help "QUESTIO
 ## Inspect
 
 - [Contextual help](../internal/help/help.go), [CLI](../cmd/kh/main.go), and [help tests](../cmd/kh/test/help_test.go).
-- [Essential usage](../README.md#use).
+- [Chat modes](chat-modes.md) and [input controls](input.md).
 
 [Feature index](README.md)

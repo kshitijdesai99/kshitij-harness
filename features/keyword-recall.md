@@ -6,9 +6,9 @@ Introduced **2026-09-29** · commit `14dd3e6`.
 
 ## Current behavior
 
-Keyword-only retrieval is the default. Before each actual user query, including steering, recall considers repo and global memory within `memory_max_tokens` (estimated as characters/4). Compact notes enter context; history and full procedures remain available on demand.
+Keyword-only retrieval is the default and requires no model downloads. After each actual user query arrives, including steering and queued messages, and before the provider answers, recall considers repo and global memory within `memory_max_tokens` (estimated as characters/4). Compact notes enter context; [history](memory-history.md) and [full procedures](procedure-loading.md) remain available on demand. See [learning hooks](learning-hooks.md) for timing relative to saving.
 
-Common standalone greetings, check-ins, acknowledgments, and knowledge already present in chat avoid unnecessary topic retrieval. Corrections, required summary notes, and explicitly named references still load. Retrieval is bounded and selective, not a guarantee of relevance or completeness; current user requests override retrieved reference data.
+Common standalone greetings, check-ins, acknowledgments, and knowledge already present in chat avoid unnecessary topic retrieval. Corrections, required summary notes, and explicitly named references still load. Selection favors applicable notes with [provenance and replacement relationships](memory-history.md), not the volume of saved knowledge. Retrieval can miss or fail; relevance and completeness are not guaranteed. [Optional hybrid reranking](hybrid-retrieval.md) can reject weak matches rather than filling a quota. Use [diagnostics](retrieval-diagnostics.md) to inspect selection; current user requests override retrieved reference data.
 
 ## Evolution
 
@@ -24,6 +24,5 @@ Common standalone greetings, check-ins, acknowledgments, and knowledge already p
 
 - Source: [recall](../internal/memory/recall.go), [keyword selection](../internal/memory/search.go).
 - Tests: [selection](../internal/memory/test/selection_test.go), [recall efficiency](../internal/memory/test/recall_efficiency_test.go), [reference recall](../internal/memory/test/reference_recall_test.go).
-- Manual: [retrieval and diagnostics](../manual/memory.md#retrieval-and-diagnostics).
 
 [Feature index](README.md)

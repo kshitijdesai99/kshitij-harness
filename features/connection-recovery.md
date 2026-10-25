@@ -22,6 +22,6 @@ Introduced **2026-09-28** · commit `84d64c8` (login and token refresh; connecti
 
 - [Retry handling](../internal/provider/codex/retry.go) and [authentication](../internal/provider/codex/auth.go)
 - [Retry tests](../internal/provider/codex/test/retry_test.go) and [authentication tests](../internal/provider/codex/test/auth_test.go)
-- [Provider-owned history](../manual/architecture.md#provider-owned-history)
+- [Provider-owned history](architecture.md#provider-owned-history)
 
 [Feature index](README.md)

@@ -20,6 +20,7 @@ Chat is the default: `kh` opens a conversation, and `kh "TASK"` runs a task and 
 ## Inspect
 
 - [CLI](../cmd/kh/main.go) and [mode tests](../cmd/kh/test/mode_test.go).
-- [Essential usage](../README.md#use) and [session manual](../manual/safety-and-sessions.md).
+- [Input controls](input.md), [saved sessions](saved-sessions.md), [live tmux chats](tmux-chats.md), and [startup rebuilds](startup-rebuild.md).
+- [Setup](../README.md#setup) and [approval policy](write-approvals.md).
 
 [Feature index](README.md)

@@ -20,6 +20,6 @@ Capable interactive terminals render whole replies as Markdown, including readab
 
 - [Markdown renderer](../internal/terminal/markdown.go), [math conversion](../internal/terminal/math.go), and [reply boundaries](../internal/terminal/render.go)
 - [Markdown tests](../internal/terminal/test/markdown_test.go), [math tests](../internal/terminal/test/math_test.go), and [provider flush tests](../internal/provider/codex/test/flush_test.go)
-- [Presentation and context](../manual/architecture.md#presentation-and-context)
+- [Presentation and context](architecture.md#presentation-and-context)
 
 [Feature index](README.md)

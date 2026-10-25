@@ -1,25 +1,34 @@
 # Maintaining feature documentation
 
-Keep the feature index easy to scan while allowing each capability's description and history to grow independently.
+Keep one home for each capability's usage, limitations, evidence, and history. This folder is the canonical project reference; do not create a parallel manual.
+
+## Ownership
+
+| Location | Owns |
+|---|---|
+| Root `README.md` | Purpose, setup, quick start, links |
+| Root `AGENTS.md` | Agent reading order and links to repository guidance |
+| `features/README.md` | Feature names, introduction dates, short evolution signposts |
+| Individual feature pages | Purpose, current usage/defaults/limits, evidence, dated history |
+| `features/architecture.md`, `features/development.md` | Shared system map and development conventions |
+| `release-notes/YYYY-MM-DD.md` | What changed on that date, not current reference instructions |
+
+Runtime knowledge and procedures remain in the database; documentation is not a second memory store or executable skills library.
 
 ## New features
 
-1. Create one descriptive, stable filename in this folder, such as `steering.md`. Document a user-recognizable capability, not every implementation change.
-2. State its purpose and first implementation date with a Git commit reference. Do not substitute the documentation date. If the origin cannot be established, say so rather than guessing.
-3. Describe current behavior: entry points, defaults or opt-in requirements, limitations, and links to relevant manuals, implementation, and representative tests.
-4. Add a short chronological evolution table with dates, changes, and commits. Separate shipped changes from proposals.
-5. Add one row to [the index](README.md): feature, introduction date, and a short “what followed” signpost.
+1. Create a descriptive, stable filename, such as `steering.md`. Document a user-recognizable capability, not every implementation change.
+2. State its first implementation date and Git commit. Do not substitute the documentation date; say when the origin is uncertain.
+3. Describe current use, defaults, requirements, and limitations. Link to shared policies on their owning feature page instead of copying them. Include implementation and representative test evidence.
+4. Add a short chronological evolution table. Separate shipped changes from proposals.
+5. Add one index row: feature, introduction date, and what followed. If nothing followed yet, say so.
 
-## Changes to existing features
+## Changes, splits, and retirement
 
-Update the feature page's current behavior and append meaningful milestones to its history. Update the index signpost only when it helps navigation; do not copy every fix into the index. Add a dated release note for user-visible changes and update operating instructions only where needed.
+Update the owning feature's current behavior and meaningful history. Change the index signpost only when useful, and add a dated release note for user-visible changes. One change can affect several features, but each page should explain only its own part.
 
-Keep history on its owning page. If a feature grows into independent capabilities, split them into linked pages and explain their relationship. For replacements or removals, retain a short retired page with the date and successor link rather than erasing the history. Check incoming links before renaming a page.
+Split independently useful capabilities into linked pages when needed. Preserve a short retired page with the date and successor link for replacements/removals. Keep paths/headings stable where practical; update every incoming link before renaming or moving a section, including links from diagrams.
 
-## Evidence and scope
+## Verification
 
-- Verify historical dates/claims against Git, and current behavior against source and relevant tests.
-- Distinguish linked test coverage from a fresh test run or manual verification; never imply all checks passed because a test file exists.
-- Check local links, section anchors, and agreement between index dates and feature-page dates.
-- Link to detailed manuals instead of copying them. Runtime memory remains in the database; these files are the human-readable feature catalog, not executable procedures or a second memory store.
-- Keep unimplemented requests in problem/feature-request tracking, not among shipped capabilities.
+Check source/history claims, local links/anchors, index/page date agreement, and the pending diff for duplication or unnecessary complexity. Distinguish representative test coverage from fresh passing tests or manual verification. Report checks actually performed. Proposed functionality belongs in problem/feature-request tracking, not among implemented capabilities.
