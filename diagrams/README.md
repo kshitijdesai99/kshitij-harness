@@ -15,6 +15,7 @@ Find existing system views and their owning feature pages. See [visual explanati
 | [Provider state](provider-state.svg) | Provider-owned history, reply rollback, checkpoints, and replay. | [Provider state](../features/provider-state.md) |
 | [Retrieval flow](retrieval-flow.svg) | Required recall, optional topic search, and bounded selection. | [Keyword recall](../features/keyword-recall.md) |
 | [Turn steering](turn-steering.svg) | Turn execution, ordered tool results, and submitted steering. | [Execution](../features/execution.md) |
+| [Visual companion](visual-companion.svg) | Session-owned servers, retained artifacts, and shared cache. | [Visual companion](../features/visual-companion.md) |
 | [Write boundaries](write-boundaries.svg) | Approval, folder grants, shell sandboxing, and edit-path checks. | [Write approvals](../features/write-approvals.md) |
 
 ## Possible later views — not created

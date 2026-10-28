@@ -1,29 +1,39 @@
-# Visual companion prototype
+# Visual companion
 
-Explore an explanation interactively alongside chat using a standalone marimo notebook. This example is not a kh runtime feature or integration.
+Explore explanations interactively in a browser alongside chat. The native `visual` tool manages session-owned marimo notebooks and servers; the [standalone example](../examples/visual-companion/README.md) can also run independently.
 
-Introduced in the **2026-10-29 initial shipping change**; no earlier implementation commit is recorded.
+Introduced as a standalone example on **2026-10-29** in `ed67393`; native lifecycle management followed the same day.
 
-## Availability
+## Availability and use
 
-The optional [example](../examples/visual-companion/companion.py) runs separately in a browser. It requires `uv`, Python 3.11+, and network access on first launch to obtain dependencies. The script declares marimo and matplotlib dependencies; sandbox mode installs them in an isolated environment. No kh login or credentials are needed.
+Requires `uv` on `PATH` and network access for uncached dependencies. No browser tab opens automatically: open the returned local URL yourself.
 
-## Use
+Native launches use `uv run --with-requirements notebook.py` to provision packages from PEP 723 metadata, then `marimo run --watch --no-sandbox` to render the app immediately, reload notebook edits, and keep the server attached to its guardian. This marimo environment-launcher option is distinct from the OS Bash sandbox: existing sandbox configuration and approvals still apply. Native launch does not explicitly select Python from `requires-python`; the example declares Python 3.11+.
 
-From the repository root:
+Ask kh to create a visual explanation. The tool workflow is:
 
-```sh
-XDG_STATE_HOME="$PWD/examples/visual-companion/.runtime/state" \
-  UV_CACHE_DIR="$PWD/examples/visual-companion/.runtime/uv-cache" \
-  MPLCONFIGDIR="$PWD/examples/visual-companion/.runtime/matplotlib" \
-  uv run --no-project --with marimo marimo run --sandbox examples/visual-companion/companion.py
-```
+1. `visual` with `action="create"` and `name="experiment"` creates a notebook skeleton and returns its path.
+2. Edit that notebook using the normal [editing tool](editing.md).
+3. `action="start"` with the same name starts the rendered app with file watching on a free loopback port and returns an authenticated URL and log path; an explicit `port` (1024–65535) is optional.
+4. `action="list"` inspects managed servers; `action="stop"` stops a named server without deleting the notebook.
 
-Open the local URL printed by marimo; stop the server with Ctrl-C. Replace `marimo run` with `marimo edit` to inspect or change cells. Keep local runtime state and dependency caches under the ignored `examples/visual-companion/.runtime/` directory, as in the command above.
+The tool accepts notebook names, not arbitrary server commands or environment overrides. Existing [write/execution approvals](write-approvals.md) and the [shell sandbox](shell-sandbox.md) still apply. Standalone shell launches are **unmanaged**: see the [example README](../examples/visual-companion/README.md) for launch and regression-check commands.
 
-The learning-rate slider recomputes 20 gradient-descent updates for **f(x) = x²**, starting at **x = 4**. Two plots show the parameter trajectory and log-scale loss, accompanied by an explanation of the selected rate.
+## Ownership and storage
 
-Try these values to inspect the five regimes:
+![Session-owned marimo servers, retained artifacts, and shared cache](../diagrams/visual-companion.svg)
+
+[Ownership SVG](../diagrams/visual-companion.svg): process lifetime, not tmux attachment or turn lifetime, controls cleanup.
+
+Managed notebooks use a private `~/.kh/artifacts/visual-<random-process-instance>/` workspace for notebooks, logs, temporary files, configuration, and state. Dependencies and reusable caches live separately under `~/.kh/cache/visual/` (including uv, Python, tools, data, bytecode, and matplotlib caches). Generated files stay outside the repository; cache reuse does not transfer ownership of a server.
+
+A server belongs to the kh process that launched it, not to a tmux attachment or a model turn. Detaching tmux, cancelling a later turn, or finishing an answer leaves an already-running server alive. Cancelling startup aborts that new launch. Normal session-process shutdown stops its owned servers; explicit `stop` does the same for one server. Unrelated marimo servers—including standalone launches—are not killed. Notebooks and logs are retained after shutdown.
+
+A pipe-watching guardian also cleans up after owner `os.Exit`, SIGTERM, or SIGKILL; process tests verify server and descendant termination while a sibling session survives. This protection requires the guardian to remain alive and descendants to stay in its process group: independently killing the guardian or escaping that group is not covered.
+
+## Example and limits
+
+The [learning-rate notebook](../examples/visual-companion/companion.py) recomputes 20 gradient-descent updates for **f(x) = x²**, starting at **x = 4**. It plots the parameter trajectory and log-scale loss with a reactive explanation.
 
 | Learning rate η | Expected result |
 |---|---|
@@ -33,32 +43,23 @@ Try these values to inspect the five regimes:
 | 1.00 | Alternate between +4 and −4 without improving loss |
 | 1.10 | Oscillate with growing magnitude |
 
-## Limitations
-
-- No connection to kh, chat synchronization/history, agent tools, or kh-driven page navigation is implemented. Use chat and the notebook independently.
-- This is one fixed quadratic demonstration, not a general optimization environment. Its learning-rate thresholds do not apply universally.
-- The loss plot floors zero at 10⁻³⁰ for display; the reported loss uses the computed value.
+Lifecycle management is not chat synchronization, browser navigation, or notebook-to-agent tool access. The example's thresholds apply only to this quadratic; its loss plot floors zero at 10⁻³⁰ for display, while the reported loss uses the computed value.
 
 ## Evidence
 
-- [Notebook source](../examples/visual-companion/companion.py): dependency metadata, slider, update rule, plots, and reactive explanation.
-- [Example entry point](../examples/visual-companion/README.md) and [ignored generated files](../examples/visual-companion/.gitignore).
-- Initial shipping verification: changing η from 0.20 to 1.10 updated both plots and the explanation without browser page errors; the screenshots were visually inspected. This is a manual smoke check, not automated regression coverage.
-- [Regression checks](../examples/visual-companion/test/check_companion.py) exercise the public notebook `app.run()` API: the default value, all five rates above, trajectories, explanations, plotted series, and log-scale loss. They do not replace browser interaction checks.
-
-Run the checks from the repository root:
-
-```sh
-XDG_STATE_HOME="$PWD/examples/visual-companion/.runtime/state" \
-  UV_CACHE_DIR="$PWD/examples/visual-companion/.runtime/uv-cache" \
-  MPLCONFIGDIR="$PWD/examples/visual-companion/.runtime/matplotlib" \
-  uv run --no-project --with marimo --with matplotlib python examples/visual-companion/test/check_companion.py
-```
+- [Tool interface](../internal/tools/visual.go) and [CLI wiring](../cmd/kh/main.go): native actions, shared approval policy, and process-owned manager.
+- [Runtime manager](../internal/visual/manager.go): notebook creation, fixed marimo launch, readiness, storage, and owned-server lifecycle; [guardian](../internal/visual/guardian.go): private ownership pipe and process-group cleanup.
+- [Lifecycle regression tests](../internal/visual/test/manager_test.go): fixed uv dependency and `--no-sandbox` launch arguments, owned-server isolation, retained artifacts, cancellation, failed starts, invalid paths, and guardian cleanup after owner `os.Exit`, SIGTERM, and SIGKILL using a fake server and descendant process.
+- [Notebook source](../examples/visual-companion/companion.py): dependency metadata, slider, update rule, plots, and explanation.
+- [Notebook regression checks](../examples/visual-companion/test/check_companion.py): public `app.run()` API, default value, five regimes, trajectories, explanations, plotted series, and log-scale loss. Commands live in the [example README](../examples/visual-companion/README.md#regression-checks).
+- Native browser/lifecycle smoke check under the OS sandbox: the rendered, watched companion updated its plot and final x from approximately 0.0001462 to 153.4 when η changed from 0.20 to 1.10, without JavaScript errors. Explicit stop closed the listener and retained the notebook; restarting and then exiting the owning worker also closed the listener and retained the notebook. This is a manual smoke check, not automated regression coverage.
+- Initial standalone browser smoke check: changing η from 0.20 to 1.10 updated both plots and the explanation without page errors; screenshots were visually inspected. This historical check is not native-runtime regression coverage.
 
 ## History
 
 | Date | Change | Commit |
 |---|---|---|
-| 2026-10-29 | Initial standalone marimo demo and shipping documentation; no kh runtime integration. | This release (initial shipping change) |
+| 2026-10-29 | Standalone marimo demonstration and initial documentation. | `ed67393` |
+| 2026-10-29 | Native session-owned notebook/server lifecycle; external artifacts and shared dependency cache. | This release |
 
 [Feature index](README.md)

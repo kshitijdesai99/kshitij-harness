@@ -22,9 +22,16 @@ import (
 	"kh/internal/session"
 	"kh/internal/terminal"
 	"kh/internal/tools"
+	"kh/internal/visual"
 )
 
 func main() {
+	// A private inherited pipe owns the guardian lifetime, including os.Exit
+	// and fatal signals that cannot run main's deferred cleanup.
+	if len(os.Args) == 2 && os.Args[1] == visual.GuardianArgument {
+		exit(visual.GuardianMain())
+		return
+	}
 	cfg, err := config.Load()
 	configErr := err
 	if configErr != nil {
@@ -194,7 +201,10 @@ func main() {
 	writeAccess, err := tools.NewWriteAccess(cfg, console)
 	exit(err)
 	defer writeAccess.Close()
-	ts := []tools.Tool{tools.BashWithAccess(cfg, console, writeAccess), tools.EditWithAccess(ui.Action, writeAccess), tools.Memory(db, repoScope, owner), tools.ViewImage(ui.Action), agentTool(cfg, ui.Action, writeAccess)}
+	visualManager, err := visual.New(visual.Options{})
+	exit(err)
+	defer visualManager.Close()
+	ts := []tools.Tool{tools.BashWithAccess(cfg, console, writeAccess), tools.EditWithAccess(ui.Action, writeAccess), tools.Memory(db, repoScope, owner), tools.ViewImage(ui.Action), agentTool(cfg, ui.Action, writeAccess), tools.Visual(visualManager, cfg, console, writeAccess)}
 	if *resume {
 		*id, err = session.Latest()
 		exit(err)
