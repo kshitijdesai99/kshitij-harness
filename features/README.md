@@ -81,6 +81,7 @@ Shared guides: [Architecture](architecture.md) · [Development](development.md) 
 | [Terminal feedback](terminal-feedback.md) | 2026-10-01 | Activity indicators, commentary, peer colors, URLs |
 | [Turn metrics](turn-metrics.md) | 2026-09-28 | Thinking/context metrics and corrected TTFT |
 | [Images](images.md) | 2026-09-30 | Encoding cleanup and local image-viewing tool |
+| [Visual companion prototype](visual-companion.md) | 2026-10-29 (initial shipping change) | Standalone example; no later changes yet |
 
 ## Reliability and updates
 
