@@ -15,7 +15,7 @@ Capable interactive terminals render whole replies as Markdown, including readab
 | 2026-10-05 | Added whole-reply Markdown, math conversion, explicit styles, and reply flush boundaries. | `51c87c7` |
 | 2026-10-16 | Distinguished commentary and turn statistics visually. | `efde4fb` |
 | 2026-10-16 | Unified tool progress presentation. | `7cf70cf` |
-| 2026-10-29 | Counted hyphen breakpoint widths to prevent spurious one-word rows during Markdown wrapping. | Pending |
+| 2026-10-29 | Counted hyphen breakpoint widths to prevent spurious one-word rows during Markdown wrapping. | `a6799ed` |
 
 ## Inspect
 

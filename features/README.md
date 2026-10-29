@@ -77,7 +77,7 @@ Shared guides: [Architecture](architecture.md) · [Development](development.md) 
 
 | Feature | Introduced | What followed |
 |---|---|---|
-| [Markdown and math](markdown.md) | 2026-10-05 | Distinct commentary/stats and unified tool styling |
+| [Markdown and math](markdown.md) | 2026-10-05 | Distinct commentary/stats, unified tool styling, correct hyphen wrapping |
 | [Terminal feedback](terminal-feedback.md) | 2026-10-01 | Activity indicators, commentary, peer colors, URLs |
 | [Turn metrics](turn-metrics.md) | 2026-09-28 | Thinking/context metrics and corrected TTFT |
 | [Images](images.md) | 2026-09-30 | Encoding cleanup and local image-viewing tool |
