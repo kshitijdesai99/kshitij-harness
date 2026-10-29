@@ -161,7 +161,7 @@ func (c *chat) showMemory() {
 		return
 	}
 	for _, n := range c.learn.Notices() {
-		c.ui.Notice(terminal.Color(os.Stdout, terminal.Muted, "(memory) "+n))
+		c.ui.Notice(terminal.Color(c.ui.Err, terminal.Muted, "(memory) "+n))
 	}
 }
 

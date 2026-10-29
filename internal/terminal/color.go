@@ -34,8 +34,8 @@ func colorQuery(w io.Writer, text, prefix string) string {
 }
 
 func Color(w io.Writer, color, text string) string {
-	f, ok := w.(*os.File)
-	if !ok || os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" || !readline.IsTerminal(int(f.Fd())) {
+	f := terminalFile(w)
+	if f == nil || os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" || !readline.IsTerminal(int(f.Fd())) {
 		return text
 	}
 	return color + text + Reset

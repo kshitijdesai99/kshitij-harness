@@ -138,7 +138,7 @@ func memoryCommand(args []string, cfg config.Config) error {
 		if err := need(2); err != nil {
 			return err
 		}
-		startMemory(ctx, s, cfg)
+		startMemory(ctx, s, cfg, memoryNotice)
 		found, trace, err := s.SearchWithTrace(ctx, repo, "", args[1], 30, memory.SearchOptions{})
 		if err != nil {
 			return err
@@ -283,7 +283,11 @@ func memoryNotice(message string) {
 	fmt.Fprintln(os.Stderr, "(memory) "+message)
 }
 
-func startMemory(ctx context.Context, s *memory.Store, cfg config.Config) bool {
+func (c *chat) memoryNotice(message string) {
+	fmt.Fprintln(c.input.Stderr(), "(memory) "+message)
+}
+
+func startMemory(ctx context.Context, s *memory.Store, cfg config.Config, notice func(string)) bool {
 	managedEmbedding := cfg.MemoryEmbeddingURL == "" || cfg.MemoryEmbeddingURL == hybrid.EmbeddingEndpoint+"/api/embed"
 	managedReranker := cfg.MemoryRerankerURL == "" || cfg.MemoryRerankerURL == hybrid.DefaultEndpoint
 	// Mixed/custom endpoints are externally managed: do not require unrelated
@@ -293,12 +297,12 @@ func startMemory(ctx context.Context, s *memory.Store, cfg config.Config) bool {
 		err := hybrid.Start(startup)
 		cancel()
 		if err != nil {
-			memoryNotice(fmt.Sprintf("Hybrid runtime unavailable; using keyword search until services recover: %v", err))
+			notice(fmt.Sprintf("Hybrid runtime unavailable; using keyword search until services recover: %v", err))
 		}
 	}
 	if err := configureMemory(s, cfg); err != nil {
 		_ = disableHybrid(s)
-		memoryNotice(fmt.Sprintf("Hybrid configuration unavailable; using keyword search: %v", err))
+		notice(fmt.Sprintf("Hybrid configuration unavailable; using keyword search: %v", err))
 		return false
 	}
 	return cfg.HybridMemory()
@@ -318,11 +322,11 @@ func (c *chat) rememberMemoryConfig(cfg config.Config) {
 func (c *chat) reloadMemory(ctx context.Context) {
 	cfg, err := config.Load()
 	if err != nil {
-		memoryNotice(fmt.Sprintf("Cannot reload memory configuration: %v", err))
+		c.memoryNotice(fmt.Sprintf("Cannot reload memory configuration: %v", err))
 		return
 	}
 	if !sameMemory(cfg, c.seen) {
-		c.memoryActive = startMemory(ctx, c.memory, cfg)
+		c.memoryActive = startMemory(ctx, c.memory, cfg, c.memoryNotice)
 		c.rememberMemoryConfig(cfg)
 	}
 }
@@ -335,7 +339,7 @@ func (c *chat) restoreMemory() {
 	if err := configureMemory(c.memory, c.seen); err != nil {
 		_ = disableHybrid(c.memory)
 		c.memoryActive = false
-		memoryNotice("Cannot restore hybrid pipeline; using keyword search.")
+		c.memoryNotice("Cannot restore hybrid pipeline; using keyword search.")
 	}
 }
 
@@ -385,9 +389,9 @@ func (c *chat) memoryCommand(ctx context.Context, args []string) error {
 	c.memoryActive = enabled
 	c.rememberMemoryConfig(cfg)
 	if enabled {
-		fmt.Println("(memory hybrid on: keyword + semantic retrieval with reranking)")
+		fmt.Fprintln(c.input.Stdout(), "(memory hybrid on: keyword + semantic retrieval with reranking)")
 	} else {
-		fmt.Println("(memory hybrid off: keyword-only retrieval; models and vectors preserved)")
+		fmt.Fprintln(c.input.Stdout(), "(memory hybrid off: keyword-only retrieval; models and vectors preserved)")
 	}
 	return nil
 }

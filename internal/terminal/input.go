@@ -81,7 +81,7 @@ func (c *Console) Close() {
 func (c *Console) send(line string) bool {
 	line, err := c.pastes.expand(strings.TrimSpace(line))
 	if err != nil {
-		fmt.Fprintln(c.err, "paste:", err)
+		fmt.Fprintln(c.Stderr(), "paste:", err)
 		return true // stay at the prompt; never submit a partial/rejected paste
 	}
 	if c.command != nil && c.command(line) {
@@ -140,7 +140,7 @@ func (c *Console) read() {
 		InterruptPrompt: "^C", EOFPrompt: "\n",
 	})
 	if err != nil {
-		fmt.Fprintln(c.err, "line editor:", err)
+		fmt.Fprintln(c.Stderr(), "line editor:", err)
 		c.readPlain()
 		return
 	}
@@ -194,7 +194,7 @@ func (c *Console) read() {
 			draft = nil
 			rl.SetPrompt(prompt)
 			if err != nil {
-				fmt.Fprintln(c.err, "input:", err)
+				fmt.Fprintln(c.Stderr(), "input:", err)
 				continue
 			}
 		}
@@ -215,7 +215,7 @@ func (c *Console) readPlain() {
 	for {
 		line, err := r.ReadString('\n')
 		if err != nil && err != io.EOF {
-			fmt.Fprintln(c.err, "input:", err)
+			fmt.Fprintln(c.Stderr(), "input:", err)
 			return // an incomplete paste must not flush an unfinished draft
 		}
 		if len(line) > 0 && !c.send(line) {

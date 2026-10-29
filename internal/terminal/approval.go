@@ -22,7 +22,7 @@ func (c *Console) Approve(ctx context.Context, command string, safe bool) (bool,
 		c.activityPhase("waiting for approval")
 		defer c.activityPhase("running bash")
 	}
-	(Renderer{Err: c.err}).Action(tools.CommandLabel(command))
+	(Renderer{Err: c.Stderr()}).Action(tools.CommandLabel(command))
 	if safe {
 		return true, nil
 	}
@@ -61,7 +61,7 @@ func (c *Console) ApproveWrite(ctx context.Context, dir string) (bool, error) {
 	defer c.activityPhase("running tools")
 	// Quote rather than render Markdown: controls, bidi overrides, and newlines
 	// in directory names must remain visible escapes, not terminal instructions.
-	fmt.Fprintf(c.err, "  Allow session-only write access to directory %s?\n", strconv.QuoteToASCII(canonical))
+	fmt.Fprintf(c.Stderr(), "  Allow session-only write access to directory %s?\n", strconv.QuoteToASCII(canonical))
 	return c.answerApproval(ctx, "  allow writes for the rest of this running session? [y/N] ")
 }
 
@@ -100,7 +100,7 @@ func (c *Console) answerApproval(ctx context.Context, prompt string) (bool, erro
 		if err := c.approvalError(ctx); err != nil {
 			return false, err
 		}
-		fmt.Fprint(c.err, prompt)
+		fmt.Fprint(c.Stderr(), prompt)
 		select {
 		case <-ctx.Done():
 			return false, ctx.Err()
@@ -122,7 +122,7 @@ func (c *Console) answerApproval(ctx context.Context, prompt string) (bool, erro
 				c.mu.Lock()
 				c.pending = append(c.pending, line)
 				c.mu.Unlock()
-				fmt.Fprintln(c.err, "  (noted for the model)")
+				fmt.Fprintln(c.Stderr(), "  (noted for the model)")
 			}
 		}
 	}

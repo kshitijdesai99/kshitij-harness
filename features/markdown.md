@@ -6,7 +6,7 @@ Introduced **2026-10-05** · commit `51c87c7`.
 
 ## Current behavior
 
-Capable interactive terminals render whole replies as Markdown, including readable math. Buffered replies flush at completion, failure, and cancellation so document-wide structures are not split into unrelated chunks. Explicit styles avoid terminal-background queries that could consume user input. Plain output remains available when terminal rendering is unavailable; this is terminal presentation, not a general graphical document viewer.
+Capable interactive terminals render whole replies as Markdown, including readable math. Buffered replies flush at completion, failure, and cancellation so document-wide structures are not split into unrelated chunks. Explicit styles avoid terminal-background queries that could consume user input. Coordinated [console output](input.md#output-while-composing) preserves terminal detection, color, and width while restoring unfinished drafts around reply presentation. Plain output remains available when terminal rendering is unavailable; this is terminal presentation, not a general graphical document viewer.
 
 ## Evolution
 

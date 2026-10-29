@@ -62,7 +62,7 @@ const maxReplyBlock = 1 << 20
 
 type markdownReply struct {
 	mu         sync.Mutex // tool actions may flush concurrently after a step
-	out        *os.File
+	out        io.Writer
 	block      strings.Builder
 	plain      bool // oversized replies fall back to raw output until message end
 	width      int
@@ -74,15 +74,15 @@ type markdownReply struct {
 }
 
 func newMarkdownReply(out io.Writer) *markdownReply {
-	f, ok := out.(*os.File)
-	if !ok || f == nil || os.Getenv("TERM") == "dumb" || !readline.IsTerminal(int(f.Fd())) {
+	f := terminalFile(out)
+	if f == nil || os.Getenv("TERM") == "dumb" || !readline.IsTerminal(int(f.Fd())) {
 		return nil
 	}
 	var nonce [8]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil
 	}
-	return &markdownReply{out: f, lineStart: true, linkID: strconv.FormatUint(binary.BigEndian.Uint64(nonce[:]), 10)}
+	return &markdownReply{out: out, lineStart: true, linkID: strconv.FormatUint(binary.BigEndian.Uint64(nonce[:]), 10)}
 }
 
 func cleanReply(text string) string {
@@ -120,7 +120,7 @@ func (r *markdownReply) write(text string, commentary bool) {
 
 // Render complete semantic replies instead of guessing Markdown boundaries:
 // loose lists, reference links, and code may span arbitrary blank lines/tokens.
-// No cursor repainting means drafts and steering retain their existing behavior.
+// Console writers clear and restore the active draft around each presentation.
 func (r *markdownReply) flush() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -136,7 +136,7 @@ func (r *markdownReply) render() {
 	if strings.TrimSpace(source) == "" {
 		return
 	}
-	width := max(1, SessionWidth(r.out))
+	width := max(1, SessionWidth(terminalFile(r.out)))
 	if r.commentary {
 		width = max(1, width-4)
 	}

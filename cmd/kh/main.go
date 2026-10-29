@@ -169,7 +169,7 @@ func main() {
 	cwd, err := os.Getwd()
 	exit(err)
 	repoScope, owner := memory.RepoScope(cwd), memory.Owner(cwd)
-	memoryActive := startMemory(ctx, db, cfg)
+	memoryActive := startMemory(ctx, db, cfg, memoryNotice)
 	var learner *learn.Learner
 	// Delegated task prompts are not user preferences. Workers read shared
 	// memory, but only user-facing chats learn durable knowledge.
@@ -184,7 +184,8 @@ func main() {
 	}
 	console := terminal.NewConsole(os.Stdin, os.Stdout, os.Stderr)
 	defer console.Close()
-	ui := terminal.NewRenderer(os.Stdout, os.Stderr)
+	stdout, stderr := console.Stdout(), console.Stderr()
+	ui := terminal.NewRenderer(stdout, stderr)
 	if os.Getenv("TMUX") != "" {
 		exit(nameChatPane())
 	}
@@ -227,9 +228,9 @@ func main() {
 	if *id != "" {
 		exit(p.Load(saved.State))
 		if interactive {
-			fmt.Printf("--- session %s ---\n", *id)
-			p.Replay(terminal.NewRenderer(os.Stdout, os.Stdout))
-			fmt.Println("---")
+			fmt.Fprintf(stdout, "--- session %s ---\n", *id)
+			p.Replay(terminal.NewRenderer(stdout, stdout))
+			fmt.Fprintln(stdout, "---")
 		}
 	} else {
 		*id = session.New()
@@ -246,10 +247,10 @@ func main() {
 			return false
 		}
 		if out, err := openChatPane(ctx, cfg, &c, line == "/fork"); err != nil {
-			fmt.Fprintln(os.Stderr, strings.TrimPrefix(line, "/")+":", err)
+			fmt.Fprintln(stderr, strings.TrimPrefix(line, "/")+":", err)
 		} else {
 			// Do not flush or interrupt the original session's streaming reply.
-			fmt.Fprintln(os.Stderr, terminal.Color(os.Stderr, terminal.Muted, "("+out+")"))
+			fmt.Fprintln(stderr, terminal.Color(stderr, terminal.Muted, "("+out+")"))
 		}
 		return true
 	})
@@ -266,24 +267,24 @@ func main() {
 		// instead, so the error stays visible and the agent can be steered.
 		if err == nil || os.Getenv("KH_PARENT") == "" {
 			exit(err)
-			fmt.Fprintf(os.Stderr, "(session %s: kh -r to continue)\n", *id)
+			fmt.Fprintf(stderr, "(session %s: kh -r to continue)\n", *id)
 			return
 		}
-		fmt.Fprintln(os.Stderr, "error:", err)
+		fmt.Fprintln(stderr, "error:", err)
 		task = ""
 	}
 	model, effort := p.Use("", "")
-	fmt.Fprintf(os.Stderr, "kh chat, session %s (%s, %s). Type while it works to steer. Ctrl-C stops a task, Ctrl-D quits, /help for commands.\n", *id, model, effort)
+	fmt.Fprintf(stderr, "kh chat, session %s (%s, %s). Type while it works to steer. Ctrl-C stops a task, Ctrl-D quits, /help for commands.\n", *id, model, effort)
 	if task != "" {
 		ui.Query(task)
 		if err := turn(task); err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
+			fmt.Fprintln(stderr, "error:", err)
 		}
 	}
 	for {
 		line, ok := <-console.Lines
 		if !ok { // Ctrl-D
-			fmt.Println()
+			fmt.Fprintln(stdout)
 			return
 		}
 		// Multiline paste is message content, never a batch of slash commands.
@@ -291,33 +292,33 @@ func main() {
 		if singleLine && (line == "/image" || strings.HasPrefix(line, "/image ")) {
 			attacher, ok := p.(provider.ImageAttacher)
 			if !ok {
-				fmt.Fprintln(os.Stderr, "image: this provider does not support images")
+				fmt.Fprintln(stderr, "image: this provider does not support images")
 				continue
 			}
 			path := strings.TrimSpace(strings.TrimPrefix(line, "/image"))
 			url, err := image.Read(path)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, "image:", err)
+				fmt.Fprintln(stderr, "image:", err)
 				continue
 			}
 			attacher.AttachImage(url)
-			fmt.Println("(image attached; type your message)")
+			fmt.Fprintln(stdout, "(image attached; type your message)")
 			continue
 		}
 		if singleLine && line == "/compact" {
 			if err := c.compact(ctx); err != nil {
-				fmt.Fprintln(os.Stderr, "compact:", err)
+				fmt.Fprintln(stderr, "compact:", err)
 			}
 			continue
 		}
 		if singleLine && strings.HasPrefix(line, "/") {
 			c.command(ctx, line)
 			if err := c.snapshotFork(); err != nil {
-				fmt.Fprintln(os.Stderr, "fork checkpoint:", err)
+				fmt.Fprintln(stderr, "fork checkpoint:", err)
 			}
 		} else if line != "" {
 			if err := turn(line); err != nil {
-				fmt.Fprintln(os.Stderr, "error:", err)
+				fmt.Fprintln(stderr, "error:", err)
 			}
 		}
 	}
@@ -327,40 +328,41 @@ func main() {
 // requests immediately; model switches apply from the next message.
 func (c *chat) command(ctx context.Context, line string) {
 	p, access := c.model, c.writeAccess
+	stdout := c.input.Stdout()
 	cmd, arg, _ := strings.Cut(line, " ")
 	var model, effort string
 	switch cmd {
 	case "/memory":
 		if err := c.memoryCommand(ctx, strings.Fields(arg)); err != nil {
-			fmt.Println("error:", err)
+			fmt.Fprintln(stdout, "error:", err)
 		}
 		return
 	case "/auto":
 		arg = strings.TrimSpace(arg)
 		if arg != "" {
 			if arg != "on" && arg != "off" {
-				fmt.Println("usage: /auto [on|off]")
+				fmt.Fprintln(stdout, "usage: /auto [on|off]")
 				return
 			}
 			enabled := arg == "on"
 			if err := config.Set("auto", enabled); err != nil {
-				fmt.Println("error:", err)
+				fmt.Fprintln(stdout, "error:", err)
 				return
 			}
 			applyAuto(access, enabled)
 			c.seen.Auto = enabled
 		}
 		if access.Auto() {
-			fmt.Println("(auto on: commands and requested outside-folder writes are automatically approved; sandbox and path checks remain enabled)")
+			fmt.Fprintln(stdout, "(auto on: commands and requested outside-folder writes are automatically approved; sandbox and path checks remain enabled)")
 		} else {
-			fmt.Println("(auto off: commands and new folders require approval; existing session grants remain until restart)")
+			fmt.Fprintln(stdout, "(auto off: commands and new folders require approval; existing session grants remain until restart)")
 		}
 		return
 	case "/model", "/effort":
 		if arg = strings.TrimSpace(arg); arg != "" {
 			// Saved to config, so every session (including open ones) follows.
 			if err := config.Set(cmd[1:], arg); err != nil {
-				fmt.Println("error:", err)
+				fmt.Fprintln(stdout, "error:", err)
 				return
 			}
 		}
@@ -370,10 +372,10 @@ func (c *chat) command(ctx context.Context, line string) {
 			model, effort = p.Use("", arg)
 		}
 	default:
-		fmt.Println("/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/new   open a fresh session in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message\n/auto [on|off]   persist automatic command and folder approval; existing grants remain until restart\n/memory hybrid on|off   enable local hybrid retrieval or keyword-only memory\n/memory explain   show the last retrieval’s full candidate IDs and scores")
+		fmt.Fprintln(stdout, "/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/new   open a fresh session in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message\n/auto [on|off]   persist automatic command and folder approval; existing grants remain until restart\n/memory hybrid on|off   enable local hybrid retrieval or keyword-only memory\n/memory explain   show the last retrieval’s full candidate IDs and scores")
 		return
 	}
-	fmt.Println(terminal.Color(os.Stdout, terminal.Muted, fmt.Sprintf("(model %s, effort %s)", model, effort)))
+	fmt.Fprintln(stdout, terminal.Color(stdout, terminal.Muted, fmt.Sprintf("(model %s, effort %s)", model, effort)))
 }
 
 // Keep bash-invoked kh subcommands on the session's active permission policy.
