@@ -26,7 +26,7 @@ Existing sender and receiver chats must [restart onto the updated build](startup
 | 2026-10-01 | Moved console input into the terminal layer and forwarded raw-mode Ctrl-C to turn cancellation. | `60e2bd1` |
 | 2026-10-10 | Added Shift+Enter/Ctrl-J multiline drafts and refined paste handling. | `ded650e` |
 | 2026-10-25 | Separated framed peer delivery from unfinished human drafts, paste/history, and approval parsing. | `dee1c86` |
-| 2026-10-29 | Coordinated stdout/stderr chat output with the active editor while preserving terminal Markdown, paste placeholders, and cursor position. | Pending |
+| 2026-10-29 | Coordinated stdout/stderr chat output with the active editor while preserving terminal Markdown, paste placeholders, and cursor position. | `24fcbb8` |
 
 ## Inspect
 

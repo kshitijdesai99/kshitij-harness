@@ -22,7 +22,7 @@ Shared guides: [Architecture](architecture.md) · [Development](development.md) 
 |---|---|---|
 | [Chat and headless modes](chat-modes.md) | 2026-09-28 | Interactive default and explicit `-p` mode |
 | [Steering and stopping](steering.md) | 2026-09-28 | Reply interruption and safer cleanup |
-| [Input composition and history](input.md) | 2026-10-01 | Multiline drafts and isolated peer delivery |
+| [Input composition and history](input.md) | 2026-10-01 | Multiline drafts, isolated peer delivery, safe draft redraw |
 | [Model and effort settings](model-settings.md) | 2026-09-28 | Persistent settings across chats |
 | [Help](help.md) | 2026-09-28 | Contextual, tool-less one-off help |
 
