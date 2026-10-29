@@ -2,6 +2,8 @@ module kh
 
 go 1.24.0
 
+replace github.com/muesli/reflow => ./third_party/reflow
+
 require (
 	github.com/charmbracelet/glamour v1.0.0
 	github.com/charmbracelet/x/ansi v0.10.2
