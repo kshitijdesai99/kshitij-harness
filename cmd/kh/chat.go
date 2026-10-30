@@ -27,6 +27,7 @@ import (
 type chat struct {
 	model             provider.Provider
 	backend, id, repo string
+	identity          *session.Identity
 	memory            *memory.Store
 	memoryActive      bool // applied pipeline, distinct from persisted opt-in after startup failure
 	budget            memory.Budget
@@ -182,7 +183,7 @@ func hookModel(cfg config.Config) learn.Model {
 func (c *chat) save() error {
 	b, saveErr := c.model.Save()
 	if saveErr == nil {
-		b, saveErr = session.Encode(c.backend, b)
+		b, saveErr = session.EncodeWithIdentity(c.backend, b, c.identity)
 	}
 	if saveErr == nil {
 		saveErr = session.Save(c.id, b)
@@ -200,7 +201,7 @@ func (c *chat) snapshotFork() error {
 	if err != nil {
 		return err
 	}
-	state, err = session.Encode(c.backend, state)
+	state, err = session.EncodeWithIdentity(c.backend, state, c.identity)
 	if err != nil {
 		return err
 	}

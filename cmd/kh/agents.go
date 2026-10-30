@@ -246,9 +246,6 @@ func openChatPane(ctx context.Context, cfg config.Config, c *chat, fork bool) (s
 			return "", fmt.Errorf("nothing to fork yet")
 		}
 		id, base = session.New(), "fork"
-		if err := session.Save(id, state); err != nil {
-			return "", err
-		}
 	}
 	panes, err := agentPanesContext(ctx)
 	if err != nil {
@@ -261,6 +258,19 @@ func openChatPane(ctx context.Context, cfg config.Config, c *chat, fork bool) (s
 	name := base
 	for n := 2; taken[name]; n++ {
 		name = fmt.Sprintf("%s-%d", base, n)
+	}
+	if fork {
+		saved, err := session.Decode(state)
+		if err != nil {
+			return "", err
+		}
+		state, err = session.EncodeWithIdentity(saved.Provider, saved.State, session.NewIdentity("", name))
+		if err != nil {
+			return "", err
+		}
+		if err := session.Save(id, state); err != nil {
+			return "", err
+		}
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -282,7 +292,7 @@ func openChatPane(ctx context.Context, cfg config.Config, c *chat, fork bool) (s
 		command = append(command, "-s", id)
 	}
 	pane, err := tmuxContext(ctx, "split-window", "-h", "-P", "-F", "#{pane_id}", "-t", current, "-c", cwd,
-		"-e", "KH_AGENT=kh:"+name, sessionCommand(false, command...))
+		"-e", "KH_PARENT=", "-e", "KH_AGENT=kh:"+name, sessionCommand(false, command...))
 	if err != nil {
 		return "", err
 	}

@@ -87,7 +87,7 @@ func testForkOpensNewPaneToTheRight(t *testing.T, source string) {
 		return strings.TrimSpace(string(b))
 	}
 	runTmux("new-session", "-d", "-s", "kh", "-n", "main", "-x", "200", "-y", "50", "-c", cwd,
-		"env KH_PROVIDER= KH_MODEL= KH_EFFORT= KH_AGENT= KH_PARENT= "+binary+" -s original")
+		"env KH_PROVIDER= KH_MODEL= KH_EFFORT= KH_AGENT=kh:worker KH_PARENT=kh:upstream "+binary+" -s original")
 	defer runTmux("kill-server")
 	runTmux("new-window", "-d", "-t", "kh:1", "-n", "other", "sleep 60")
 	originalPane := runTmux("display-message", "-p", "-t", "kh:main", "#{pane_id}")
@@ -101,6 +101,7 @@ func testForkOpensNewPaneToTheRight(t *testing.T, source string) {
 		"KH_SOURCE_DIR":       "/stale/server/source",
 		"KH_AUTO_REBUILD":     "1",
 		"KH_AUTO":             staleAutoEnv,
+		"KH_PARENT":           "kh:stale-parent",
 		"KH_REBUILD_EXEC_PID": "stale-server-marker",
 	} {
 		runTmux("set-environment", "-g", key, value)
@@ -159,11 +160,19 @@ func testForkOpensNewPaneToTheRight(t *testing.T, source string) {
 	}
 	// Provider Save normalizes JSON key ordering; compare the full state by
 	// value while checking the original file remains byte-for-byte unchanged.
-	var got, want any
-	if err := json.Unmarshal(copied, &got); err != nil {
+	forkRecord, err := session.Decode(copied)
+	if err != nil || forkRecord.Identity == nil || forkRecord.Identity.Role != "main" || forkRecord.Identity.Name != "fork" || forkRecord.Identity.Parent != "" {
+		t.Fatalf("fork identity: %+v: %v", forkRecord, err)
+	}
+	originalRecord, err := session.Decode(state)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal(state, &want); err != nil {
+	var got, want any
+	if err := json.Unmarshal(forkRecord.State, &got); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(originalRecord.State, &want); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -194,8 +203,13 @@ func testForkOpensNewPaneToTheRight(t *testing.T, source string) {
 	if secondID == id {
 		t.Fatalf("repeated fork reused session %q", id)
 	}
-	if second, err := session.Load(secondID); err != nil || string(second) != string(copied) {
-		t.Fatalf("repeated fork changed checkpoint: %s: %v", second, err)
+	second, err := session.Load(secondID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondRecord, err := session.Decode(second)
+	if err != nil || secondRecord.Identity == nil || secondRecord.Identity.Role != "main" || secondRecord.Identity.Name != "fork-2" || string(secondRecord.State) != string(forkRecord.State) {
+		t.Fatalf("repeated fork changed checkpoint/identity: %s: %v", second, err)
 	}
 	if panes := runTmux("list-panes", "-t", "kh:main", "-F", "#{pane_id}"); len(strings.Fields(panes)) != 3 {
 		t.Fatalf("expected three panes after repeated fork: %q", panes)
@@ -232,6 +246,17 @@ func testForkOpensNewPaneToTheRight(t *testing.T, source string) {
 			t.Fatalf("new session not fresh and independent: %s", screen)
 		}
 		newIDs[match[1]] = true
+		// No credentials are installed. A failed turn still saves the new
+		// identity, proving the child cleared the inherited worker parent.
+		runTmux("send-keys", "-t", pane, "question", "Enter")
+		waitFor(t, func() bool {
+			b, err := session.Load(match[1])
+			if err != nil {
+				return false
+			}
+			r, err := session.Decode(b)
+			return err == nil && r.Identity != nil && r.Identity.Role == "main" && r.Identity.Name == name && r.Identity.Parent == ""
+		})
 	}
 	if original, err := session.Load("original"); err != nil || string(original) != string(state) {
 		t.Fatalf("/new changed original session: %s: %v", original, err)

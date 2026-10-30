@@ -253,10 +253,11 @@ func main() {
 		}
 	} else {
 		*id = session.New()
+		saved.Identity = session.NewIdentity(os.Getenv("KH_PARENT"), strings.TrimPrefix(os.Getenv("KH_AGENT"), "kh:"))
 	}
 
 	exportModel(p, cfg.Provider)
-	c := chat{model: p, backend: cfg.Provider, id: *id, repo: repoScope, project: project,
+	c := chat{model: p, backend: cfg.Provider, id: *id, repo: repoScope, project: project, identity: saved.Identity,
 		memory: db, memoryActive: memoryActive, learn: learner, input: console, ui: ui, tools: ts, seen: fromFile, writeAccess: writeAccess,
 		budget: memory.Budget{SummaryChars: cfg.SummaryMaxTokens * 4, TopInstructions: cfg.TopInstructions, TopGotchas: cfg.TopGotchas,
 			TopKnowledge: cfg.TopKnowledge, TotalChars: cfg.MemoryMaxTokens * 4}}

@@ -11,13 +11,51 @@ type Record struct {
 	Version  int             `json:"version"`
 	Provider string          `json:"provider"`
 	State    json.RawMessage `json:"state"`
+	Identity *Identity       `json:"identity,omitempty"`
+}
+
+// Identity records how a chat was created, independently of its current process.
+// Missing metadata stays unknown, including when an old chat is resumed.
+type Identity struct {
+	Role   string `json:"role"`
+	Name   string `json:"name,omitempty"`
+	Parent string `json:"parent,omitempty"`
+}
+
+// NewIdentity classifies only new chats. An address alone does not make a worker.
+func NewIdentity(parent, name string) *Identity {
+	if parent != "" {
+		return &Identity{Role: "subagent", Name: name, Parent: parent}
+	}
+	return &Identity{Role: "main", Name: name}
+}
+
+// Label returns the saved role for a preview; it never infers legacy identity.
+func (i *Identity) Label() string {
+	if i != nil {
+		switch i.Role {
+		case "main":
+			return "[main]"
+		case "subagent":
+			if i.Name != "" {
+				return "[subagent: " + i.Name + "]"
+			}
+			return "[subagent]"
+		}
+	}
+	return "[unknown]"
 }
 
 func Encode(backend string, state []byte) ([]byte, error) {
+	return EncodeWithIdentity(backend, state, nil)
+}
+
+// EncodeWithIdentity wraps provider state without changing the loaded identity.
+func EncodeWithIdentity(backend string, state []byte, identity *Identity) ([]byte, error) {
 	if backend == "" || !json.Valid(state) || bytes.Equal(bytes.TrimSpace(state), []byte("null")) {
 		return nil, fmt.Errorf("invalid session provider or state")
 	}
-	return json.Marshal(Record{Version: 1, Provider: backend, State: state})
+	return json.Marshal(Record{Version: 1, Provider: backend, State: state, Identity: identity})
 }
 
 func Decode(b []byte) (Record, error) {

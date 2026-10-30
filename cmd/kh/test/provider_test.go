@@ -60,7 +60,7 @@ func TestProviderSelectionAndLegacyResume(t *testing.T) {
 	}
 	for _, args := range [][]string{{"sessions"}, {"--sessions"}, {"--sessions", "-i"}} {
 		out, err = run(args...)
-		if err != nil || !strings.Contains(out, "legacy-chat  [no assistant response yet]") {
+		if err != nil || !strings.Contains(out, "legacy-chat  [unknown] [no assistant response yet]") {
 			t.Fatalf("listing %v: %s: %v", args, out, err)
 		}
 	}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,63 @@ import (
 	"kh/internal/session"
 	"kh/internal/terminal"
 )
+
+// TestSessionIdentityLifecycle exercises actual CLI saves without credentials.
+func TestSessionIdentityLifecycle(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "kh")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/kh")
+	build.Dir = "../../.."
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build: %s: %v", out, err)
+	}
+	isolateCLIFixture(t)
+	for _, tc := range []struct {
+		name, parent, agent, saved string
+		want                       *session.Identity
+	}{
+		{name: "main", want: &session.Identity{Role: "main"}},
+		{name: "named main", agent: "kh:new", want: &session.Identity{Role: "main", Name: "new"}},
+		{name: "worker", parent: "kh:main", agent: "kh:review", want: &session.Identity{Role: "subagent", Name: "review", Parent: "kh:main"}},
+		{name: "resume worker in main", saved: `{"version":1,"provider":"codex","identity":{"role":"subagent","name":"original","parent":"kh:parent"},"state":{"session":"s","input":[]}}`, want: &session.Identity{Role: "subagent", Name: "original", Parent: "kh:parent"}},
+		{name: "resume main in worker", parent: "kh:main", agent: "kh:review", saved: `{"version":1,"provider":"codex","identity":{"role":"main","name":"original"},"state":{"session":"s","input":[]}}`, want: &session.Identity{Role: "main", Name: "original"}},
+		{name: "legacy unknown in worker", parent: "kh:main", agent: "kh:review", saved: `{"session":"s","input":[]}`},
+		{name: "envelope unknown in worker", parent: "kh:main", agent: "kh:review", saved: `{"version":1,"provider":"codex","state":{"session":"s","input":[]}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			args := []string{"-p", "--nosandbox"}
+			if tc.saved != "" {
+				if err := session.Save("existing", []byte(tc.saved)); err != nil {
+					t.Fatal(err)
+				}
+				args = append(args, "-s", "existing")
+			}
+			args = append(args, "question")
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, binary, args...)
+			cmd.Env = append(os.Environ(), "KH_AUTO_REBUILD=0", "KH_PROVIDER=codex", "KH_MODEL=", "KH_EFFORT=", "KH_PARENT="+tc.parent, "KH_AGENT="+tc.agent, "TMUX=", "TMUX_PANE=")
+			cmd.Stdin = strings.NewReader("")
+			out, err := cmd.CombinedOutput()
+			if ctx.Err() != nil || !strings.Contains(string(out), "not logged in") {
+				t.Fatalf("expected unauthenticated turn: %s: %v", out, err)
+			}
+			ids := session.List()
+			if len(ids) != 1 {
+				t.Fatalf("saved sessions: %v, output: %s", ids, out)
+			}
+			b, err := session.Load(ids[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			r, err := session.Decode(b)
+			if err != nil || !reflect.DeepEqual(r.Identity, tc.want) {
+				t.Fatalf("identity %+v, want %+v: %v", r.Identity, tc.want, err)
+			}
+		})
+	}
+}
 
 // A private tmux server supplies a genuine stdout PTY without touching the
 // user's server. Conflicting COLUMNS must not override its measured pane width.
@@ -84,7 +142,7 @@ func TestSessionsTTYWidth(t *testing.T) {
 			t.Fatalf("PTY width: got %q want %d", got, width)
 		}
 		out := runTmux("capture-pane", "-p", "-t", name)
-		want := terminal.SessionRow(entries[0].SavedAt, id, preview, width)
+		want := terminal.SessionRow(entries[0].SavedAt, id, "[unknown] "+preview, width)
 		if out != want {
 			t.Errorf("TTY width %d (COLUMNS=1): got %q want %q", width, out, want)
 		}
@@ -114,9 +172,13 @@ func TestSessionsLastResponseAndSavedOrdering(t *testing.T) {
 		}
 	}
 	for i := 0; i < 21; i++ {
-		save(fmt.Sprintf("z%02d", i), `{"session":"s","input":[]}`, time.Duration(i)*time.Minute)
+		state := `{"session":"s","input":[]}`
+		if i == 20 {
+			state = `{"version":1,"provider":"codex","identity":{"role":"subagent","name":"review\u001b[31m","parent":"kh:main"},"state":{"session":"s","input":[]}}`
+		}
+		save(fmt.Sprintf("z%02d", i), state, time.Duration(i)*time.Minute)
 	}
-	save("a-resumed", `{"version":1,"provider":"codex","state":{"session":"s","input":[
+	save("a-resumed", `{"version":1,"provider":"codex","identity":{"role":"main"},"state":{"session":"s","input":[
   {"type":"message","role":"user","content":[{"type":"input_text","text":"opening question"}]},
   {"type":"message","role":"assistant","content":[{"type":"output_text","text":"obsolete answer"}]},
   {"type":"function_call","arguments":"{\"command\":\"tool noise\"}"},
@@ -142,10 +204,10 @@ func TestSessionsLastResponseAndSavedOrdering(t *testing.T) {
 	}
 	text := string(out)
 	lines := strings.Split(strings.TrimSpace(text), "\n")
-	if len(lines) != 20 {
+	if len(lines) != 29 {
 		t.Fatalf("got %d lines: %s", len(lines), text)
 	}
-	if !strings.Contains(lines[0], "a-resumed  Final answer second part") || !strings.HasPrefix(lines[0], "2026-01-01 00:30") {
+	if !strings.Contains(lines[0], "a-resumed  [main] Final answer second part") || !strings.HasPrefix(lines[0], "2026-01-01 00:30") {
 		t.Fatalf("last reply/order: %s", text)
 	}
 	for _, noise := range []string{"opening question", "obsolete answer", "tool noise", "unanswered follow-up"} {
@@ -153,23 +215,28 @@ func TestSessionsLastResponseAndSavedOrdering(t *testing.T) {
 			t.Errorf("preview contains %q", noise)
 		}
 	}
-	if !utf8.Valid(out) || !strings.HasSuffix(lines[1], strings.Repeat("界", 33)+"...") {
+	if !utf8.Valid(out) || !strings.HasSuffix(lines[1], strings.Repeat("界", 28)+"...") {
 		t.Errorf("unicode preview: %s", lines[1])
 	}
-	if !strings.Contains(lines[2], "c-broken  [unavailable:") || !strings.Contains(lines[3], "d-unsupported  [unavailable:") {
+	if !strings.Contains(lines[2], "c-broken  [unknown] [unavailable:") || !strings.Contains(lines[3], "d-unsupported  [unknown] [unavailable:") {
 		t.Errorf("unavailable: %s", text)
 	}
-	if !strings.Contains(lines[4], "f-tie  [no assistant response yet]") || !strings.Contains(lines[5], "e-tie  [no assistant response yet]") {
+	if !strings.Contains(lines[4], "f-tie  [unknown] [no assistant response yet]") || !strings.Contains(lines[5], "e-tie  [unknown] [no assistant response yet]") {
 		t.Errorf("ties/empty: %s", text)
 	}
-	if !strings.HasSuffix(lines[6], "g-controls  Safe preview") || strings.Contains(text, "\x1b") || strings.Contains(text, "hidden") {
+	if !strings.HasSuffix(lines[6], "g-controls  [unknown] Safe preview") || strings.Contains(text, "\x1b") || strings.Contains(text, "hidden") {
 		t.Errorf("terminal controls leaked: %q", text)
 	}
-	if !strings.HasSuffix(lines[7], strings.Repeat("e\u0301👩‍💻", 22)+"e\u0301...") {
+	if !strings.HasSuffix(lines[7], strings.Repeat("e\u0301👩‍💻", 19)+"...") {
 		t.Errorf("grapheme preview: %q", lines[7])
 	}
-	if strings.Contains(text, "z00") {
-		t.Errorf("old saves should not displace resumed session: %s", text)
+	for i := 0; i < 21; i++ {
+		if !strings.Contains(text, fmt.Sprintf("z%02d", i)) {
+			t.Errorf("listing omitted saved row z%02d: %s", i, text)
+		}
+	}
+	if !strings.Contains(text, "z20  [subagent: review] [no assistant response yet]") {
+		t.Errorf("worker label missing: %s", text)
 	}
 	if latest, err := session.Latest(); err != nil || latest != "z20" {
 		t.Errorf("creation ordering changed: %q %v", latest, err)
@@ -183,7 +250,7 @@ func TestSessionsLastResponseAndSavedOrdering(t *testing.T) {
 			t.Fatalf("width %d: %s: %v", width, out, err)
 		}
 		rows := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
-		if len(rows) != 20 || !utf8.Valid(out) {
+		if len(rows) != 29 || !utf8.Valid(out) {
 			t.Fatalf("width %d: invalid listing: %q", width, out)
 		}
 		for _, row := range rows {

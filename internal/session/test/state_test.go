@@ -38,6 +38,40 @@ func TestProviderEnvelopeIsOpaqueAndLegacyChatsStillLoad(t *testing.T) {
 	}
 }
 
+func TestSessionIdentityRoundTrip(t *testing.T) {
+	for _, identity := range []*session.Identity{nil, session.NewIdentity("", "new"), session.NewIdentity("kh:main", "review")} {
+		b, err := session.EncodeWithIdentity("codex", []byte(`{"session":"s","input":[]}`), identity)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := session.Decode(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if identity == nil {
+			if r.Identity != nil || r.Identity.Label() != "[unknown]" || bytes.Contains(b, []byte(`"identity"`)) {
+				t.Fatalf("unknown identity changed: %s", b)
+			}
+		} else if r.Identity == nil || *r.Identity != *identity {
+			t.Fatalf("identity changed: %s", b)
+		}
+	}
+	for _, tc := range []struct {
+		identity *session.Identity
+		label    string
+	}{
+		{nil, "[unknown]"},
+		{session.NewIdentity("", "named-main"), "[main]"},
+		{session.NewIdentity("kh:main", "review"), "[subagent: review]"},
+		{session.NewIdentity("kh:main", ""), "[subagent]"},
+		{&session.Identity{Role: "future"}, "[unknown]"},
+	} {
+		if got := tc.identity.Label(); got != tc.label {
+			t.Errorf("label %q, want %q", got, tc.label)
+		}
+	}
+}
+
 func TestAtomicSaveNeverExposesPartialJSON(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Chdir(t.TempDir())
