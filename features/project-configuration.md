@@ -2,7 +2,7 @@
 
 Use `.agents`, `.agent`, and `.claude` directories for startup instructions, on-demand capabilities and assets, local plugins, and external MCP tools and content.
 
-Introduced **2026-10-30** · current working-tree implementation (not yet committed).
+Introduced **2026-10-30** · commit `752f184`.
 
 ## Discovery and precedence
 
@@ -78,7 +78,7 @@ This is a supported subset of filesystem configuration and local plugin content,
 
 | Date | Change | Commit |
 |---|---|---|
-| 2026-10-30 | Added home/ancestor configuration, lazy skills/commands/assets, local plugin references, and approved MCP tools/resources/prompts. | Working tree (uncommitted) |
+| 2026-10-30 | Added home/ancestor configuration, lazy skills/commands/assets, local plugin references, and approved MCP tools/resources/prompts. | `752f184` |
 
 ## Inspect
 
