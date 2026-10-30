@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -21,12 +22,6 @@ func (f fakeApprover) Approve(ctx context.Context, command string, safe bool) (b
 }
 
 func bash(t *testing.T, cfg config.Config, command string) (string, error) {
-	t.Helper()
-	cfg.Sandbox = false
-	return bashWithSandbox(t, cfg, command)
-}
-
-func bashWithSandbox(t *testing.T, cfg config.Config, command string) (string, error) {
 	t.Helper()
 	in, _ := json.Marshal(map[string]string{"command": command})
 	return tools.Bash(cfg, fakeApprover(func(_ context.Context, _ string, safe bool) (bool, error) {
@@ -93,9 +88,12 @@ func TestEdit(t *testing.T) {
 	if b, _ := os.ReadFile("a.txt"); string(b) != "hi kh" {
 		t.Errorf("got %q", b)
 	}
-	if edit(`{"path":"../x","old":"","new":"x"}`) == nil {
-		t.Error("path outside project should fail")
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	input, _ := json.Marshal(map[string]string{"path": outside, "old": "", "new": "cross-directory"})
+	if err := edit(string(input)); err != nil {
+		t.Fatal(err)
 	}
+	requireText(t, outside, "cross-directory")
 }
 
 func TestTimeoutTellsModel(t *testing.T) {

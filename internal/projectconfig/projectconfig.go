@@ -56,7 +56,8 @@ type loader struct {
 
 // Load reads ancestors from filesystem root to cwd, with home configuration
 // prepended as a global default only when home is not an ancestor of cwd.
-// At each level .claude precedes .agent then .agents, and settings.local.json overrides
+// At each level plain CLAUDE.md and AGENTS.md precede .claude, .agent, then
+// .agents, and settings.local.json overrides
 // settings.json. Missing configuration is normal; unsafe/unreadable declarations
 // produce warnings. Only an invalid working directory is a fatal error.
 func Load(cwd string) (*Config, error) {
@@ -108,6 +109,9 @@ func Load(cwd string) (*Config, error) {
 			continue
 		}
 		seen[dir] = true
+		for _, name := range []string{"CLAUDE.md", "AGENTS.md"} {
+			l.rule(filepath.Join(dir, name))
+		}
 		l.settings(filepath.Join(dir, ".mcp.json"), dir)
 		for _, name := range []string{".claude", ".agent", ".agents"} {
 			l.directory(filepath.Join(dir, name), dir)
@@ -277,6 +281,9 @@ func (l *loader) block(path, text string) bool {
 
 func contextPriority(path string) int {
 	name := filepath.Base(path)
+	if name == "CLAUDE.md" || name == "AGENTS.md" {
+		return 2
+	}
 	parts := strings.Split(filepath.ToSlash(path), "/")
 	// Only classify paths inside the configuration directory, not ancestors
 	// whose names happen to be "rules" or "commands".

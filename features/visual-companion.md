@@ -8,7 +8,7 @@ Introduced as a standalone example on **2026-10-29** in `ed67393`; native lifecy
 
 Requires `uv` on `PATH` and network access for uncached dependencies. No browser tab opens automatically: open the returned local URL yourself.
 
-Native launches use `uv run --with-requirements notebook.py` to provision packages from PEP 723 metadata, then `marimo run --watch --no-sandbox` to render the app immediately, reload notebook edits, and keep the server attached to its guardian. This marimo environment-launcher option is distinct from the OS Bash sandbox: existing sandbox configuration and approvals still apply. Native launch does not explicitly select Python from `requires-python`; the example declares Python 3.11+.
+Native launches use `uv run --with-requirements notebook.py` to provision packages from PEP 723 metadata, then `marimo run --watch --no-sandbox` to render the app immediately, reload notebook edits, and keep the server attached to its guardian. This is a marimo environment-launcher option, not a kh filesystem restriction. Native starts require normal command approval and operate subject to OS permissions. Native launch does not explicitly select Python from `requires-python`; the example declares Python 3.11+.
 
 Ask kh to create a visual explanation. The tool workflow is:
 
@@ -17,7 +17,7 @@ Ask kh to create a visual explanation. The tool workflow is:
 3. `action="start"` with the same name starts the rendered app with file watching on a free loopback port and returns an authenticated URL and log path; an explicit `port` (1024–65535) is optional.
 4. `action="list"` inspects managed servers; `action="stop"` stops a named server without deleting the notebook.
 
-The tool accepts notebook names, not arbitrary server commands or environment overrides. Existing [write/execution approvals](write-approvals.md) and the [shell sandbox](shell-sandbox.md) still apply. Standalone shell launches are **unmanaged**: see the [example README](../examples/visual-companion/README.md) for launch and regression-check commands.
+The tool accepts notebook names, not arbitrary server commands or environment overrides. Normal [command approvals](write-approvals.md) and OS permissions apply; kh imposes no filesystem confinement. Standalone shell launches are **unmanaged**: see the [example README](../examples/visual-companion/README.md) for launch and regression-check commands.
 
 ## Ownership and storage
 
@@ -52,7 +52,7 @@ Lifecycle management is not chat synchronization, browser navigation, or noteboo
 - [Lifecycle regression tests](../internal/visual/test/manager_test.go): fixed uv dependency and `--no-sandbox` launch arguments, owned-server isolation, retained artifacts, cancellation, failed starts, invalid paths, and guardian cleanup after owner `os.Exit`, SIGTERM, and SIGKILL using a fake server and descendant process.
 - [Notebook source](../examples/visual-companion/companion.py): dependency metadata, slider, update rule, plots, and explanation.
 - [Notebook regression checks](../examples/visual-companion/test/check_companion.py): public `app.run()` API, default value, five regimes, trajectories, explanations, plotted series, and log-scale loss. Commands live in the [example README](../examples/visual-companion/README.md#regression-checks).
-- Native browser/lifecycle smoke check under the OS sandbox: the rendered, watched companion updated its plot and final x from approximately 0.0001462 to 153.4 when η changed from 0.20 to 1.10, without JavaScript errors. Explicit stop closed the listener and retained the notebook; restarting and then exiting the owning worker also closed the listener and retained the notebook. This is a manual smoke check, not automated regression coverage.
+- Historical native browser/lifecycle smoke check (before filesystem confinement was removed): the rendered, watched companion updated its plot and final x from approximately 0.0001462 to 153.4 when η changed from 0.20 to 1.10, without JavaScript errors. Explicit stop closed the listener and retained the notebook; restarting and then exiting the owning worker also closed the listener and retained the notebook. This is a manual smoke check, not automated regression coverage.
 - Initial standalone browser smoke check: changing η from 0.20 to 1.10 updated both plots and the explanation without page errors; screenshots were visually inspected. This historical check is not native-runtime regression coverage.
 
 ## History

@@ -30,8 +30,7 @@ const memoryUsage = `usage: kh memory <command>
   import-md <file>                              split a Markdown rules file into notes, after review
   reference <put|get|export|import|asset|demo>    DB-native procedures and inert script assets`
 
-// memoryCommand inspects and edits memory. Agents use the memory tool instead,
-// since shell commands may be sandboxed.
+// memoryCommand inspects and edits memory. Agents use the memory tool directly.
 func memoryCommand(args []string, cfg config.Config) error {
 	if len(args) == 0 {
 		return fmt.Errorf("%s", memoryUsage)

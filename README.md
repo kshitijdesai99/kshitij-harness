@@ -46,7 +46,7 @@ Optionally create `~/.kh/config.json`, specifying only overrides:
 { "effort": "high" }
 ```
 
-CLI flags override configuration. See [project configuration](features/project-configuration.md) for `.agents`/`.claude` configuration, on-demand skills, local plugins, slash commands, and MCP capabilities (`.agent` remains an alias). Automatic approval is on by default; it does not remove write boundaries. Read [approval controls](features/write-approvals.md) and [sandbox limits](features/shell-sandbox.md) before running autonomous work.
+CLI flags override configuration. See [project configuration](features/project-configuration.md) for `.agents`/`.claude` configuration, on-demand skills, local plugins, slash commands, and MCP capabilities (`.agent` remains an alias). Automatic command approval is on by default. Filesystem access is unrestricted by kh and subject to OS permissions, including outside the launch folder. Read [approval controls](features/write-approvals.md) before running autonomous work; use [workspace inspection](features/project-configuration.md#target-workspaces) before working in another target.
 
 ## Memory and agents
 

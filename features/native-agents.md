@@ -33,7 +33,7 @@ This operating guidance does not add a deterministic scheduler or automatic runt
 3. Collect findings and resolve overlapping changes before integration.
 4. Run relevant checks, review the combined diff, and state any remaining uncertainty.
 
-The harness provides tools and visibility; the agent remains responsible for choosing and checking this workflow. Follow [development conventions](development.md) and the shared [approval](write-approvals.md) and [shell execution boundaries](shell-sandbox.md). [External coding CLIs](external-clis.md) are shell subprocesses, not native workers.
+The harness provides tools and visibility; the agent remains responsible for choosing and checking this workflow. Follow [development conventions](development.md) and the shared [command approval](write-approvals.md) and [shell execution guidance](shell.md). [External coding CLIs](external-clis.md) are shell subprocesses, not native workers.
 
 ## Evolution
 

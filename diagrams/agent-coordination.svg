@@ -53,5 +53,5 @@
   <text x="60" y="500" font-size="18" fill="#047857">independent of the human draft.</text>
   <text x="60" y="550" font-size="18" fill="#475569">Dotted lines: shared file access.</text>
   <text x="60" y="800" font-size="19" fill="#334155">Success closes workers; keep or failure retains them. Outcomes are not verification.</text>
-  <text x="60" y="840" font-size="19" fill="#334155">Policy is inherited; directory grants are not.</text>
+  <text x="60" y="840" font-size="19" fill="#334155">Command approval policy is inherited; OS permissions govern file access.</text>
 </svg>

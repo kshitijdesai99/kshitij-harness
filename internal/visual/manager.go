@@ -166,10 +166,9 @@ func (m *Manager) environment() []string {
 	return env
 }
 
-// Start is intentionally constrained to uv/marimo. Wrap applies the caller's
-// existing sandbox; it cannot be supplied through the tool's JSON interface.
+// Start is intentionally constrained to uv/marimo.
 // The turn context controls startup only, never an already running server.
-func (m *Manager) Start(ctx context.Context, name string, port int, wrap func([]string) ([]string, error)) (Server, error) {
+func (m *Manager) Start(ctx context.Context, name string, port int) (Server, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closed {
@@ -219,12 +218,6 @@ func (m *Manager) Start(ctx context.Context, name string, port int, wrap func([]
 	// Let uv resolve notebook dependencies directly. marimo --sandbox would
 	// detach the actual server into another session, defeating group ownership.
 	argv := []string{uv, "run", "--no-project", "--with", "marimo", "--with-requirements", path, "marimo", "run", path, "--watch", "--no-sandbox", "--headless", "--host", "127.0.0.1", "--port", fmt.Sprint(port), "--token-password", token}
-	if wrap != nil {
-		argv, err = wrap(argv)
-		if err != nil {
-			return Server{}, err
-		}
-	}
 	server := Server{Name: name, Notebook: path, Log: filepath.Join(m.root, name+".log"), URL: fmt.Sprintf("http://127.0.0.1:%d/?access_token=%s", port, token), Running: true}
 	log, err := os.OpenFile(server.Log, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {

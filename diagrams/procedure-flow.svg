@@ -53,7 +53,7 @@
   <text x="981" y="573" font-size="18" font-weight="700" fill="#b45309">Only on separate user request</text>
   <rect x="920" y="650" width="420" height="110" rx="14" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.5"/>
   <text x="940" y="692" font-size="22" font-weight="700" fill="#0f172a">Normal-tool execution</text>
-  <text x="940" y="728" font-size="18" fill="#334155">Existing approval + sandbox rules</text>
+  <text x="940" y="728" font-size="18" fill="#334155">Command approval + OS permissions</text>
 
   <text x="60" y="624" font-size="18" fill="#475569">Solid arrows: conditional data flow.</text>
   <text x="60" y="660" font-size="18" fill="#b45309">Dashed arrow: separate execution branch, never automatic.</text>

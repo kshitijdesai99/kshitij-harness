@@ -7,8 +7,26 @@ Introduced **2026-10-30** · commit `752f184`.
 ## Discovery and precedence
 
 - kh reads home configuration and ancestor directories from filesystem root through the startup working directory; this works outside Git repositories too.
-- More specific locations override less specific ones. Within one location, the order is `.claude`, `.agent`, then `.agents`, so `.agents` wins matching definitions. The singular `.agent` directory remains supported.
-- Discovery, settings, and the capability catalog are loaded at startup. **Restart kh to rediscover configuration**; resuming a saved session does not reload an already-running process. Explicit capability loads reread the indexed file, but do not rediscover new files or refresh previously supplied context.
+- At each ancestor, plain `CLAUDE.md` then `AGENTS.md` entry points are loaded before dot-directory configuration. More specific locations override less specific ones. Within one location, the order is `.claude`, `.agent`, then `.agents`, so `.agents` wins matching definitions. The singular `.agent` directory remains supported.
+- Startup discovery, settings, and the capability catalog are loaded at launch. **Restart kh to refresh startup configuration**; resuming a saved session does not reload an already-running process. Explicit capability loads reread the indexed file. For another existing target, use the directory-scoped tools below; these do not change startup settings, slash commands, or MCP connections.
+
+## Target workspaces
+
+Filesystem access is unrestricted by kh, subject to OS permissions. Before working in another repository or folder, inspect its applicable guidance and capabilities rather than applying the launch folder's rules globally.
+
+Use `workspace` with `directory` set to the existing target folder:
+
+| Action | Purpose |
+|---|---|
+| `inspect` | Read applicable guidance, capability metadata, and bounded decisions without creating files or starting MCP/scripts. |
+| `prepare` | Explicitly create or reuse `.agents` at the Git/workspace root before changes, never in every subdirectory. |
+| `record` | Append a meaningful dated decision with `title`, `status`, `rationale`, `affected`, and `verification` (including outstanding work). |
+
+Git targets use the nearest Git root. Outside Git, the root is the nearest ancestor with `.agents`, or the target itself; optional `root` can specify an existing containing workspace. Nested target guidance stays scoped to that target.
+
+Inspect the existing decision convention first. `decision_path` selects an existing root-relative Markdown convention (its parent must exist), defaulting to `.agents/decisions.md`. Records distinguish `proposed`, `implemented`, and `superseded`; identify a superseded decision in the rationale. Do not record secrets, transcripts, or routine logs. Inspection is read-only: preparation and recording are explicit writes, not side effects of lookup.
+
+`project_capability` also accepts optional `directory` for `search`, `load`, and `read`. This loads that target's catalog on demand without changing the startup catalog or starting discovered MCP servers/scripts. Omit it to use the startup catalog.
 
 ## Instructions and on-demand capabilities
 
@@ -22,7 +40,7 @@ The model can inspect the catalog through `project_capability`:
 | `load` | Capability `name` | A command or skill body |
 | `read` | Exact indexed absolute file `path` | Readable text from a reference, script, or other indexed file |
 
-Search returns at most 50 metadata records with a truncation flag; the catalog holds at most 4,096 files. Loads recheck file paths and return bounded UTF-8 text. These operations expose reference data, not execution authority. Binary assets are indexed but not returned as text. Reading a script does not run it; execution still needs an ordinary tool call subject to kh's approval and sandbox policy.
+Search returns at most 50 metadata records with a truncation flag; the catalog holds at most 4,096 files. Loads recheck file paths and return bounded UTF-8 text. These operations expose reference data, not execution authority. Binary assets are indexed but not returned as text. Reading a script does not run it; execution still needs an ordinary tool call subject to command approval and OS permissions.
 
 Slash invocation loads the selected command or skill body on demand. For example, `.agents/commands/review.md` defines `/review`, nested `commands/db/check.md` defines `/db:check`, and `skills/review/SKILL.md` defines `/review`. Invoke with arguments such as `/review current diff`. This is not a separate executable command runner or automatic agent spawn.
 
@@ -64,7 +82,7 @@ Resource and prompt content is lazy: startup does not fetch their lists or bodie
 
 Templates describe URI patterns; use a concrete URI for reading. Returned prompt messages are tool-result data, not a replacement system prompt or permission to execute instructions. Resource bodies and prompt messages are serialized JSON, including nontext content rather than native image attachments.
 
-**MCP effects are external to the OS Bash sandbox.** A server may run local processes, change files, use credentials, or contact remote services under its own permissions. Bash folder grants do not confine it. Review server definitions and tool behavior before trusting them, especially with auto enabled.
+**MCP tools have real external effects.** A server may run local processes, change files, use credentials, or contact remote services under its own permissions. kh does not confine server or Bash filesystem access. Review server definitions and tool behavior before trusting them, especially with auto enabled.
 
 Home JSON configuration and environment values used for server credentials are not copied into model context. Do not put secrets in Markdown instructions: supported text is intentionally included in context. This does not redact secrets returned by an external tool.
 
@@ -72,17 +90,19 @@ Home JSON configuration and environment values used for server credentials are n
 
 MCP does not support sampling, OAuth login, or legacy SSE transport. HTTP supports POST response streams, not GET streams or resumption; use static headers for authentication. Startup discovery times out after 15 seconds per server; calls after 60 seconds. List operations follow pagination with bounded page, entry, and response sizes; incomplete lists fail rather than silently dropping entries. Large content output is bounded with a truncation marker.
 
-This is a supported subset of filesystem configuration and local plugin content, not a complete Claude Code runtime. Unsupported hooks, permissions, and other unsupported settings produce diagnostics; they are not silently executed or treated as kh authorization. Assets are indexed rather than launched. Restart after editing discovery or startup settings.
+This is a supported subset of filesystem configuration and local plugin content, not a complete Claude Code runtime. Unsupported hooks, permissions, and other unsupported settings produce diagnostics; they are not silently executed or treated as kh authorization. Assets are indexed rather than launched. Restart after editing startup settings or declarations used by startup; directory-scoped inspection can read another target without restarting.
 
 ## Evolution
 
 | Date | Change | Commit |
 |---|---|---|
 | 2026-10-30 | Added home/ancestor configuration, lazy skills/commands/assets, local plugin references, and approved MCP tools/resources/prompts. | `752f184` |
+| 2026-10-31 | Added plain ancestor entry points, explicit target workspace inspection/preparation/decisions, and directory-scoped capability lookup. | Current change |
 
 ## Inspect
 
 - Configuration: [discovery and context](../internal/projectconfig/projectconfig.go), [slash expansion](../internal/projectconfig/commands.go), [on-demand loading](../internal/projectconfig/tools.go), [local plugins](../internal/projectconfig/plugins.go).
+- Target workspaces: [inspect/prepare/record](../internal/projectconfig/workspace.go), [workspace tests](../internal/projectconfig/test/workspace_test.go).
 - MCP: [client](../internal/mcp/mcp.go), [resource and prompt operations](../internal/mcp/content.go), [CLI trust and approval](../cmd/kh/project.go).
 - Representative coverage: [configuration](../internal/projectconfig/test/projectconfig_test.go), [lazy loading](../internal/projectconfig/test/lazy_test.go), [plugins](../internal/projectconfig/test/plugins_test.go), [MCP content](../internal/mcp/test/content_test.go), [CLI integration](../cmd/kh/test/project_config_test.go).
 

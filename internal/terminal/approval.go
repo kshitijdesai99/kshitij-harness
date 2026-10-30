@@ -3,9 +3,6 @@ package terminal
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 
 	"kh/internal/tools"
@@ -27,42 +24,6 @@ func (c *Console) Approve(ctx context.Context, command string, safe bool) (bool,
 		return true, nil
 	}
 	return c.answerApproval(ctx, "  run it? [y/N] ")
-}
-
-// ApproveWrite asks explicitly for write access to dir for this running session
-// only. It never automatically approves or remembers a grant; callers own the
-// session's permission state. Write and shell questions share the same gate.
-func (c *Console) ApproveWrite(ctx context.Context, dir string) (bool, error) {
-	if err := c.lockApproval(ctx); err != nil {
-		return false, err
-	}
-	defer func() { c.approval <- struct{}{} }()
-	canonical, err := filepath.Abs(dir)
-	if err != nil {
-		return false, err
-	}
-	// A declared write folder may not exist yet. Resolve its nearest existing
-	// ancestor so aliases are still displayed canonically before creation.
-	for parent := canonical; ; parent = filepath.Dir(parent) {
-		resolved, err := filepath.EvalSymlinks(parent)
-		if err == nil {
-			rel, _ := filepath.Rel(parent, canonical)
-			canonical = filepath.Join(resolved, rel)
-			break
-		}
-		if !os.IsNotExist(err) || filepath.Dir(parent) == parent {
-			return false, err
-		}
-	}
-	if err := c.approvalError(ctx); err != nil {
-		return false, err
-	}
-	c.activityPhase("waiting for approval")
-	defer c.activityPhase("running tools")
-	// Quote rather than render Markdown: controls, bidi overrides, and newlines
-	// in directory names must remain visible escapes, not terminal instructions.
-	fmt.Fprintf(c.Stderr(), "  Allow session-only write access to directory %s?\n", strconv.QuoteToASCII(canonical))
-	return c.answerApproval(ctx, "  allow writes for the rest of this running session? [y/N] ")
 }
 
 func (c *Console) approvalError(ctx context.Context) error {

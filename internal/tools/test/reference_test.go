@@ -45,7 +45,6 @@ func TestReferenceToolLoadsFullInertScopedPayload(t *testing.T) {
 	}
 	c := config.Defaults
 	c.Auto = false
-	c.Sandbox = false
 	b, _ := json.Marshal(map[string]any{"command": r.Assets[0].Source})
 	if _, err := tools.Bash(c, nil).Run(ctx, b); err == nil {
 		t.Fatal("asset bypassed command approval")

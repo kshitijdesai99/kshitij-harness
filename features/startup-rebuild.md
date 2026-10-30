@@ -18,7 +18,7 @@ Existing chats keep their running build. Rebuilding alone does not replace a liv
 2. Start kh again in the same working folder, using `kh -s SESSION_ID` to select the [saved conversation](saved-sessions.md); `kh -r` selects the newest by creation ID.
 3. Startup rebuilds and runs the new executable unless disabled above.
 
-Restarting also ends process-lifetime [folder grants](write-approvals.md). Change history belongs in the [release notes](../release-notes/).
+Change history belongs in the [release notes](../release-notes/).
 
 ## Evolution
 

@@ -45,14 +45,14 @@ The [provider contract](../internal/provider/provider.go) owns protocol state, s
 
 [Markdown rendering](markdown.md) owns whole-reply presentation; [terminal feedback](terminal-feedback.md) and [turn metrics](turn-metrics.md) expose runtime signals. [Repository maps](repository-map.md) provide optional initial project context. [Keyword recall](keyword-recall.md) and optional [hybrid retrieval](hybrid-retrieval.md) select bounded memory context; details load on demand.
 
-Conversation history, [durable knowledge](knowledge-store.md), and [project configuration](project-configuration.md) are separate. Retrieved notes, project capabilities, and [procedure assets](procedure-loading.md) are reference data, not execution authority. The application owns MCP startup trust and per-call approval; external server effects are not confined by the OS Bash sandbox.
+Conversation history, [durable knowledge](knowledge-store.md), and [project configuration](project-configuration.md) are separate. Retrieved notes, project capabilities, and [procedure assets](procedure-loading.md) are reference data, not execution authority. The application owns MCP startup trust and per-call approval; tools and external servers operate subject to OS permissions, without kh filesystem confinement.
 
 ## Design boundaries
 
 - **Runner:** model/tool orchestration, independent of a concrete backend.
 - **Provider:** protocol, resumable conversation state, and model capabilities.
 - **Application:** lifecycle, policy, memory hooks, and delegation wiring.
-- **Tools:** process/filesystem access, [approval policy](write-approvals.md), and [sandbox enforcement](shell-sandbox.md).
+- **Tools:** unrestricted process/filesystem access subject to OS permissions, [command approval policy](write-approvals.md), and [edit integrity checks](edit-path-safety.md).
 - **Memory store:** versioned knowledge and inert procedure payloads, not execution authority.
 
 [Feature index](README.md) · [Development](development.md)

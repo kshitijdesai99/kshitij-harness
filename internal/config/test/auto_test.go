@@ -12,12 +12,12 @@ import (
 func TestAutoDefaultsOn(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	cfg, err := config.Load()
-	if err != nil || !cfg.Auto || !cfg.Sandbox {
-		t.Fatalf("defaults: Auto=%v Sandbox=%v err=%v", cfg.Auto, cfg.Sandbox, err)
+	if err != nil || !cfg.Auto {
+		t.Fatalf("defaults: Auto=%v err=%v", cfg.Auto, err)
 	}
 }
 
-func TestAutoMigratesLegacyOnlyWithoutExplicitAuto(t *testing.T) {
+func TestAutoIgnoresRetiredFolderSetting(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		input string
@@ -25,7 +25,7 @@ func TestAutoMigratesLegacyOnlyWithoutExplicitAuto(t *testing.T) {
 	}{
 		{"empty", `{}`, true},
 		{"legacy-on", `{"auto_write":true}`, true},
-		{"legacy-off", `{"auto_write":false}`, false},
+		{"legacy-off", `{"auto_write":false,"sandbox":true,"writable":["/tmp"]}`, true},
 		{"explicit-off-wins", `{"auto":false,"auto_write":true}`, false},
 		{"explicit-on-wins", `{"auto":true,"auto_write":false}`, true},
 	} {
@@ -52,7 +52,7 @@ func TestSetAutoRemovesLegacyKey(t *testing.T) {
 			t.Fatal(err)
 		}
 		path := filepath.Join(config.Dir(), "config.json")
-		if err := os.WriteFile(path, []byte(`{"auto_write":true,"custom":"preserve"}`), 0o600); err != nil {
+		if err := os.WriteFile(path, []byte(`{"auto_write":true,"sandbox":true,"writable":["/tmp"],"custom":"preserve"}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		if err := config.Set("auto", enabled); err != nil {
@@ -66,8 +66,10 @@ func TestSetAutoRemovesLegacyKey(t *testing.T) {
 		if err := json.Unmarshal(data, &stored); err != nil {
 			t.Fatal(err)
 		}
-		if _, ok := stored["auto_write"]; ok {
-			t.Fatalf("legacy key retained: %s", data)
+		for _, retired := range []string{"auto_write", "sandbox", "writable"} {
+			if _, ok := stored[retired]; ok {
+				t.Fatalf("retired key %s retained: %s", retired, data)
+			}
 		}
 		if stored["auto"] != enabled || stored["custom"] != "preserve" {
 			t.Fatalf("unexpected persisted config: %s", data)

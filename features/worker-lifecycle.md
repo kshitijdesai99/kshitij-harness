@@ -7,7 +7,7 @@ Introduced **2026-09-29** · commit `277c243` (worker launch and auto-policy inh
 ## Current behavior
 
 - Successful one-shot workers close their panes; failures remain visible. Set `keep` when spawning to leave a worker open for follow-up messages.
-- Workers inherit active [model and effort](model-settings.md), auto-approval, and [sandbox policy](shell-sandbox.md), **not directory grants**. See [write approvals](write-approvals.md).
+- Workers inherit active [model and effort](model-settings.md) and [command auto-approval policy](write-approvals.md). Filesystem access is unrestricted by kh, subject to OS permissions.
 - Shared files require [manager/peer coordination](native-agents.md#coordination-diagram); automatic pane closure is not proof that a worker’s changes are correct.
 
 ## Evolution
@@ -19,6 +19,7 @@ Introduced **2026-09-29** · commit `277c243` (worker launch and auto-policy inh
 | 2026-10-16 | Added session-scoped outside-folder grants, not inherited by workers. | `09b6775` |
 | 2026-10-17 | Unified automatic command and folder approvals under inherited auto policy. | `79f1ce2` |
 | 2026-10-23 | Made interactive chats and auto approval the defaults. | `bf2c75d` |
+| 2026-10-31 | Removed directory grants and filesystem confinement; command approval remains inherited. | Current change |
 
 ## Inspect
 

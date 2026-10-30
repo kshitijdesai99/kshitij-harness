@@ -15,7 +15,7 @@ import (
 
 func TestStreamingOutputBounded(t *testing.T) {
 	cfg := config.Defaults
-	cfg.Auto, cfg.Sandbox, cfg.OutputCap = true, false, 101
+	cfg.Auto, cfg.OutputCap = true, 101
 	runtime.GC()
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
@@ -113,7 +113,7 @@ func TestUnicodeOutputAcrossDelayedWrites(t *testing.T) {
 func TestInvalidBashLimits(t *testing.T) {
 	for _, tc := range []struct{ cap, timeout int }{{0, 1}, {-1, 1}, {1, 0}, {1, -1}, {1, int(^uint(0) >> 1)}} {
 		cfg := config.Defaults
-		cfg.Auto, cfg.Sandbox, cfg.OutputCap, cfg.TimeoutSec = true, false, tc.cap, tc.timeout
+		cfg.Auto, cfg.OutputCap, cfg.TimeoutSec = true, tc.cap, tc.timeout
 		called := false
 		approval := fakeApprover(func(context.Context, string, bool) (bool, error) { called = true; return true, nil })
 		input, _ := json.Marshal(map[string]string{"command": "printf unexpected"})

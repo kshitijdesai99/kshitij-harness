@@ -41,7 +41,7 @@ func TestSessionIdentityLifecycle(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("HOME", home)
-			args := []string{"-p", "--nosandbox"}
+			args := []string{"-p"}
 			if tc.saved != "" {
 				if err := session.Save("existing", []byte(tc.saved)); err != nil {
 					t.Fatal(err)

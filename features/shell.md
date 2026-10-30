@@ -6,7 +6,7 @@ Introduced 2026-09-28 · commit `84d64c8`.
 
 ## Current behavior
 
-Use `bash`; command timeout and returned output cap are configurable. Approval and write policy apply: execution access is not a guarantee that a command is safe. The OS-level write sandbox is macOS-only; other Unix systems do not provide the equivalent shell restriction.
+Use `bash`; command timeout and returned output cap are configurable. [Command approval](write-approvals.md) applies, but filesystem access is unrestricted by kh, including outside the launch folder, subject to OS permissions. Execution access is not a guarantee that a command is safe.
 
 ## Evolution
 
@@ -16,6 +16,7 @@ Use `bash`; command timeout and returned output cap are configurable. Approval a
 | 2026-09-28 | Moved timeout and output limits into configuration. | `4f09a5a` |
 | 2026-09-28 | Added macOS shell-write sandboxing. | `83bb8cd` |
 | 2026-10-16 | Added declared outside-folder writes and process-lifetime folder approvals. | `09b6775` |
+| 2026-10-31 | Removed filesystem confinement and folder grants; retained command approval. | Current change |
 
 ## Inspect
 

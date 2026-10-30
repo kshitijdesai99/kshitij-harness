@@ -12,7 +12,7 @@ import (
 
 var Edit = Tool{
 	Name:        "edit",
-	Description: "Edit project files. Prefer one coherent batch: {edits:[{path,old,new},...]}. Replacements run in array order against staged text; all are validated before any writes, and each file is written once. Alternatively use the original {path,old,new} format, not both. old must occur exactly once; empty old creates a new file. Group same-file changes in one batch rather than parallel calls. Validation errors change nothing; a write failure can leave earlier files updated and reports them.",
+	Description: "Edit files anywhere permitted by the operating system. Prefer one coherent batch: {edits:[{path,old,new},...]}. Replacements run in array order against staged text; all are validated before any writes, and each file is written once. Alternatively use the original {path,old,new} format, not both. old must occur exactly once; empty old creates a new file. Group same-file changes in one batch rather than parallel calls. Validation errors change nothing; a write failure can leave earlier files updated and reports them.",
 	Params:      editParams(),
 	Required:    []string{}, // Either format is accepted; Run checks required fields.
 	Run:         runEdit,
@@ -83,26 +83,16 @@ type editFile struct {
 func EditWithOutput(action func(string)) Tool {
 	t := Edit
 	t.Run = func(ctx context.Context, input json.RawMessage) (string, error) {
-		return editWithOutput(ctx, input, action, nil)
-	}
-	return t
-}
-
-// EditWithAccess shares session folder grants with shell commands.
-func EditWithAccess(action func(string), access *WriteAccess) Tool {
-	t := Edit
-	t.Description = "Edit files in the project or granted folders. Outside-folder requests follow auto: grant automatically when enabled, otherwise ask for session-only approval. " + t.Description
-	t.Run = func(ctx context.Context, input json.RawMessage) (string, error) {
-		return editWithOutput(ctx, input, action, access)
+		return editWithOutput(ctx, input, action)
 	}
 	return t
 }
 
 func runEdit(ctx context.Context, input json.RawMessage) (string, error) {
-	return editWithOutput(ctx, input, func(text string) { fmt.Fprintln(os.Stderr, text) }, nil)
+	return editWithOutput(ctx, input, func(text string) { fmt.Fprintln(os.Stderr, text) })
 }
 
-func editWithOutput(ctx context.Context, input json.RawMessage, action func(string), access *WriteAccess) (string, error) {
+func editWithOutput(ctx context.Context, input json.RawMessage, action func(string)) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -119,18 +109,12 @@ func editWithOutput(ctx context.Context, input json.RawMessage, action func(stri
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	var projectRoot *os.Root
-	if access == nil {
-		projectRoot, err = os.OpenRoot(cwd)
-		if err != nil {
-			return "", err
+	roots := make(map[string]*os.Root)
+	defer func() {
+		for _, root := range roots {
+			root.Close()
 		}
-		defer projectRoot.Close()
-	}
+	}()
 	byRoot := make(map[*os.Root]map[string]*editFile)
 	var files []*editFile
 	defer func() {
@@ -147,13 +131,7 @@ func editWithOutput(ctx context.Context, input json.RawMessage, action func(stri
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		root := projectRoot
-		var rel string
-		if access != nil {
-			root, rel, err = access.OpenEditRoot(ctx, change.Path)
-		} else {
-			rel, err = editPath(cwd, change.Path)
-		}
+		root, rel, err := editRoot(change.Path, change.Old == "", roots)
 		if err != nil {
 			return "", fmt.Errorf("edit %d: %w", i+1, err)
 		}
@@ -217,16 +195,76 @@ func editWithOutput(ctx context.Context, input json.RawMessage, action func(stri
 	return fmt.Sprintf("ok: %d edits in %d files", len(changes), len(files)), nil
 }
 
-func editPath(cwd, path string) (string, error) {
+// editRoot pins the nearest existing parent for this batch, not a permission
+// boundary. Existing leaf symlinks resolve before staging; opened descriptors
+// keep later pathname replacements from redirecting writes.
+func editRoot(path string, create bool, roots map[string]*os.Root) (*os.Root, string, error) {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, "", err
+		}
+		path = filepath.Join(home, path[2:])
+	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
-	rel, err := filepath.Rel(cwd, abs)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-		return "", fmt.Errorf("path must be inside the project")
+	if !create {
+		resolved, resolveErr := filepath.EvalSymlinks(abs)
+		if resolveErr == nil {
+			abs = resolved
+		} else if !os.IsNotExist(resolveErr) {
+			return nil, "", resolveErr
+		}
 	}
-	return rel, nil
+	parent := filepath.Dir(abs)
+	for {
+		info, statErr := os.Stat(parent)
+		if statErr == nil {
+			if !info.IsDir() {
+				return nil, "", fmt.Errorf("parent is not a directory: %s", parent)
+			}
+			break
+		}
+		if !os.IsNotExist(statErr) {
+			return nil, "", statErr
+		}
+		if _, err := os.Lstat(parent); err == nil {
+			return nil, "", fmt.Errorf("dangling parent symlink: %s", parent)
+		}
+		next := filepath.Dir(parent)
+		if next == parent {
+			return nil, "", statErr
+		}
+		parent = next
+	}
+	dir, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		return nil, "", err
+	}
+	rel, err := filepath.Rel(parent, abs)
+	if err != nil {
+		return nil, "", err
+	}
+	root := roots[dir]
+	if root == nil {
+		before, err := os.Stat(dir)
+		if err != nil {
+			return nil, "", err
+		}
+		root, err = os.OpenRoot(dir)
+		if err != nil {
+			return nil, "", err
+		}
+		opened, err := root.Stat(".")
+		if err != nil || !os.SameFile(before, opened) {
+			root.Close()
+			return nil, "", fmt.Errorf("edit parent changed while opening: %s", dir)
+		}
+		roots[dir] = root
+	}
+	return root, rel, nil
 }
 
 func stageEditFile(root *os.Root, rel string, create bool, files []*editFile) (*editFile, error) {

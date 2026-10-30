@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"runtime"
 	"strings"
 	"time"
 
@@ -53,10 +52,7 @@ func main() {
 	flag.StringVar(&cfg.Provider, "provider", cfg.Provider, "backend adapter")
 	flag.StringVar(&cfg.Model, "model", cfg.Model, "model id")
 	flag.StringVar(&cfg.Effort, "effort", cfg.Effort, "reasoning effort: low, medium, high")
-	flag.BoolVar(&cfg.Auto, "auto", cfg.Auto, "automatically approve commands and requested folder writes; keep sandbox and path checks")
-	// Older running chats pass this when spawning a rebuilt child.
-	flag.BoolVar(&cfg.Auto, "auto-write", cfg.Auto, "deprecated alias for --auto")
-	noSandbox := flag.Bool("nosandbox", false, "let bash write outside the project")
+	flag.BoolVar(&cfg.Auto, "auto", cfg.Auto, "automatically approve command execution")
 	resume := flag.Bool("r", false, "resume the latest session")
 	id := flag.String("s", "", "resume a session by id (files in ~/.kh/sessions)")
 	list := flag.Bool("sessions", false, "list this folder's saved sessions")
@@ -101,7 +97,6 @@ func main() {
 		return
 	}
 	exit(configErr)
-	cfg.Sandbox = cfg.Sandbox && !*noSandbox
 	applyAuto(nil, cfg.Auto)
 	args := flag.Args()
 	if *list || strings.Join(args, " ") == "sessions" {
@@ -197,16 +192,11 @@ func main() {
 	ui.Activity = terminal.NewActivity(os.Stdout, activityName)
 	defer ui.Activity.Close()
 	console.SetActivity(ui.Activity)
-	if cfg.Sandbox && runtime.GOOS != "darwin" {
-		fmt.Fprintln(os.Stderr, "warning: kh's bash sandbox is macOS-only; shell commands are not OS-sandboxed on this platform. Approval checks still apply.")
-	}
-	writeAccess, err := tools.NewWriteAccess(cfg, console)
-	exit(err)
-	defer writeAccess.Close()
+	policy := tools.NewApprovalPolicy(cfg.Auto)
 	visualManager, err := visual.New(visual.Options{})
 	exit(err)
 	defer visualManager.Close()
-	ts := []tools.Tool{tools.BashWithAccess(cfg, console, writeAccess), tools.EditWithAccess(ui.Action, writeAccess), tools.Memory(db, repoScope, owner), tools.ViewImage(ui.Action), agentTool(cfg, ui.Action, writeAccess), tools.Visual(visualManager, cfg, console, writeAccess)}
+	ts := []tools.Tool{tools.BashWithPolicy(cfg, console, policy), tools.EditWithOutput(ui.Action), tools.Memory(db, repoScope, owner), tools.ViewImage(ui.Action), agentTool(cfg, ui.Action, policy), tools.Visual(visualManager, cfg, console, policy)}
 	project, err := projectconfig.Load(cwd)
 	exit(err)
 	ts = append(ts, project.Tools()...)
@@ -217,7 +207,7 @@ func main() {
 	if len(project.Servers) > 0 {
 		console.Start()
 	}
-	mcpTools, closeMCP, err := projectTools(ctx, project, console, writeAccess, ui.Notice)
+	mcpTools, closeMCP, err := projectTools(ctx, project, console, policy, ui.Notice)
 	defer closeMCP()
 	exit(err)
 	ts = append(ts, mcpTools...)
@@ -240,7 +230,7 @@ func main() {
 	}
 	chatConfig := cfg
 	if project.Prompt != "" {
-		chatConfig.System += "\n\n" + project.Prompt
+		chatConfig.System += "\n\nStarting-directory context for " + cwd + ": location-specific guidance applies only within its source workspace/subtree, not to unrelated target repositories. Use workspace inspect for each target's applicable context.\n" + project.Prompt
 	}
 	p, err := backend.New(chatConfig, repomap.Build(".", cfg.MapCap), ts, ui)
 	exit(err)
@@ -258,7 +248,7 @@ func main() {
 
 	exportModel(p, cfg.Provider)
 	c := chat{model: p, backend: cfg.Provider, id: *id, repo: repoScope, project: project, identity: saved.Identity,
-		memory: db, memoryActive: memoryActive, learn: learner, input: console, ui: ui, tools: ts, seen: fromFile, writeAccess: writeAccess,
+		memory: db, memoryActive: memoryActive, learn: learner, input: console, ui: ui, tools: ts, seen: fromFile, policy: policy,
 		budget: memory.Budget{SummaryChars: cfg.SummaryMaxTokens * 4, TopInstructions: cfg.TopInstructions, TopGotchas: cfg.TopGotchas,
 			TopKnowledge: cfg.TopKnowledge, TotalChars: cfg.MemoryMaxTokens * 4}}
 	exit(c.snapshotFork())
@@ -347,7 +337,7 @@ func main() {
 // command handles native slash commands. Approval-policy changes apply to future
 // requests immediately; model switches apply from the next message.
 func (c *chat) command(ctx context.Context, line string) {
-	p, access := c.model, c.writeAccess
+	p, policy := c.model, c.policy
 	stdout := c.input.Stdout()
 	cmd, arg, _ := strings.Cut(line, " ")
 	var model, effort string
@@ -383,13 +373,13 @@ func (c *chat) command(ctx context.Context, line string) {
 				fmt.Fprintln(stdout, "error:", err)
 				return
 			}
-			applyAuto(access, enabled)
+			applyAuto(policy, enabled)
 			c.seen.Auto = enabled
 		}
-		if access.Auto() {
-			fmt.Fprintln(stdout, "(auto on: commands and requested outside-folder writes are automatically approved; sandbox and path checks remain enabled)")
+		if policy.Auto() {
+			fmt.Fprintln(stdout, "(auto on: command execution is automatically approved)")
 		} else {
-			fmt.Fprintln(stdout, "(auto off: commands and new folders require approval; existing session grants remain until restart)")
+			fmt.Fprintln(stdout, "(auto off: commands require approval unless configured safe)")
 		}
 		return
 	case "/model", "/effort":
@@ -415,16 +405,16 @@ func (c *chat) command(ctx context.Context, line string) {
 		if c.project != nil && len(c.project.Commands) > 0 {
 			fmt.Fprintln(stdout, "Project commands/skills: "+strings.Join(c.project.CommandNames(), ", "))
 		}
-		fmt.Fprintln(stdout, "/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/new   open a fresh session in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message\n/auto [on|off]   persist automatic command and folder approval; existing grants remain until restart\n/memory hybrid on|off   enable local hybrid retrieval or keyword-only memory\n/memory explain   show the last retrieval’s full candidate IDs and scores\n/project diagnostics   show startup configuration diagnostics")
+		fmt.Fprintln(stdout, "/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/new   open a fresh session in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message\n/auto [on|off]   persist automatic command execution approval\n/memory hybrid on|off   enable local hybrid retrieval or keyword-only memory\n/memory explain   show the last retrieval’s full candidate IDs and scores\n/project diagnostics   show startup configuration diagnostics")
 		return
 	}
 	fmt.Fprintln(stdout, terminal.Color(stdout, terminal.Muted, fmt.Sprintf("(model %s, effort %s)", model, effort)))
 }
 
 // Keep bash-invoked kh subcommands on the session's active permission policy.
-func applyAuto(access *tools.WriteAccess, enabled bool) {
-	if access != nil {
-		access.SetAuto(enabled)
+func applyAuto(policy *tools.ApprovalPolicy, enabled bool) {
+	if policy != nil {
+		policy.SetAuto(enabled)
 	}
 	value := "0"
 	if enabled {

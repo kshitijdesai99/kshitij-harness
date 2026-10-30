@@ -11,11 +11,11 @@ Shared guides: [Architecture](architecture.md) · [Development](development.md) 
 | Feature | Introduced | What followed |
 |---|---|---|
 | [Execution loop](execution.md) | 2026-09-28 | Steering, provider separation, user-message hooks |
-| [Shell commands](shell.md) | 2026-09-28 | Sandbox, output handling, outside-folder grants |
+| [Shell commands](shell.md) | 2026-09-28 | Output handling and unrestricted filesystem access under OS permissions |
 | [Structured editing](editing.md) | 2026-09-28 | Validated batches and cross-folder edits |
 | [Web search](web-search.md) | 2026-09-28 | Visible search/open/find actions |
 | [Repository map](repository-map.md) | 2026-09-28 | Git-only scope; now opt-in |
-| [Project configuration](project-configuration.md) | 2026-10-30 | `.agents`/`.agent`/`.claude` instructions, lazy capabilities/assets, local plugins, and MCP tools/content |
+| [Project configuration](project-configuration.md) | 2026-10-30 | `.agents`/`.agent`/`.claude`, target workspace inspection/decisions, lazy capabilities/assets, local plugins, and MCP |
 
 ## Interactive control
 
@@ -70,9 +70,9 @@ Shared guides: [Architecture](architecture.md) · [Development](development.md) 
 
 | Feature | Introduced | What followed |
 |---|---|---|
-| [Shell sandbox](shell-sandbox.md) | 2026-09-28 | Approved outside folders and memory/runtime access |
-| [Write approvals](write-approvals.md) | 2026-09-28 | Session grants and unified auto policy |
-| [Edit path safety](edit-path-safety.md) | 2026-09-28 | Pinned paths and cross-root validation |
+| [Shell sandbox (retired)](shell-sandbox.md) | 2026-09-28 | Removed 2026-10-31; OS permissions now govern filesystem access |
+| [Command approvals](write-approvals.md) | 2026-09-28 | Default-on auto policy; folder grants removed |
+| [Edit path safety](edit-path-safety.md) | 2026-09-28 | Pinned-file integrity without folder confinement |
 
 ## Presentation and visual input
 

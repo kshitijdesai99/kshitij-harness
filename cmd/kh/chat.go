@@ -37,7 +37,7 @@ type chat struct {
 	tools             []tools.Tool
 	seen              config.Config
 	recentContext     string // bounded last exchange; never a second transcript archive
-	writeAccess       *tools.WriteAccess
+	policy            *tools.ApprovalPolicy
 	project           *projectconfig.Config
 	forkMu            sync.Mutex
 	forkState         []byte // last completed conversation; never read a streaming model
@@ -67,7 +67,7 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 			c.seen.Model, c.seen.Effort = now.Model, now.Effort
 		}
 		if now.Auto != c.seen.Auto {
-			applyAuto(c.writeAccess, now.Auto)
+			applyAuto(c.policy, now.Auto)
 		}
 		c.seen.Auto = now.Auto
 	}

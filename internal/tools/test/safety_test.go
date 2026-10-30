@@ -27,7 +27,7 @@ func TestSafetyRegression(t *testing.T) {
 		t.Run(command, func(t *testing.T) {
 			called := false
 			cfg := config.Defaults
-			cfg.Auto, cfg.Sandbox = false, false
+			cfg.Auto = false
 			approval := fakeApprover(func(_ context.Context, got string, safe bool) (bool, error) {
 				called = true
 				if got != command {
@@ -49,7 +49,6 @@ func TestSafetyRegression(t *testing.T) {
 
 func TestNilApprover(t *testing.T) {
 	cfg := config.Defaults
-	cfg.Sandbox = false
 	for _, tc := range []struct {
 		command       string
 		auto, allowed bool
@@ -68,7 +67,7 @@ func TestNilApprover(t *testing.T) {
 func TestExplicitApprovalAndError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	cfg := config.Defaults
-	cfg.Auto, cfg.Sandbox = false, false
+	cfg.Auto = false
 	input := []byte(`{"command":"touch approved"}`)
 	approval := fakeApprover(func(_ context.Context, _ string, safe bool) (bool, error) {
 		if safe {
@@ -92,7 +91,7 @@ func TestExplicitApprovalAndError(t *testing.T) {
 func TestApprovalCancellation(t *testing.T) {
 	t.Chdir(t.TempDir())
 	cfg := config.Defaults
-	cfg.Auto, cfg.Sandbox = false, false
+	cfg.Auto = false
 	c, cancel := context.WithCancel(ctx)
 	defer cancel()
 	started := make(chan struct{})
@@ -123,7 +122,7 @@ func TestApprovalCancellation(t *testing.T) {
 
 func TestRunCancellation(t *testing.T) {
 	cfg := config.Defaults
-	cfg.Auto, cfg.Sandbox = true, false
+	cfg.Auto = true
 	c, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 	started := time.Now()
@@ -166,18 +165,24 @@ func TestEditContainment(t *testing.T) {
 		_, err := tools.Edit.Run(ctx, input)
 		return err
 	}
-	for _, tc := range []struct{ path, old string }{
-		{"escape/new/child", ""}, {"escape/target", "original"}, {"file", "original"}, {"../outside", ""}, {target, "original"},
+	crossDirectory := filepath.Join(outside, "cross-directory")
+	relative, err := filepath.Rel(project, crossDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ path, old, new string }{
+		{"escape/new/child", "", "created"}, {"escape/target", "original", "directory link"}, {"file", "directory link", "file link"}, {relative, "", "created"}, {target, "file link", "changed"}, {relative, "created", "changed"},
 	} {
-		if err := edit(tc.path, tc.old, "changed"); err == nil {
-			t.Errorf("escape allowed: %s", tc.path)
+		if err := edit(tc.path, tc.old, tc.new); err != nil {
+			t.Fatalf("edit %s: %v", tc.path, err)
 		}
 	}
-	if b, err := os.ReadFile(target); err != nil || string(b) != "original" {
-		t.Fatalf("outside changed: %q %v", b, err)
-	}
-	if _, err := os.Stat(filepath.Join(outside, "new")); !os.IsNotExist(err) {
-		t.Fatalf("outside directory created: %v", err)
+	for path, want := range map[string]string{
+		target: "changed", crossDirectory: "changed", filepath.Join(outside, "new", "child"): "created",
+	} {
+		if b, err := os.ReadFile(path); err != nil || string(b) != want {
+			t.Fatalf("outside file %s: %q %v", path, b, err)
+		}
 	}
 	for _, path := range []string{"..valid/child", filepath.Join(project, "nested", "child")} {
 		if err := edit(path, "", "hello long text"); err != nil {

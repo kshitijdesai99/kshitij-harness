@@ -28,6 +28,11 @@ func TestVisualProcess(t *testing.T) {
 		}
 		os.Exit(0)
 	case "server":
+		joined := " " + strings.Join(os.Args, " ") + " "
+		if !strings.Contains(joined, " run --no-project --with marimo --with-requirements ") || strings.Contains(joined, " --sandbox ") || !strings.Contains(joined, " --no-sandbox ") || !strings.Contains(joined, " marimo run ") || !strings.Contains(joined, " --watch ") {
+			fmt.Fprintln(os.Stderr, "unowned marimo launch:", os.Args)
+			os.Exit(7)
+		}
 		port := ""
 		for i, arg := range os.Args {
 			if arg == "--port" && i+1 < len(os.Args) {
@@ -70,7 +75,7 @@ func TestVisualProcess(t *testing.T) {
 			os.Exit(5)
 		}
 		os.Setenv("KH_VISUAL_TEST_ROLE", "guardian")
-		server, err := manager.Start(context.Background(), "owned", 0, nil)
+		server, err := manager.Start(context.Background(), "owned", 0)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(6)
@@ -178,17 +183,11 @@ func TestOwnedLifecycleIsolationAndTurnCancellation(t *testing.T) {
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	first, err := a.Start(ctx, "demo", 0, func(argv []string) ([]string, error) {
-		joined := " " + strings.Join(argv, " ") + " "
-		if !strings.Contains(joined, " run --no-project --with marimo --with-requirements ") || strings.Contains(joined, " --sandbox ") || !strings.Contains(joined, " --no-sandbox ") || !strings.Contains(joined, " marimo run ") || !strings.Contains(joined, " --watch ") {
-			t.Fatalf("unowned marimo launch: %v", argv)
-		}
-		return argv, nil
-	})
+	first, err := a.Start(ctx, "demo", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := b.Start(context.Background(), "demo", 0, nil)
+	second, err := b.Start(context.Background(), "demo", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +202,7 @@ func TestOwnedLifecycleIsolationAndTurnCancellation(t *testing.T) {
 	if environment["UV_CACHE_DIR"] != filepath.Join(a.Cache(), "uv") || environment["TMPDIR"] != filepath.Join(a.Root(), "tmp") || environment["XDG_CONFIG_HOME"] != filepath.Join(a.Root(), "config") {
 		t.Fatal("runtime writes not isolated", environment)
 	}
-	if _, err := a.Start(context.Background(), "demo", 80, nil); err == nil {
+	if _, err := a.Start(context.Background(), "demo", 80); err == nil {
 		t.Fatal("running server bypassed port validation")
 	}
 	cancel()
@@ -244,7 +243,7 @@ func TestStartFailureCleansChildrenAndPendingCancellation(t *testing.T) {
 	if _, err := m.Create("fail"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Start(context.Background(), "fail", 0, nil); err == nil || !strings.Contains(err.Error(), "dependency") {
+	if _, err := m.Start(context.Background(), "fail", 0); err == nil || !strings.Contains(err.Error(), "dependency") {
 		t.Fatalf("unexpected failure: %v", err)
 	}
 	child := childPID(t, m.Root())
@@ -257,7 +256,7 @@ func TestStartFailureCleansChildrenAndPendingCancellation(t *testing.T) {
 	}
 	pending, cancelPending := context.WithTimeout(context.Background(), 400*time.Millisecond)
 	defer cancelPending()
-	if _, err := m.Start(pending, "pending", 0, nil); !errors.Is(err, context.DeadlineExceeded) {
+	if _, err := m.Start(pending, "pending", 0); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("pending cancellation lost: %v", err)
 	}
 	pendingChild := childPID(t, m.Root())
@@ -270,7 +269,7 @@ func TestStartFailureCleansChildrenAndPendingCancellation(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := m.Start(ctx, "cancel", 0, nil); err != context.Canceled {
+	if _, err := m.Start(ctx, "cancel", 0); err != context.Canceled {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -278,7 +277,7 @@ func TestOwnerExitGuardianKillsOwnedGroup(t *testing.T) {
 	uv := fakeUV(t)
 	sibling := manager(t, uv)
 	sibling.Create("sibling")
-	other, err := sibling.Start(context.Background(), "sibling", 0, nil)
+	other, err := sibling.Start(context.Background(), "sibling", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,17 +334,17 @@ func TestNamesPathsAndMissingDependency(t *testing.T) {
 	if _, err := m.Create("demo"); err == nil {
 		t.Fatal("overwrote notebook")
 	}
-	if _, err := m.Start(context.Background(), "demo", 0, nil); err == nil || !strings.Contains(err.Error(), "install uv") {
+	if _, err := m.Start(context.Background(), "demo", 0); err == nil || !strings.Contains(err.Error(), "install uv") {
 		t.Fatal(err)
 	}
-	if _, err := m.Start(context.Background(), "demo", 80, nil); err == nil {
+	if _, err := m.Start(context.Background(), "demo", 80); err == nil {
 		t.Fatal("accepted privileged port")
 	}
 	link := filepath.Join(m.Root(), "alias.py")
 	if err := os.Symlink(server.Notebook, link); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Start(context.Background(), "alias", 0, nil); err == nil {
+	if _, err := m.Start(context.Background(), "alias", 0); err == nil {
 		t.Fatal("accepted notebook symlink")
 	}
 	home := t.TempDir()

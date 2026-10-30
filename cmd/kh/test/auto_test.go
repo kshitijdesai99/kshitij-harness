@@ -28,6 +28,13 @@ func TestAutoCLIOptInAndPersistence(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(`{"memory_model":"off","effort":"high","custom":"preserve","auto":false,"auto_write":true}`), 0600); err != nil {
 		t.Fatal(err)
 	}
+	for _, retired := range []string{"--nosandbox", "--auto-write=false"} {
+		cmd := exec.Command(binary, retired)
+		cmd.Stdin = strings.NewReader("")
+		if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), "flag provided but not defined") {
+			t.Fatalf("retired flag %s accepted: %s %v", retired, out, err)
+		}
+	}
 	inherited := ""
 	run := func(input string, args ...string) string {
 		t.Helper()
@@ -65,7 +72,7 @@ func TestAutoCLIOptInAndPersistence(t *testing.T) {
 		t.Fatal("/auto persistence retained legacy auto_write")
 	}
 	if _, ok := v["sandbox"]; ok {
-		t.Fatal("folder permission changed sandbox")
+		t.Fatal("retired sandbox key persisted")
 	}
 	if out := run("/auto\n"); !strings.Contains(out, "auto on") {
 		t.Fatalf("policy did not persist: %s", out)
@@ -75,10 +82,6 @@ func TestAutoCLIOptInAndPersistence(t *testing.T) {
 	}
 	if read()["auto"] != true {
 		t.Fatal("session flag unexpectedly persisted")
-	}
-	// Older running chats may still pass this spelling to rebuilt children.
-	if out := run("/auto\n", "--auto-write=false"); !strings.Contains(out, "auto off") {
-		t.Fatalf("legacy flag did not control unified auto: %s", out)
 	}
 	inherited = "0"
 	if out := run("/auto\n"); !strings.Contains(out, "auto off") {
@@ -94,7 +97,7 @@ func TestAutoCLIOptInAndPersistence(t *testing.T) {
 	if read()["auto"] != true {
 		t.Fatal("invalid command changed policy")
 	}
-	if out := run("/auto off\n"); !strings.Contains(out, "existing session grants remain") {
+	if out := run("/auto off\n"); !strings.Contains(out, "commands require approval") {
 		t.Fatalf("disable: %s", out)
 	}
 	if read()["auto"] != false {

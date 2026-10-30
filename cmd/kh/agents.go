@@ -27,7 +27,7 @@ func agentCommand(args []string, cfg config.Config) error {
 	return err
 }
 
-func agentTool(cfg config.Config, action func(string), access *tools.WriteAccess) tools.Tool {
+func agentTool(cfg config.Config, action func(string), policy *tools.ApprovalPolicy) tools.Tool {
 	// Serialize this chat's spawns, including parallel tool calls. Reads and
 	// messages need not wait for a model request or the spawned task to finish.
 	spawning := make(chan struct{}, 1)
@@ -53,8 +53,8 @@ func agentTool(cfg config.Config, action func(string), access *tools.WriteAccess
 			args = []string{"agents"}
 		}
 		active := cfg
-		if access != nil {
-			active.Auto = access.Auto()
+		if policy != nil {
+			active.Auto = policy.Auto()
 		}
 		for key, field := range map[string]*string{"KH_PROVIDER": &active.Provider, "KH_MODEL": &active.Model, "KH_EFFORT": &active.Effort} {
 			if value := os.Getenv(key); value != "" {
@@ -135,9 +135,6 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 			return "", err
 		}
 		command := []string{exe, "--provider", cfg.Provider, "--model", cfg.Model, "--effort", cfg.Effort, "--auto=" + strconv.FormatBool(cfg.Auto)}
-		if !cfg.Sandbox {
-			command = append(command, "--nosandbox")
-		}
 		// One-shot workers exit after their task; keep retains interactive chat.
 		if keep {
 			command = append(command, "-i")
@@ -281,13 +278,10 @@ func openChatPane(ctx context.Context, cfg config.Config, c *chat, fork bool) (s
 		return "", err
 	}
 	auto := cfg.Auto
-	if c.writeAccess != nil {
-		auto = c.writeAccess.Auto()
+	if c.policy != nil {
+		auto = c.policy.Auto()
 	}
 	command := []string{exe, "--provider", c.backend, "--model", model, "--effort", effort, "--auto=" + strconv.FormatBool(auto)}
-	if !cfg.Sandbox {
-		command = append(command, "--nosandbox")
-	}
 	if fork {
 		command = append(command, "-s", id)
 	}

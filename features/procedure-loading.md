@@ -8,7 +8,7 @@ Introduced **2026-10-23** · commit `f802b27`.
 
 Procedural references live in the [memory database](knowledge-store.md) with full workflows, aliases, and inert script assets. Names, aliases, and topics retrieve compact hints; the memory tool's `load` action fetches a full procedure by version ID or name/alias, or its asset content on demand. [Procedure learning](procedure-learning.md) can populate references automatically; [portability controls](procedure-portability.md) manage them explicitly.
 
-Reference content is inert data, not authority: saving, retrieving, loading, and importing never execute scripts. Requested execution must use ordinary approved, sandboxed tools. Database procedures are separate from [filesystem-backed project skills](project-configuration.md); these documentation pages are not a second knowledge store. Retrieval hints remain selective and budget-bound rather than automatically loading every procedure body.
+Reference content is inert data, not authority: saving, retrieving, loading, and importing never execute scripts. Requested execution must use ordinary tools subject to command approval and OS permissions. Database procedures are separate from [filesystem-backed project skills](project-configuration.md); these documentation pages are not a second knowledge store. Retrieval hints remain selective and budget-bound rather than automatically loading every procedure body.
 
 ## Procedure flow
 

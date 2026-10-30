@@ -6,7 +6,7 @@ Introduced 2026-09-28 · commit `84d64c8`.
 
 ## Current behavior
 
-Use `edit` for exact-match replacements, new files, or ordered multi-file batches. Replacement text must match exactly once; an empty `old` creates a new file. Batch replacements run in order against staged text, with validation before writes and each file written once. Validation errors write nothing, but an I/O failure can leave earlier files updated: batches are not rollback transactions. [Edit path protections](edit-path-safety.md) describe destination checks; approval policy still applies.
+Use `edit` for exact-match replacements, new files, or ordered multi-file batches. Replacement text must match exactly once; an empty `old` creates a new file. Batch replacements run in order against staged text, with validation before writes and each file written once. Validation errors write nothing, but an I/O failure can leave earlier files updated: batches are not rollback transactions. [Edit path protections](edit-path-safety.md) describe destination integrity checks. Filesystem access is unrestricted by kh, subject to OS permissions; edits do not request folder approval.
 
 ## Evolution
 
@@ -15,10 +15,11 @@ Use `edit` for exact-match replacements, new files, or ordered multi-file batche
 | 2026-09-28 | Introduced exact-match replacements and new-file creation. | `84d64c8` |
 | 2026-10-04 | Added ordered, prevalidated multi-file edit batches. | `c8de1bf` |
 | 2026-10-16 | Integrated process-lifetime approval for outside-folder edits. | `09b6775` |
+| 2026-10-31 | Removed folder approval and confinement while preserving batch validation and pinned-file writes. | Current change |
 
 ## Inspect
 
-- [Edit implementation](../internal/tools/edit.go), [batch tests](../internal/tools/test/edit_batch_test.go), and [access tests](../internal/tools/test/edit_access_test.go).
+- [Edit implementation](../internal/tools/edit.go), [batch tests](../internal/tools/test/edit_batch_test.go), and [access tests](../internal/tools/test/edit_cross_directory_test.go).
 - [Approval and write boundaries](write-approvals.md).
 
 [Feature index](README.md)

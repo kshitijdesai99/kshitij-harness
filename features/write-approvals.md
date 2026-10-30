@@ -1,25 +1,22 @@
-# Approval policy and folder grants
+# Command approval policy
 
-Control command execution and outside-project writes with explicit, session-scoped policy.
+Control command execution without restricting which folders kh can access.
 
-Introduced **2026-09-28** · commit `84d64c8` (command approvals; folder grants followed).
+Introduced **2026-09-28** · commit `84d64c8`.
 
 ## Write boundaries
 
-![Requests pass approval and folder grants, then branch into shell sandboxing or pinned edit-path checks; failures stop the affected operation.](../diagrams/write-boundaries.svg)
+kh does not impose a filesystem sandbox or folder-grant boundary. Shell commands and structured edits can access locations outside the launch folder, subject to OS privacy and file permissions. [Edit path protections](edit-path-safety.md) prevent accidental path redirection; they do not confine edits to a project.
 
 ## Current behavior
 
-Automatic command and requested-folder approval is **on by default**. `--auto=false` enables prompts for one session; `--auto` enables automatic approval for one session. `/auto off` and `/auto on` persist the preference. Flags override configuration.
+Automatic command approval is **on by default**. `--auto=false` enables prompts for one session; `--auto` enables automatic approval for one session. `/auto off` and `/auto on` persist the preference. Flags override configuration.
 
-- Shell calls declare desired existing outside write folders with `write_dirs`; [edits](edit-path-safety.md) request outside-folder access automatically.
-- Configured shell tool/cache write permissions are **not edit grants**. Explicitly approved session folder grants are shared by bash and edit.
-- Auto approval retains [sandbox](shell-sandbox.md) and pinned-path checks; it does not grant the entire filesystem at startup.
-
-- Turning auto off restores command and new-folder approval policy; configured safe commands can still run without a prompt. Existing grants last until the process [restarts](startup-rebuild.md#restart-onto-a-new-build).
-- [Workers](worker-lifecycle.md) and [new/forked chats](chat-branches.md) inherit active policy, **not directory grants**. Grants belong only to the process that approved them.
-- Denied approval or invalid folder requests stop the tool before execution. Failed edit-path checks stop the edit; blocked shell writes fail without rolling back earlier command effects.
-- Approval is not a correctness guarantee. Without an OS sandbox, prompts alone are not a security boundary.
+- Turning auto off restores command approval prompts; configured safe commands can still run without a prompt. It does not change filesystem access or add edit prompts.
+- [Workers](worker-lifecycle.md) and [new/forked chats](chat-branches.md) inherit the active approval policy.
+- Denied command approval stops the command before execution. OS permission failures and edit-path validation can still stop operations; commands and edit batches do not roll back earlier effects.
+- MCP startup trust and per-call approval also use auto policy; see [project configuration](project-configuration.md#mcp-and-safety).
+- Approval is not a correctness guarantee or a filesystem security boundary.
 
 ## Evolution
 
@@ -30,10 +27,11 @@ Automatic command and requested-folder approval is **on by default**. `--auto=fa
 | 2026-10-16 | Added process-lifetime outside-folder grants. | `09b6775` |
 | 2026-10-17 | Added automatic write grants, then unified command/folder policy under auto. | `77639f2`, `79f1ce2` |
 | 2026-10-23 | Made automatic approval the default. | `bf2c75d` |
+| 2026-10-31 | Removed folder grants and filesystem confinement; retained command auto policy. | Current change |
 
 ## Inspect
 
-- [Access control](../internal/tools/access.go) and [shell](../internal/tools/bash.go)
-- [Auto-policy tests](../internal/tools/test/auto_test.go) and [access tests](../internal/tools/test/access_test.go)
+- [Command policy and shell execution](../internal/tools/bash.go)
+- [Auto-policy and cross-directory command tests](../internal/tools/test/auto_test.go)
 
 [Feature index](README.md)

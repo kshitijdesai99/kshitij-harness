@@ -1,29 +1,9 @@
-# Shell write sandbox
+# Shell sandbox (retired)
 
-Restrict shell writes without treating execution permission as proof of safety.
+Introduced **2026-09-28** · commit `83bb8cd`. Removed **2026-10-31**.
 
-Introduced **2026-09-28** · commit `83bb8cd`.
+kh no longer confines filesystem access to the launch folder or maintains folder grants. Shell commands and structured edits can access any location permitted by the operating system. [Command approval](write-approvals.md) remains available through `/auto` and CLI settings; it is not filesystem confinement.
 
-## Current behavior
-
-- On macOS (Darwin), shell write sandboxing is enabled by default; `--nosandbox` disables it. Other Unix systems have **no OS-level shell sandbox**.
-- Writable locations include the project, configured tool/cache directories, and session-approved folders. See the [approval and write boundaries diagram](write-approvals.md#write-boundaries) for the execution paths.
-- Configured shell tool/cache permissions do not authorize structured edits. Reads still obey OS permissions; approval prompts alone are not a security boundary.
-
-These are execution controls, not proof that a command is safe or model output is correct. [External CLIs](external-clis.md) run under the same shell policy, with their own behavior and credentials. Retrieved memories and [procedure assets](procedure-loading.md) are reference data, never authorization to execute.
-
-## Evolution
-
-| Date | Change | Commit |
-|---|---|---|
-| 2026-09-28 | Added the macOS shell write sandbox. | `83bb8cd` |
-| 2026-10-01 | Hardened command execution and sandbox handling. | `60e2bd1` |
-| 2026-10-10 | Preserved sandboxed access to the memory store. | `56b393b` |
-| 2026-10-16 | Added declared outside-folder writes backed by session grants. | `09b6775` |
-
-## Inspect
-
-- [Shell implementation](../internal/tools/bash.go)
-- [Sandbox tests](../internal/tools/test/sandbox_test.go) and [memory-access cases](../internal/tools/test/sandbox_memory_test.go)
+See [shell commands](shell.md) for current execution behavior and [target workspaces](project-configuration.md#target-workspaces) for inspecting another folder before work.
 
 [Feature index](README.md)

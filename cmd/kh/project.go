@@ -14,10 +14,9 @@ import (
 	"kh/internal/tools"
 )
 
-// Project MCP servers are external programs/services, not sandboxed shell tools.
-// Both connecting (which may launch a program) and calls use the active approval
-// policy. Configuration never changes kh's own permissions or folder grants.
-func projectTools(ctx context.Context, project *projectconfig.Config, approval tools.Approver, access *tools.WriteAccess, notice func(string)) ([]tools.Tool, func(), error) {
+// Project MCP servers are external programs/services. Both connecting (which
+// may launch a program) and calls use the active command approval policy.
+func projectTools(ctx context.Context, project *projectconfig.Config, approval tools.Approver, policy *tools.ApprovalPolicy, notice func(string)) ([]tools.Tool, func(), error) {
 	if len(project.Servers) == 0 {
 		return nil, func() {}, nil
 	}
@@ -41,7 +40,7 @@ func projectTools(ctx context.Context, project *projectconfig.Config, approval t
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		allowed, err := approval.Approve(lifetime, fmt.Sprintf("Trust MCP server %q: connect/start external code; effects are outside kh's bash sandbox", name), access.Auto())
+		allowed, err := approval.Approve(lifetime, fmt.Sprintf("Trust MCP server %q: connect/start external code", name), policy.Auto())
 		if err != nil || !allowed {
 			notice(fmt.Sprintf("(project config) MCP server %q not connected", name))
 			continue
@@ -57,7 +56,7 @@ func projectTools(ctx context.Context, project *projectconfig.Config, approval t
 		original := ts[i]
 		ts[i].Run = nil
 		ts[i].RunResult = func(ctx context.Context, input json.RawMessage) (provider.Result, error) {
-			allowed, err := approval.Approve(ctx, fmt.Sprintf("Call MCP tool %q (external effects are not bash-sandboxed)", original.Name), access.Auto())
+			allowed, err := approval.Approve(ctx, fmt.Sprintf("Call MCP tool %q (external effects)", original.Name), policy.Auto())
 			if err != nil {
 				return provider.Result{}, err
 			}

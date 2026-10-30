@@ -4,11 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -23,25 +19,23 @@ type Approver interface {
 
 // Bash runs one command per call.
 func Bash(c config.Config, approval Approver) Tool {
-	return BashWithAccess(c, approval, nil)
+	return BashWithPolicy(c, approval, nil)
 }
 
-// BashWithAccess shares session directory permissions with edit. Commands must
-// declare outside write directories up front; commands are never parsed/retried.
-func BashWithAccess(c config.Config, approval Approver, access *WriteAccess) Tool {
+// BashWithPolicy reads the shared command approval setting for each request.
+// A nil policy uses the configuration's initial Auto setting.
+func BashWithPolicy(c config.Config, approval Approver, policy *ApprovalPolicy) Tool {
 	timeout := time.Duration(c.TimeoutSec) * time.Second
 	return Tool{
 		Name:        "bash",
-		Description: "Run any shell command on the user's machine, with network and system access. Starts in the current dir. Before executing writes outside the project, declare the desired existing folders in write_dirs. Requests are granted automatically when auto is enabled; otherwise they require session permission. Do not retry a blocked command without declaring its write directories. Use rg to search; read many files in one call (cat a b, sed -n 1,80p f). Output is capped.",
+		Description: "Run any shell command on the user's machine, with network and filesystem access subject to OS permissions. Starts in the current dir. Commands require approval unless auto is enabled or the command is classified as safe. Use rg to search; read many files in one call (cat a b, sed -n 1,80p f). Output is capped.",
 		Params: map[string]any{
-			"command":    map[string]any{"type": "string"},
-			"write_dirs": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Outside folders this command needs to write; declare before executing."},
+			"command": map[string]any{"type": "string"},
 		},
 		Required: []string{"command"},
 		Run: func(ctx context.Context, input json.RawMessage) (string, error) {
 			var in struct {
-				Command   string
-				WriteDirs []string `json:"write_dirs"`
+				Command string
 			}
 			if json.Unmarshal(input, &in) != nil || strings.TrimSpace(in.Command) == "" {
 				return "", fmt.Errorf("need a command")
@@ -55,17 +49,9 @@ func BashWithAccess(c config.Config, approval Approver, access *WriteAccess) Too
 			if c.OutputCap <= 0 {
 				return "", fmt.Errorf("output_cap must be positive")
 			}
-			if len(in.WriteDirs) != 0 {
-				if access == nil {
-					return "", fmt.Errorf("write directory approval is unavailable")
-				}
-				if err := access.requireBash(ctx, in.WriteDirs); err != nil {
-					return "", err
-				}
-			}
 			auto := c.Auto
-			if access != nil {
-				auto = access.Auto()
+			if policy != nil {
+				auto = policy.Auto()
 			}
 			allowed := auto || isSafe(in.Command, c.Safe)
 			if approval != nil {
@@ -86,26 +72,7 @@ func BashWithAccess(c config.Config, approval Approver, access *WriteAccess) Too
 			}
 			// No profile/rc: starts without loading the user's shell setup.
 			argv := []string{"/bin/bash", "--noprofile", "--norc", "-c", in.Command}
-			if c.Sandbox && runtime.GOOS == "darwin" {
-				dirs := append([]string{"."}, c.Writable...)
-				if access != nil {
-					var err error
-					dirs, err = access.SandboxDirectories()
-					if err != nil {
-						return "", err
-					}
-					argv = append(sandboxProfile(dirs, false), argv...)
-				} else {
-					argv = append(sandbox(dirs), argv...)
-				}
-			}
-			out, err := run(ctx, argv, timeout, c.OutputCap)
-			// The error is the same for our sandbox and for macOS privacy, so name both.
-			if c.Sandbox && strings.Contains(out, "Operation not permitted") {
-				out += "\n(kh: if this was a write outside the project, kh's sandbox blocked it; declare the desired existing folder in write_dirs before executing writes (automatically granted when auto is enabled). " +
-					"If it was a read, macOS privacy settings are blocking this folder for the user's terminal app.)"
-			}
-			return out, err
+			return run(ctx, argv, timeout, c.OutputCap)
 		},
 	}
 }
@@ -134,48 +101,4 @@ func run(ctx context.Context, argv []string, timeout time.Duration, outputCap in
 		s += fmt.Sprintf("\n(kh: timed out after %v and was killed. Try a narrower command.)", timeout)
 	}
 	return s, nil // a failing command is information for the model, not a tool error
-}
-
-// sandbox returns a sandbox-exec prefix that allows reads and network everywhere
-// but writes only under dirs (and /dev, for /dev/null and the tty).
-func sandbox(dirs []string) []string {
-	return sandboxProfile(dirs, true)
-}
-
-func sandboxProfile(dirs []string, resolve bool) []string {
-	home, _ := os.UserHomeDir()
-	p := `(version 1)(allow default)(deny file-write*)(allow file-write* (subpath "/dev")`
-	for _, d := range dirs {
-		if strings.HasPrefix(d, "~/") {
-			d = filepath.Join(home, d[2:])
-		}
-		d, _ = filepath.Abs(d)
-		if resolve {
-			if r, err := filepath.EvalSymlinks(d); err == nil {
-				d = r // the sandbox matches real paths, e.g. /tmp is /private/tmp
-			}
-		}
-		p += " (subpath " + strconv.Quote(d) + ")"
-	}
-	// Memory is harness-owned state, not a project output. Always permit its
-	// exact SQLite files, even when Writable is explicitly empty. Do not grant
-	// the entire .kh directory: it also contains config and login credentials.
-	if home != "" {
-		if resolved, err := filepath.EvalSymlinks(home); err == nil {
-			home = resolved
-		}
-		dir := filepath.Join(home, ".kh")
-		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-			dir = resolved
-		}
-		p += ") (allow file-write-create (literal " + strconv.Quote(dir) + ")) (allow file-write*"
-		// Hybrid's lock, logs, venv and model cache are also managed state.
-		// Resolve .kh above, but not hybrid: following a hybrid symlink could
-		// accidentally grant writes to config/auth or an unrelated directory.
-		p += " (subpath " + strconv.Quote(filepath.Join(dir, "hybrid")) + ")"
-		for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
-			p += " (literal " + strconv.Quote(filepath.Join(dir, "memory.db")+suffix) + ")"
-		}
-	}
-	return []string{"/usr/bin/sandbox-exec", "-p", p + ")"}
 }

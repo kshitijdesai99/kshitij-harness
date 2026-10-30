@@ -1,6 +1,5 @@
-// Package mcp connects explicitly trusted external MCP servers. It does not
-// grant WriteAccess or sandbox external effects: callers must obtain startup
-// approval before passing servers, and apply their own per-call approval policy.
+// Package mcp connects explicitly trusted external MCP servers. Callers must
+// obtain startup approval before passing servers and apply per-call approval.
 package mcp
 
 import (
