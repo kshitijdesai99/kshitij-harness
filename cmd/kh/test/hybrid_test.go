@@ -23,6 +23,7 @@ func TestMemoryHybridCLI(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %s %v", out, err)
 	}
+	isolateCLIFixture(t)
 	env := func(home string) []string {
 		return append(os.Environ(), "HOME="+home, "KH_AUTO_REBUILD=0", "KH_AUTO=", "KH_PROVIDER=", "KH_MODEL=", "KH_EFFORT=", "KH_PARENT=", "KH_AGENT=", "TMUX=", "TMUX_PANE=")
 	}

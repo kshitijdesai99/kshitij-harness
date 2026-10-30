@@ -54,9 +54,13 @@ func (c *Console) activityPhase(phase string) {
 	}
 }
 
-// SetCommandHandler installs a local input handler before Start. Handled lines
-// never enter the message/steering or approval queues.
-func (c *Console) SetCommandHandler(handler func(string) bool) { c.command = handler }
+// SetCommandHandler installs a local input handler. Handled lines never enter
+// the message/steering or approval queues. It may be updated after Start.
+func (c *Console) SetCommandHandler(handler func(string) bool) {
+	c.mu.Lock()
+	c.command = handler
+	c.mu.Unlock()
+}
 
 // Start must run after the tmux launcher so it cannot steal client keystrokes.
 func (c *Console) Start() { c.start.Do(func() { go c.read() }) }
@@ -84,7 +88,10 @@ func (c *Console) send(line string) bool {
 		fmt.Fprintln(c.Stderr(), "paste:", err)
 		return true // stay at the prompt; never submit a partial/rejected paste
 	}
-	if c.command != nil && c.command(line) {
+	c.mu.Lock()
+	command := c.command
+	c.mu.Unlock()
+	if command != nil && command(line) {
 		return true
 	}
 	return c.deliver(line)

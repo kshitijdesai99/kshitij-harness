@@ -23,6 +23,7 @@ func TestAutoCLIOptInAndPersistence(t *testing.T) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
+	isolateCLIFixture(t)
 	configPath := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(configPath, []byte(`{"memory_model":"off","effort":"high","custom":"preserve","auto":false,"auto_write":true}`), 0600); err != nil {
 		t.Fatal(err)
@@ -120,6 +121,7 @@ func TestAutoReloadAfterLocalToggleAndProviderOverride(t *testing.T) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
+	isolateCLIFixture(t)
 	configPath := filepath.Join(dir, "config.json")
 	writeConfig := func() {
 		t.Helper()

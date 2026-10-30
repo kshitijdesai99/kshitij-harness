@@ -18,6 +18,7 @@ func TestHelpCLIBypassesChatAndSessions(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %s %v", out, err)
 	}
+	isolateCLIFixture(t)
 	home := t.TempDir()
 	dir := filepath.Join(home, ".kh")
 	if err := os.MkdirAll(dir, 0700); err != nil {

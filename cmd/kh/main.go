@@ -17,6 +17,7 @@ import (
 	"kh/internal/image"
 	"kh/internal/learn"
 	"kh/internal/memory"
+	"kh/internal/projectconfig"
 	"kh/internal/provider"
 	"kh/internal/repomap"
 	"kh/internal/session"
@@ -206,6 +207,20 @@ func main() {
 	exit(err)
 	defer visualManager.Close()
 	ts := []tools.Tool{tools.BashWithAccess(cfg, console, writeAccess), tools.EditWithAccess(ui.Action, writeAccess), tools.Memory(db, repoScope, owner), tools.ViewImage(ui.Action), agentTool(cfg, ui.Action, writeAccess), tools.Visual(visualManager, cfg, console, writeAccess)}
+	project, err := projectconfig.Load(cwd)
+	exit(err)
+	ts = append(ts, project.Tools()...)
+	if project.Prompt != "" || len(project.Warnings) > 0 || len(project.Servers) > 0 {
+		ui.Notice(project.Summary())
+	}
+	// Startup MCP trust prompts need live input before the model is built.
+	if len(project.Servers) > 0 {
+		console.Start()
+	}
+	mcpTools, closeMCP, err := projectTools(ctx, project, console, writeAccess, ui.Notice)
+	defer closeMCP()
+	exit(err)
+	ts = append(ts, mcpTools...)
 	if *resume {
 		*id, err = session.Latest()
 		exit(err)
@@ -223,7 +238,11 @@ func main() {
 		})
 		cfg.Provider = saved.Provider
 	}
-	p, err := backend.New(cfg, repomap.Build(".", cfg.MapCap), ts, ui)
+	chatConfig := cfg
+	if project.Prompt != "" {
+		chatConfig.System += "\n\n" + project.Prompt
+	}
+	p, err := backend.New(chatConfig, repomap.Build(".", cfg.MapCap), ts, ui)
 	exit(err)
 	if *id != "" {
 		exit(p.Load(saved.State))
@@ -237,7 +256,7 @@ func main() {
 	}
 
 	exportModel(p, cfg.Provider)
-	c := chat{model: p, backend: cfg.Provider, id: *id, repo: repoScope,
+	c := chat{model: p, backend: cfg.Provider, id: *id, repo: repoScope, project: project,
 		memory: db, memoryActive: memoryActive, learn: learner, input: console, ui: ui, tools: ts, seen: fromFile, writeAccess: writeAccess,
 		budget: memory.Budget{SummaryChars: cfg.SummaryMaxTokens * 4, TopInstructions: cfg.TopInstructions, TopGotchas: cfg.TopGotchas,
 			TopKnowledge: cfg.TopKnowledge, TotalChars: cfg.MemoryMaxTokens * 4}}
@@ -332,6 +351,20 @@ func (c *chat) command(ctx context.Context, line string) {
 	cmd, arg, _ := strings.Cut(line, " ")
 	var model, effort string
 	switch cmd {
+	case "/project":
+		if strings.TrimSpace(arg) != "diagnostics" {
+			fmt.Fprintln(stdout, "usage: /project diagnostics")
+			return
+		}
+		if c.project == nil {
+			fmt.Fprintln(stdout, "No project configuration loaded.")
+			return
+		}
+		fmt.Fprintln(stdout, c.project.Summary())
+		for _, warning := range c.project.Warnings {
+			fmt.Fprintln(stdout, warning)
+		}
+		return
 	case "/memory":
 		if err := c.memoryCommand(ctx, strings.Fields(arg)); err != nil {
 			fmt.Fprintln(stdout, "error:", err)
@@ -372,7 +405,16 @@ func (c *chat) command(ctx context.Context, line string) {
 			model, effort = p.Use("", arg)
 		}
 	default:
-		fmt.Fprintln(stdout, "/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/new   open a fresh session in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message\n/auto [on|off]   persist automatic command and folder approval; existing grants remain until restart\n/memory hybrid on|off   enable local hybrid retrieval or keyword-only memory\n/memory explain   show the last retrieval’s full candidate IDs and scores")
+		if c.project.HasCommand(line) {
+			if err := c.turn(ctx, line); err != nil {
+				fmt.Fprintln(stdout, "error:", err)
+			}
+			return
+		}
+		if c.project != nil && len(c.project.Commands) > 0 {
+			fmt.Fprintln(stdout, "Project commands/skills: "+strings.Join(c.project.CommandNames(), ", "))
+		}
+		fmt.Fprintln(stdout, "/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/new   open a fresh session in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message\n/auto [on|off]   persist automatic command and folder approval; existing grants remain until restart\n/memory hybrid on|off   enable local hybrid retrieval or keyword-only memory\n/memory explain   show the last retrieval’s full candidate IDs and scores\n/project diagnostics   show startup configuration diagnostics")
 		return
 	}
 	fmt.Fprintln(stdout, terminal.Color(stdout, terminal.Muted, fmt.Sprintf("(model %s, effort %s)", model, effort)))

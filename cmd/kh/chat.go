@@ -15,6 +15,7 @@ import (
 	"kh/internal/config"
 	"kh/internal/learn"
 	"kh/internal/memory"
+	"kh/internal/projectconfig"
 	"kh/internal/provider"
 	"kh/internal/session"
 	"kh/internal/terminal"
@@ -36,6 +37,7 @@ type chat struct {
 	seen              config.Config
 	recentContext     string // bounded last exchange; never a second transcript archive
 	writeAccess       *tools.WriteAccess
+	project           *projectconfig.Config
 	forkMu            sync.Mutex
 	forkState         []byte // last completed conversation; never read a streaming model
 	forkModel         string
@@ -114,7 +116,7 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 	}
 	var steps []learn.Step
 	runner := agent.Runner{Model: c.model, Tools: c.tools, Input: c.input.Lines,
-		Held: c.input.Held, Notice: c.ui.Notice, BeforeMessage: beforeMessage,
+		Held: c.input.Held, Notice: c.ui.Notice, BeforeMessage: beforeMessage, ExpandMessage: c.project.Expand,
 		Observe: func(calls []provider.Call, results []provider.Result) {
 			for i := range min(len(calls), len(results)) {
 				steps = append(steps, learn.Step{Name: calls[i].Name, Input: string(calls[i].Input),

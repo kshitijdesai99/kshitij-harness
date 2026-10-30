@@ -25,6 +25,7 @@ func TestProviderSelectionAndLegacyResume(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %s: %v", out, err)
 	}
+	isolateCLIFixture(t)
 	t.Setenv("HOME", t.TempDir())
 	if err := os.MkdirAll(config.Dir(), 0o700); err != nil {
 		t.Fatal(err)
@@ -77,6 +78,7 @@ func TestSessionSaveFailureIsReportedByCLI(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %s: %v", out, err)
 	}
+	isolateCLIFixture(t)
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, ".kh"), 0o700); err != nil {
 		t.Fatal(err)

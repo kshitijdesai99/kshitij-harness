@@ -62,6 +62,7 @@ func testForkOpensNewPaneToTheRight(t *testing.T, source string) {
 	if b, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %s: %v", b, err)
 	}
+	isolateCLIFixture(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	state, err := session.Encode("codex", []byte(`{"session":"s","map":"test repo map","input":[

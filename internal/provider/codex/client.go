@@ -59,9 +59,13 @@ func New(c config.Config, repoMap string, ts []tools.Tool, out provider.Output) 
 	}
 	x := &Client{out: out, model: c.Model, effort: c.Effort, rules: c.System, repoMap: repoMap, session: hex.EncodeToString(id), idleTimeout: idle}
 	for _, t := range ts {
+		schema := t.InputSchema
+		if schema == nil {
+			schema = map[string]any{"type": "object", "properties": t.Params, "required": t.Required}
+		}
 		x.tools = append(x.tools, map[string]any{
 			"type": "function", "name": t.Name, "description": t.Description, "strict": false,
-			"parameters": map[string]any{"type": "object", "properties": t.Params, "required": t.Required},
+			"parameters": schema,
 		})
 	}
 	if c.WebSearch {

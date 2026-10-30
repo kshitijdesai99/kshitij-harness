@@ -19,6 +19,7 @@ func TestReferenceCLITransportAndSoundDemo(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build %s %v", out, err)
 	}
+	isolateCLIFixture(t)
 	home := t.TempDir()
 	home2 := t.TempDir()
 	run := func(home, input string, args ...string) ([]byte, error) {

@@ -29,6 +29,7 @@ func TestSessionsTTYWidth(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %s: %v", out, err)
 	}
+	isolateCLIFixture(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	id := "20260101-123400.123456789"
@@ -98,6 +99,7 @@ func TestSessionsLastResponseAndSavedOrdering(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %s: %v", out, err)
 	}
+	isolateCLIFixture(t)
 	t.Setenv("HOME", t.TempDir())
 	dir := session.Folder()
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.Local)

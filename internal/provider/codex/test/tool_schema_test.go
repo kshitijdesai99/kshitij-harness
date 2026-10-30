@@ -55,6 +55,42 @@ func TestWebPromptMentionsCurlOnlyWithBashCapability(t *testing.T) {
 	}
 }
 
+func TestFunctionSchemaPreservesExternalSchema(t *testing.T) {
+	_ = mockCodex(t, completeEvent)
+	schema := map[string]any{
+		"type":                 "object",
+		"properties":           map[string]any{"choice": map[string]any{"$ref": "#/$defs/choice"}},
+		"$defs":                map[string]any{"choice": map[string]any{"type": "string", "enum": []any{"a", "b"}}},
+		"additionalProperties": false,
+		"required":             []any{"choice"},
+	}
+	seen := false
+	http.DefaultClient.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
+		var body struct{ Tools []map[string]any }
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		for _, tool := range body.Tools {
+			if tool["name"] == "mcp__server__tool" {
+				seen = true
+				got, _ := json.Marshal(tool["parameters"])
+				want, _ := json.Marshal(schema)
+				if string(got) != string(want) {
+					t.Errorf("external schema changed: got %s want %s", got, want)
+				}
+			}
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(completeEvent)), Header: make(http.Header)}, nil
+	})
+	p := codex.New(config.Defaults, "", []tools.Tool{{Name: "mcp__server__tool", InputSchema: schema, Params: map[string]any{"wrong": true}, Required: []string{"wrong"}}}, nil)
+	if _, err := p.Step(context.Background(), "test", nil); err != nil {
+		t.Fatal(err)
+	}
+	if !seen {
+		t.Fatal("external function schema missing")
+	}
+}
+
 func TestFunctionSchemaKeepsAlternativeEditFormatsOptional(t *testing.T) {
 	_ = mockCodex(t, completeEvent)
 	saw := false

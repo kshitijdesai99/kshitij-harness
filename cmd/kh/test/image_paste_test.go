@@ -35,6 +35,7 @@ func TestImagePasteBinding(t *testing.T) {
 	if b, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %s: %v", b, err)
 	}
+	isolateCLIFixture(t)
 	for _, session := range []string{"0", "kh"} {
 		t.Run(session, func(t *testing.T) {
 			name := fmt.Sprintf("kh_paste_%d_%s", os.Getpid(), session)
@@ -165,6 +166,7 @@ func TestImagePastePreservesUserBinding(t *testing.T) {
 	if b, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %s: %v", b, err)
 	}
+	isolateCLIFixture(t)
 	name := fmt.Sprintf("kh_binding_%d", os.Getpid())
 	home := t.TempDir()
 	tmux := func(args ...string) string {

@@ -17,6 +17,8 @@ Use this map to find the owning package; linked feature pages explain behavior a
 | [`internal/image`](../internal/image/) | Image attachment reading and clipboard snapshots | [Images](images.md) |
 | [`internal/learn`](../internal/learn/) | Background extraction and learning safeguards | [Learning queue](learning-queue.md), [origin protections](learning-origin.md) |
 | [`internal/memory`](../internal/memory/) | Versioned storage, retrieval, and reference bundles | [Knowledge store](knowledge-store.md), [hybrid retrieval](hybrid-retrieval.md), [portability](procedure-portability.md) |
+| [`internal/mcp`](../internal/mcp/) | Trusted external MCP connections and protocol calls | [Project configuration](project-configuration.md) |
+| [`internal/projectconfig`](../internal/projectconfig/) | Filesystem configuration discovery and capability references | [Project configuration](project-configuration.md) |
 | [`internal/provider`](../internal/provider/) | Provider contract and protocol adapters | [Provider state](provider-state.md), [connection recovery](connection-recovery.md) |
 | [`internal/repomap`](../internal/repomap/) | Repository context generation | [Repository map](repository-map.md) |
 | [`internal/session`](../internal/session/) | Saved session files and state | [Saved sessions](saved-sessions.md) |
@@ -43,7 +45,7 @@ The [provider contract](../internal/provider/provider.go) owns protocol state, s
 
 [Markdown rendering](markdown.md) owns whole-reply presentation; [terminal feedback](terminal-feedback.md) and [turn metrics](turn-metrics.md) expose runtime signals. [Repository maps](repository-map.md) provide optional initial project context. [Keyword recall](keyword-recall.md) and optional [hybrid retrieval](hybrid-retrieval.md) select bounded memory context; details load on demand.
 
-Conversation history, [durable knowledge](knowledge-store.md), and project files are separate. Retrieved notes and [procedure assets](procedure-loading.md) are reference data, not execution authority.
+Conversation history, [durable knowledge](knowledge-store.md), and [project configuration](project-configuration.md) are separate. Retrieved notes, project capabilities, and [procedure assets](procedure-loading.md) are reference data, not execution authority. The application owns MCP startup trust and per-call approval; external server effects are not confined by the OS Bash sandbox.
 
 ## Design boundaries
 

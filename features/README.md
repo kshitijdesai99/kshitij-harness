@@ -15,6 +15,7 @@ Shared guides: [Architecture](architecture.md) · [Development](development.md) 
 | [Structured editing](editing.md) | 2026-09-28 | Validated batches and cross-folder edits |
 | [Web search](web-search.md) | 2026-09-28 | Visible search/open/find actions |
 | [Repository map](repository-map.md) | 2026-09-28 | Git-only scope; now opt-in |
+| [Project configuration](project-configuration.md) | 2026-10-30 (uncommitted) | `.agents`/`.agent`/`.claude` instructions, lazy capabilities/assets, local plugins, and MCP tools/content |
 
 ## Interactive control
 

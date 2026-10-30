@@ -20,6 +20,7 @@ func TestCompactCommandProviderFailureReportsUnchanged(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %s %v", out, err)
 	}
+	isolateCLIFixture(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	if err := os.MkdirAll(filepath.Join(home, ".kh"), 0700); err != nil {
@@ -62,6 +63,7 @@ func TestCompactCommandEmptyHistory(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %s: %v", out, err)
 	}
+	isolateCLIFixture(t)
 	t.Setenv("HOME", t.TempDir())
 	state, err := session.Encode("codex", []byte(`{"session":"empty","map":"","input":[]}`))
 	if err != nil {

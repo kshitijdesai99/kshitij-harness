@@ -1,0 +1,5 @@
+{
+  "name": "fixture-demo",
+  "description": "Small local plugin for the repository capability integration tests.",
+  "version": "1.0.0"
+}

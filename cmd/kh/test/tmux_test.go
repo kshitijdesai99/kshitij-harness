@@ -60,6 +60,7 @@ func testTmuxAgents(t *testing.T, source string) {
 	if b, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %s: %v", b, err)
 	}
+	isolateCLIFixture(t)
 	name := fmt.Sprintf("kh_test_%d", os.Getpid())
 	home := t.TempDir() // spawned kh must not write to the user's real ~/.kh
 	runTmux := func(args ...string) string {

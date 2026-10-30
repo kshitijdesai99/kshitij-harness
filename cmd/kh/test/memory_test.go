@@ -23,6 +23,7 @@ func TestMemoryCLIProvenanceAndSemanticSearch(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %s %v", out, err)
 	}
+	isolateCLIFixture(t)
 	home := t.TempDir()
 	wd, err := os.Getwd()
 	if err != nil {

@@ -34,6 +34,9 @@ type Runner struct {
 	// BeforeMessage runs with the caller's context for each nonempty user message,
 	// after image processing and before the model. An error aborts the turn.
 	BeforeMessage func(context.Context, string) error
+	// ExpandMessage resolves user-invoked project commands after the user hook.
+	// It runs for initial, steering, and queued input, never tool-result steps.
+	ExpandMessage func(string) string
 }
 
 // Run executes one task. Steering interrupts a reply, but lets running tools
@@ -79,6 +82,9 @@ func (r Runner) Run(ctx context.Context, task string) error {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
+		}
+		if user != "" && r.ExpandMessage != nil {
+			user = r.ExpandMessage(user)
 		}
 		if r.Activity != nil {
 			r.Activity("waiting for model")
