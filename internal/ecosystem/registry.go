@@ -149,6 +149,7 @@ func Open(path string) (*Store, error) {
  session_id TEXT NOT NULL DEFAULT '', pane_id TEXT NOT NULL DEFAULT '',
  heartbeat INTEGER NOT NULL, created INTEGER NOT NULL);
  CREATE INDEX IF NOT EXISTS agents_ecosystem ON agents(ecosystem_id);
+ CREATE INDEX IF NOT EXISTS agents_parent ON agents(ecosystem_id,parent_id);
  CREATE UNIQUE INDEX IF NOT EXISTS agents_live_name ON agents(ecosystem_id,name)
  WHERE state IN ('reserved','starting','running','idle','stopping');`)
 	if err != nil {
@@ -446,6 +447,46 @@ func (s *Store) List(ctx context.Context, ecoID string) ([]Agent, error) {
 	}
 	return out, rows.Err()
 }
+
+// LiveDescendants counts live descendants, traversing completed ancestors too.
+// parent indicates whether a counter should be displayed: roots, managers and
+// agents with historical descendants qualify independently of their live count.
+func (s *Store) LiveDescendants(ctx context.Context, agentID string) (count int, parent bool, err error) {
+	rows, err := s.db.QueryContext(ctx, `WITH RECURSIVE tree(id,ecosystem_id) AS (
+		SELECT id,ecosystem_id FROM agents WHERE id=?
+		UNION SELECT a.id,a.ecosystem_id FROM agents a JOIN tree t ON a.parent_id=t.id AND a.ecosystem_id=t.ecosystem_id
+	) SELECT a.id,a.state,a.role,a.parent_id FROM agents a JOIN tree t ON a.id=t.id`, agentID)
+	if err != nil {
+		return 0, false, err
+	}
+	defer rows.Close()
+	found := false
+	for rows.Next() {
+		var id, parentID string
+		var state State
+		var role Role
+		if err := rows.Scan(&id, &state, &role, &parentID); err != nil {
+			return 0, false, err
+		}
+		if id == agentID {
+			found = true
+			parent = parent || parentID == "" || role == Manager
+		} else {
+			parent = true
+			if state.Live() {
+				count++
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, false, err
+	}
+	if !found {
+		return 0, false, ErrNotFound
+	}
+	return count, parent, nil
+}
+
 func (s *Store) Stats(ctx context.Context, ecoID string) (Stats, error) {
 	var out Stats
 	out.States = map[State]int{}

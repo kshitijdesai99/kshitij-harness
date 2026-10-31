@@ -21,6 +21,13 @@ func tmux(args ...string) (string, error) {
 }
 
 func tmuxContext(ctx context.Context, args ...string) (string, error) {
+	out, err := tmuxRawContext(ctx, args...)
+	return strings.TrimSpace(out), err
+}
+
+// tmuxRawContext preserves option whitespace, which is significant in custom
+// status formats. Ordinary command callers continue using trimmed output.
+func tmuxRawContext(ctx context.Context, args ...string) (string, error) {
 	b, err := exec.CommandContext(ctx, "tmux", args...).CombinedOutput()
 	if ctx.Err() != nil {
 		return "", ctx.Err()
@@ -28,7 +35,7 @@ func tmuxContext(ctx context.Context, args ...string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("tmux %s: %s: %w", strings.Join(args, " "), strings.TrimSpace(string(b)), err)
 	}
-	return strings.TrimSpace(string(b)), nil
+	return strings.TrimSuffix(string(b), "\n"), nil
 }
 
 // quote a single shell argument: tmux runs its window command through a shell.

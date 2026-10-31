@@ -10,7 +10,7 @@ Introduced **2026-09-29** · commit `277c243`.
 - Inspect running sessions with `tmux list-sessions`; reconnect using `tmux attach -t SESSION_NAME`.
 - A running process is distinct from [saved history](saved-sessions.md): `-r` and `-s ID` resume a conversation in a new process, not the original live chat. Attaching does not change its build; follow [restart onto a new build](startup-rebuild.md#restart-onto-a-new-build) to update a live chat.
 
-See the [conversation lifecycle diagram](saved-sessions.md#conversation-lifecycle) for attachment versus history resume, fork, and fresh chats.
+See the [conversation lifecycle diagram](saved-sessions.md#conversation-lifecycle) for attachment versus history resume, fork, and fresh chats. [Terminal feedback](terminal-feedback.md#live-descendant-counts) explains the live count suffix on parent pane/tab names.
 
 ## Evolution
 

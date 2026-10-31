@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sync"
 	"testing"
 	"time"
 )
@@ -16,8 +17,10 @@ import (
 func TestActivityRedirectedSilent(t *testing.T) {
 	var out bytes.Buffer
 	a := terminal.NewActivity(&out, "main")
+	a.SetLiveDescendants(2, true)
 	a.Start("working")
 	a.Set("running bash")
+	a.SetLiveDescendants(0, true)
 	time.Sleep(450 * time.Millisecond)
 	a.Stop()
 	a.Close()
@@ -30,6 +33,7 @@ func TestActivityRedirectedSilent(t *testing.T) {
 		t.Fatal(err)
 	}
 	a = terminal.NewActivity(file, "main")
+	a.SetLiveDescendants(2, true)
 	a.Start("working")
 	time.Sleep(250 * time.Millisecond)
 	a.Close()
@@ -53,6 +57,31 @@ func TestActivityProcess(t *testing.T) {
 	go func() { <-ctx.Done(); a.Stop(); fmt.Println("CANCELLED") }()
 	for line := range c.Lines {
 		switch line {
+		case "count-three":
+			a.SetLiveDescendants(3, true)
+			fmt.Println("COUNT_THREE")
+		case "count-zero":
+			a.SetLiveDescendants(0, true)
+			fmt.Println("COUNT_ZERO")
+		case "count-leaf":
+			a.SetLiveDescendants(0, false)
+			fmt.Println("COUNT_LEAF")
+		case "count-concurrent":
+			var wg sync.WaitGroup
+			for i := 0; i < 4; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					for n := 0; n < 30; n++ {
+						a.SetLiveDescendants(n, true)
+						a.Set("running concurrent work")
+					}
+				}()
+			}
+			wg.Wait()
+			a.Set("running bash")
+			a.SetLiveDescendants(7, true)
+			fmt.Println("COUNT_CONCURRENT")
 		case "compact":
 			a.Start("compacting context")
 			fmt.Println("COMPACTING")

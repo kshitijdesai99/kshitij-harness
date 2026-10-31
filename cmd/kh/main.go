@@ -234,6 +234,8 @@ func main() {
 	ui.Activity = terminal.NewActivity(os.Stdout, activityName)
 	defer ui.Activity.Close()
 	console.SetActivity(ui.Activity)
+	eco.stopTitles = eco.startLiveDescendants(ctx, ui.Activity)
+	defer eco.stopTitles()
 	policy := tools.NewApprovalPolicy(cfg.Auto)
 	visualManager, err := visual.New(visual.Options{})
 	exit(err)
@@ -455,6 +457,9 @@ func applyAuto(policy *tools.ApprovalPolicy, enabled bool) {
 func exit(err error) {
 	if err != nil {
 		if currentEcosystem != nil {
+			if currentEcosystem.stopTitles != nil {
+				currentEcosystem.stopTitles()
+			}
 			// Startup/configuration failures can precede chat.turn; still retain
 			// their diagnostic after the one-shot pane closes.
 			if self, readErr := currentEcosystem.store.Get(context.Background(), currentEcosystem.self.ID); readErr == nil && self.Conclusion == "" {

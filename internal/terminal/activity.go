@@ -18,6 +18,8 @@ type Activity struct {
 	mu                      sync.Mutex
 	out                     io.Writer
 	name, phase             string
+	liveDescendants         int
+	parent                  bool
 	enabled, active, closed bool
 	started, updated        time.Time
 	frame                   int
@@ -52,6 +54,33 @@ func activityText(s string) string {
 	}
 	return strings.TrimSpace(string(r))
 }
+
+// SetLiveDescendants updates the display name even while idle. The base name
+// remains unchanged, so repeated updates and activity transitions cannot stack
+// suffixes. It shares the renderer lock with spinner writes and Close.
+func (a *Activity) SetLiveDescendants(count int, parent bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.closed || (a.liveDescendants == count && a.parent == parent) {
+		return
+	}
+	a.liveDescendants, a.parent = max(0, count), parent
+	if !a.enabled {
+		return
+	}
+	if a.active {
+		a.drawLocked(time.Now())
+	} else {
+		fmt.Fprintf(a.out, "\x1b]2;%s\x07", a.displayNameLocked())
+	}
+}
+func (a *Activity) displayNameLocked() string {
+	if a.parent {
+		return fmt.Sprintf("%s (%d)", a.name, a.liveDescendants)
+	}
+	return a.name
+}
+
 func (a *Activity) Start(phase string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -83,7 +112,7 @@ func (a *Activity) Stop() { a.mu.Lock(); defer a.mu.Unlock(); a.stopLocked() }
 func (a *Activity) stopLocked() {
 	if a.active {
 		a.active = false
-		fmt.Fprintf(a.out, "\x1b]2;%s\x07", a.name)
+		fmt.Fprintf(a.out, "\x1b]2;%s\x07", a.displayNameLocked())
 	}
 }
 func (a *Activity) Close() {
@@ -119,6 +148,6 @@ func (a *Activity) drawLocked(now time.Time) {
 	if quiet := now.Sub(a.updated); quiet >= 20*time.Second {
 		phase += fmt.Sprintf("; quiet %ds", int(quiet.Seconds()))
 	}
-	fmt.Fprintf(a.out, "\x1b]2;%s %c %s (%ds)\x07", a.name, frames[a.frame%len(frames)], phase, max(0, int(now.Sub(a.started).Seconds())))
+	fmt.Fprintf(a.out, "\x1b]2;%s %c %s (%ds)\x07", a.displayNameLocked(), frames[a.frame%len(frames)], phase, max(0, int(now.Sub(a.started).Seconds())))
 	a.frame++
 }

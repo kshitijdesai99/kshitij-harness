@@ -12,7 +12,7 @@ Introduced **2026-09-29** · commit `277c243` (worker launch and auto-policy inh
 
 ## Roles and shared capacity
 
-The [root remains manager](native-agents.md); descendants default to worker and can switch their own role. Role changes do not consume a new slot or multiply the limit. Parent links remain ownership metadata, not a restriction on cross-branch coordination.
+The [root remains manager](native-agents.md); descendants default to worker and can switch their own role. Role changes do not consume a new slot or multiply the limit. Parent links remain ownership metadata, not a restriction on cross-branch coordination. The [pane/tab count](terminal-feedback.md#live-descendant-counts) follows these links independently of manager/worker role.
 
 Set the shared budget in `~/.kh/config.json`:
 

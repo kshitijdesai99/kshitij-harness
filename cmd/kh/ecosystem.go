@@ -25,6 +25,7 @@ type ecosystemRuntime struct {
 	self          ecosystem.Agent
 	process       ecosystem.ProcessIdentity
 	configuredMax int
+	stopTitles    func()
 }
 
 var currentEcosystem *ecosystemRuntime

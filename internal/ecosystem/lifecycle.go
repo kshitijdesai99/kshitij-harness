@@ -104,15 +104,28 @@ func (s *Store) Reconcile(ctx context.Context, ecoID string, probe ProcessProbe)
 	if probe == nil {
 		return errors.New("process probe required")
 	}
-	agents, err := s.List(ctx, ecoID)
+	// Only live identities are needed for probing. Do not load potentially large
+	// task/conclusion payloads or completed history on periodic refreshes.
+	rows, err := s.db.QueryContext(ctx, `SELECT id,pid,start_token,launcher_pid,launcher_token FROM agents WHERE ecosystem_id=? AND state IN ('reserved','starting','running','idle','stopping')`, ecoID)
+	if err != nil {
+		return err
+	}
+	var agents []Agent
+	for rows.Next() {
+		var a Agent
+		if err := rows.Scan(&a.ID, &a.Process.PID, &a.Process.StartToken, &a.Launcher.PID, &a.Launcher.StartToken); err != nil {
+			rows.Close()
+			return err
+		}
+		agents = append(agents, a)
+	}
+	err = rows.Err()
+	rows.Close()
 	if err != nil {
 		return err
 	}
 	var failures []error
 	for _, a := range agents {
-		if !a.State.Live() {
-			continue
-		}
 		p := a.Process
 		if !p.Valid() {
 			p = a.Launcher
