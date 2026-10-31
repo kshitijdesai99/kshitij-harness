@@ -87,7 +87,28 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 	}
 	currentQuery := msg
 	var origin learn.RunOrigin
+	var ecosystemSnapshot string
 	beforeMessage := func(ctx context.Context, query string) error {
+		if currentEcosystem != nil {
+			self, err := currentEcosystem.store.Get(ctx, currentEcosystem.self.ID)
+			if err != nil {
+				return err
+			}
+			if self.State == "stopping" || !self.State.Live() {
+				return fmt.Errorf("agent is no longer accepting turns (%s)", self.State)
+			}
+			var queryOrigin learn.RunOrigin
+			queryOrigin.Observe(query)
+			if queryOrigin.Eligible() {
+				if err := currentEcosystem.refreshLimit(ctx); err != nil {
+					return err
+				}
+			}
+			ecosystemSnapshot, err = currentEcosystem.snapshot(ctx)
+			if err != nil {
+				return err
+			}
+		}
 		origin.Observe(query)
 		// Fence immediately, even if this run is later cancelled or fails.
 		recent = origin.Context(recent)
@@ -117,7 +138,13 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 	}
 	var steps []learn.Step
 	runner := agent.Runner{Model: c.model, Tools: c.tools, Input: c.input.Lines,
-		Held: c.input.Held, Notice: c.ui.Notice, BeforeMessage: beforeMessage, ExpandMessage: c.project.Expand,
+		Held: c.input.Held, Notice: c.ui.Notice, BeforeMessage: beforeMessage, ExpandMessage: func(message string) string {
+			message = c.project.Expand(message)
+			if ecosystemSnapshot != "" {
+				message += "\n\n[ecosystem snapshot] " + ecosystemSnapshot
+			}
+			return message
+		},
 		Observe: func(calls []provider.Call, results []provider.Result) {
 			for i := range min(len(calls), len(results)) {
 				steps = append(steps, learn.Step{Name: calls[i].Name, Input: string(calls[i].Input),
@@ -128,6 +155,9 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 		runner.Activity = c.ui.Activity.Set
 	}
 	err := runner.Run(tctx, msg)
+	if currentEcosystem != nil {
+		currentEcosystem.conclusion(c.model, err)
+	}
 	if tctx.Err() == context.Canceled {
 		c.ui.Notice("\n(stopped)")
 		err = nil

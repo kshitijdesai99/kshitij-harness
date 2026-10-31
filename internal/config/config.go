@@ -8,22 +8,29 @@ import (
 	"path/filepath"
 )
 
+// AgentsConfig controls ecosystem admission. Only the root refreshes the shared
+// limit on user turns or resume; descendants never override it locally.
+type AgentsConfig struct {
+	MaxLive int `json:"max_live"`
+}
+
 type Config struct {
-	Provider            string   `json:"provider"` // backend adapter; model ids are independent
-	Model               string   `json:"model"`
-	Effort              string   `json:"effort"`     // reasoning: low, medium, high
-	WebSearch           bool     `json:"web_search"` // Codex's built-in search, run on OpenAI's side
-	System              string   `json:"system"`
-	ModelIdleTimeoutSec int      `json:"model_idle_timeout_sec"` // model connection silence; <=0 uses 120s
-	TimeoutSec          int      `json:"timeout_sec"`            // per bash command
-	OutputCap           int      `json:"output_cap"`             // bytes of command output sent to the model
-	MapCap              int      `json:"map_cap"`                // bytes of repo map in the system prompt; 0 = off
-	Safe                []string `json:"safe"`                   // commands (or "cmd sub") that run without asking
-	Auto                bool     `json:"auto"`                   // automatically approve command execution
-	MemoryModel         string   `json:"memory_model"`           // cheap model for background memory; "" = chat model, "off" = no automatic saving
-	SummaryMaxTokens    int      `json:"summary_max_tokens"`     // memory summary size, estimated as chars/4
-	TopInstructions     int      `json:"top_instructions"`       // matching instructions sent per message
-	TopGotchas          int      `json:"top_gotchas"`            // matching gotchas sent per message
+	Agents              AgentsConfig `json:"agents"`
+	Provider            string       `json:"provider"` // backend adapter; model ids are independent
+	Model               string       `json:"model"`
+	Effort              string       `json:"effort"`     // reasoning: low, medium, high
+	WebSearch           bool         `json:"web_search"` // Codex's built-in search, run on OpenAI's side
+	System              string       `json:"system"`
+	ModelIdleTimeoutSec int          `json:"model_idle_timeout_sec"` // model connection silence; <=0 uses 120s
+	TimeoutSec          int          `json:"timeout_sec"`            // per bash command
+	OutputCap           int          `json:"output_cap"`             // bytes of command output sent to the model
+	MapCap              int          `json:"map_cap"`                // bytes of repo map in the system prompt; 0 = off
+	Safe                []string     `json:"safe"`                   // commands (or "cmd sub") that run without asking
+	Auto                bool         `json:"auto"`                   // automatically approve command execution
+	MemoryModel         string       `json:"memory_model"`           // cheap model for background memory; "" = chat model, "off" = no automatic saving
+	SummaryMaxTokens    int          `json:"summary_max_tokens"`     // memory summary size, estimated as chars/4
+	TopInstructions     int          `json:"top_instructions"`       // matching instructions sent per message
+	TopGotchas          int          `json:"top_gotchas"`            // matching gotchas sent per message
 
 	TopKnowledge         int    `json:"top_knowledge"`          // matching facts and decisions per kind
 	MemoryMaxTokens      int    `json:"memory_max_tokens"`      // total injected memory budget, estimated as chars/4
@@ -35,6 +42,7 @@ type Config struct {
 
 // Short and fixed on purpose: short = fast, fixed = cacheable.
 var Defaults = Config{
+	Agents:    AgentsConfig{MaxLive: 50},
 	Provider:  "codex",
 	Model:     "gpt-6-luna",
 	Effort:    "medium",
@@ -55,7 +63,7 @@ var Defaults = Config{
 	Safe: []string{
 		"rg", "grep", "cat", "head", "tail", "ls", "wc", "sed", "find", "pwd", "file", "tree", "echo", "printf",
 		"git status", "git diff", "git log", "git show",
-		"kh peek", "kh agents",
+		"kh peek", "kh inspect", "kh stats", "kh agents",
 	},
 	Auto:             true,
 	SummaryMaxTokens: 2500,
@@ -93,6 +101,9 @@ func Load() (Config, error) {
 	// Decoding onto the defaults only replaces fields present in the file.
 	if err := json.Unmarshal(b, &c); err != nil {
 		return c, fmt.Errorf("%s: %w", path, err)
+	}
+	if c.Agents.MaxLive < 1 {
+		return c, fmt.Errorf("%s: agents.max_live must be at least 1 (including the root)", path)
 	}
 	return c, nil
 }

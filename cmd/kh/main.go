@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"kh/internal/backend"
@@ -32,6 +33,9 @@ func main() {
 		exit(visual.GuardianMain())
 		return
 	}
+	// Claim a spawned process before configuration, rebuilding or any task
+	// work, so startup failures cannot leave an untracked launch behind.
+	exit(claimInheritedStartup(context.Background()))
 	cfg, err := config.Load()
 	configErr := err
 	if configErr != nil {
@@ -122,7 +126,7 @@ func main() {
 			}
 			exit(clipboardPaste(args[1]))
 			return
-		case "spawn", "send", "peek", "agents":
+		case "spawn", "send", "peek", "inspect", "agents", "stats", "set_role", "stop":
 			exit(agentCommand(args, cfg))
 			return
 		case "memory":
@@ -130,12 +134,21 @@ func main() {
 			return
 		}
 	}
+	// Reject unreserved inherited chat startup before rebuilding or attaching
+	// a fresh tmux session; the tmux server must not erase authoritative scope.
+	if currentEcosystem == nil && (os.Getenv("KH_ECOSYSTEM_ID") != "" || os.Getenv("KH_ECOSYSTEM_AGENT_ID") != "") {
+		exit(fmt.Errorf("scoped kh startup requires a spawn reservation; use native agents or /new for an independent user chat"))
+	}
 	if *printOnly && *stay {
 		exit(fmt.Errorf("-p cannot be combined with -i"))
 	}
 	if *printOnly && strings.TrimSpace(strings.Join(args, " ")) == "" {
 		exit(fmt.Errorf("usage: kh -p \"task\""))
 	}
+	// Native stop cancels startup/rebuild and running tool process groups,
+	// then exits. Ctrl-C remains a per-turn cancellation below.
+	ctx, shutdown := signal.NotifyContext(ctx, syscall.SIGTERM)
+	defer shutdown()
 	interactive := !*printOnly
 	// Build before handing a terminal to tmux so compiler failures remain
 	// visible. The newly created main pane consumes a one-time skip marker;
@@ -145,7 +158,7 @@ func main() {
 	stop()
 	exit(err)
 	if interactive && os.Getenv("TMUX") == "" && chatTerminal() {
-		exit(attachChat(os.Args[1:], rebuilt))
+		exit(attachChat(ctx, os.Args[1:], rebuilt))
 		return
 	}
 
@@ -159,6 +172,38 @@ func main() {
 		defer clearImagePastePane()
 	}
 
+	if *resume {
+		*id, err = session.Latest()
+		exit(err)
+	}
+	resuming := *id != ""
+	var saved session.Record
+	if resuming {
+		b, err := session.Load(*id)
+		exit(err)
+		saved, err = session.Decode(b)
+		exit(err)
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name == "provider" && cfg.Provider != saved.Provider {
+				exit(fmt.Errorf("session uses provider %q, not %q", saved.Provider, cfg.Provider))
+			}
+		})
+		cfg.Provider = saved.Provider
+	} else {
+		*id = session.New()
+		name := strings.TrimPrefix(os.Getenv("KH_AGENT"), "kh:")
+		if currentEcosystem != nil {
+			name = currentEcosystem.self.Name
+		}
+		saved.Identity = session.NewIdentity(os.Getenv("KH_PARENT"), name)
+	}
+	if os.Getenv("TMUX") != "" && chatTerminal() {
+		exit(nameChatPane())
+	}
+	eco, err := startEcosystem(ctx, cfg, *id, resuming)
+	exit(err)
+	defer eco.store.Close()
+
 	db, err := memory.Open(memory.Path())
 	exit(err)
 	defer db.Close()
@@ -169,7 +214,7 @@ func main() {
 	var learner *learn.Learner
 	// Delegated task prompts are not user preferences. Workers read shared
 	// memory, but only user-facing chats learn durable knowledge.
-	if cfg.MemoryModel != "off" && os.Getenv("KH_PARENT") == "" {
+	if cfg.MemoryModel != "off" && eco.self.ParentID == "" && os.Getenv("KH_PARENT") == "" {
 		learner = learn.New(db, repoScope, owner, hookModel(cfg), cfg.SummaryMaxTokens*4)
 		// Give queued hooks time to finish so a one-shot task's lesson is kept.
 		defer func() {
@@ -182,12 +227,9 @@ func main() {
 	defer console.Close()
 	stdout, stderr := console.Stdout(), console.Stderr()
 	ui := terminal.NewRenderer(stdout, stderr)
-	if os.Getenv("TMUX") != "" {
-		exit(nameChatPane())
-	}
-	activityName := "kh"
-	if self, err := address(); err == nil {
-		activityName = strings.TrimPrefix(self, "kh:")
+	activityName := eco.self.Name
+	if activityName == "" {
+		activityName = "kh"
 	}
 	ui.Activity = terminal.NewActivity(os.Stdout, activityName)
 	defer ui.Activity.Close()
@@ -211,39 +253,21 @@ func main() {
 	defer closeMCP()
 	exit(err)
 	ts = append(ts, mcpTools...)
-	if *resume {
-		*id, err = session.Latest()
-		exit(err)
-	}
-	var saved session.Record
-	if *id != "" {
-		b, err := session.Load(*id)
-		exit(err)
-		saved, err = session.Decode(b)
-		exit(err)
-		flag.Visit(func(f *flag.Flag) {
-			if f.Name == "provider" && cfg.Provider != saved.Provider {
-				exit(fmt.Errorf("session uses provider %q, not %q", saved.Provider, cfg.Provider))
-			}
-		})
-		cfg.Provider = saved.Provider
-	}
+	ts = eco.decorateTools(ts)
 	chatConfig := cfg
+	chatConfig.System += ecosystemInstructions(eco)
 	if project.Prompt != "" {
 		chatConfig.System += "\n\nStarting-directory context for " + cwd + ": location-specific guidance applies only within its source workspace/subtree, not to unrelated target repositories. Use workspace inspect for each target's applicable context.\n" + project.Prompt
 	}
 	p, err := backend.New(chatConfig, repomap.Build(".", cfg.MapCap), ts, ui)
 	exit(err)
-	if *id != "" {
+	if resuming {
 		exit(p.Load(saved.State))
 		if interactive {
 			fmt.Fprintf(stdout, "--- session %s ---\n", *id)
 			p.Replay(terminal.NewRenderer(stdout, stdout))
 			fmt.Fprintln(stdout, "---")
 		}
-	} else {
-		*id = session.New()
-		saved.Identity = session.NewIdentity(os.Getenv("KH_PARENT"), strings.TrimPrefix(os.Getenv("KH_AGENT"), "kh:"))
 	}
 
 	exportModel(p, cfg.Provider)
@@ -273,15 +297,11 @@ func main() {
 	task := strings.Join(args, " ")
 	if task != "" && !interactive {
 		err := turn(task)
-		// A spawned agent's pane closes when kh exits. On failure stay in chat
-		// instead, so the error stays visible and the agent can be steered.
-		if err == nil || os.Getenv("KH_PARENT") == "" {
-			exit(err)
-			fmt.Fprintf(stderr, "(session %s: kh -r to continue)\n", *id)
-			return
-		}
-		fmt.Fprintln(stderr, "error:", err)
-		task = ""
+		// Failed one-shot panes may remain visible, but never retain a live
+		// interactive agent process or a capacity slot just to display an error.
+		exit(err)
+		fmt.Fprintf(stderr, "(session %s: kh -r to continue)\n", *id)
+		return
 	}
 	model, effort := p.Use("", "")
 	fmt.Fprintf(stderr, "kh chat, session %s (%s, %s). Type while it works to steer. Ctrl-C stops a task, Ctrl-D quits, /help for commands.\n", *id, model, effort)
@@ -292,7 +312,16 @@ func main() {
 		}
 	}
 	for {
-		line, ok := <-console.Lines
+		var line string
+		var ok bool
+		select {
+		case <-ctx.Done():
+			return
+		case line, ok = <-console.Lines:
+		}
+		if ctx.Err() != nil {
+			return
+		}
 		if !ok { // Ctrl-D
 			fmt.Fprintln(stdout)
 			return
@@ -425,6 +454,17 @@ func applyAuto(policy *tools.ApprovalPolicy, enabled bool) {
 
 func exit(err error) {
 	if err != nil {
+		if currentEcosystem != nil {
+			// Startup/configuration failures can precede chat.turn; still retain
+			// their diagnostic after the one-shot pane closes.
+			if self, readErr := currentEcosystem.store.Get(context.Background(), currentEcosystem.self.ID); readErr == nil && self.Conclusion == "" {
+				status := "process failed"
+				if self.ParentID != "" {
+					status = "Failed: " + err.Error()
+				}
+				_ = currentEcosystem.store.PublishConclusion(context.Background(), self.ID, status)
+			}
+		}
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

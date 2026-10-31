@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"syscall"
@@ -12,6 +13,7 @@ import (
 	"github.com/chzyer/readline"
 
 	"kh/internal/config"
+	"kh/internal/ecosystem"
 	"kh/internal/session"
 	"kh/internal/terminal"
 	"kh/internal/tools"
@@ -20,7 +22,9 @@ import (
 // The CLI and native tool share one transport; no shell or recursive kh launch
 // is needed to send, inspect, or create an agent (only the new agent runs kh).
 func agentCommand(args []string, cfg config.Config) error {
-	out, err := agentOperation(context.Background(), args, cfg)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	out, err := agentOperation(ctx, args, cfg)
 	if err == nil && out != "" {
 		fmt.Println(out)
 	}
@@ -51,6 +55,14 @@ func agentTool(cfg config.Config, action func(string), policy *tools.ApprovalPol
 			args = []string{"peek", request.Address}
 		case "list":
 			args = []string{"agents"}
+		case "stats":
+			args = []string{"stats"}
+		case "inspect":
+			args = []string{"inspect", request.Address}
+		case "set_role":
+			args = []string{"set_role", request.Role}
+		case "stop":
+			args = []string{"stop", request.Address, request.Scope}
 		}
 		active := cfg
 		if policy != nil {
@@ -78,7 +90,9 @@ func agentTool(cfg config.Config, action func(string), policy *tools.ApprovalPol
 	return tool
 }
 
-func agentOperation(ctx context.Context, args []string, cfg config.Config) (string, error) {
+// agentTransport owns only tmux creation and isolated peer input. All admission
+// and address resolution happen through the persistent registry.
+func (e *ecosystemRuntime) agentTransport(ctx context.Context, args []string, cfg config.Config) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -94,10 +108,7 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 		if len(args) != 3 || !agentName.MatchString(args[1]) || args[1] == "main" || strings.TrimSpace(args[2]) == "" {
 			return "", fmt.Errorf("usage: kh spawn [--keep] <name> <task> (name cannot be main)")
 		}
-		parent, err := agentAddress(ctx)
-		if err != nil {
-			return "", err
-		}
+		parent := e.self.Address
 		panes, err := agentPanesContext(ctx)
 		if err != nil {
 			return "", err
@@ -108,9 +119,6 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 		}
 		window := ""
 		for _, pane := range panes {
-			if pane.name == args[1] {
-				return "", fmt.Errorf("agent kh:%s already exists", pane.name)
-			}
 			if pane.id == current {
 				window = pane.window
 			}
@@ -142,15 +150,52 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 			command = append(command, "-p")
 		}
 		command = append(command, args[2])
-		pane, err := tmuxContext(ctx, "set-option", "-p", "-t", current, "@kh_name", strings.TrimPrefix(parent, "kh:"), ";",
-			"split-window", direction, "-d", "-P", "-F", "#{pane_id}", "-t", target, "-c", cwd,
-			"-e", "KH_PARENT="+parent, "-e", "KH_AGENT=kh:"+args[1], sessionCommand(false, command...))
+		reservation, ok := ctx.Value(spawnReservationKey{}).(ecosystem.Reservation)
+		if !ok {
+			return "", fmt.Errorf("spawn requires an ecosystem reservation")
+		}
+		// Ignore cancellation during the short tmux launch: killing the tmux
+		// client leaves creation ambiguous and cannot justify releasing a slot.
+		attempt, _ := ctx.Value(spawnAttemptKey{}).(*spawnAttempt)
+		if attempt != nil {
+			attempt.attempted = true
+		}
+		pane, err := tmuxContext(context.WithoutCancel(ctx), "split-window", direction, "-d", "-P", "-F", "#{pane_id}", "-t", target, "-c", cwd,
+			"-e", "KH_PARENT="+parent, "-e", "KH_AGENT="+reservation.Agent.Address,
+			"-e", "KH_ECOSYSTEM_ID="+reservation.Agent.EcosystemID,
+			"-e", "KH_ECOSYSTEM_AGENT_ID="+reservation.Agent.ID,
+			"-e", "KH_ECOSYSTEM_TOKEN="+reservation.Token,
+			"tmux set-option -p -t \"$TMUX_PANE\" remain-on-exit failed && exec "+sessionCommand(false, command...))
 		if err != nil {
 			return "", err
 		}
+		if attempt != nil {
+			attempt.created = true
+		}
+		// Record the pane process even if kh fails before its early Claim.
+		pidText, pidErr := tmuxContext(context.WithoutCancel(ctx), "display-message", "-p", "-t", pane, "#{pane_pid}")
+		if pidErr == nil {
+			if pid, err := strconv.Atoi(pidText); err == nil {
+				if process, err := ecosystem.ProcessForPID(pid); err == nil {
+					_ = e.store.ObserveLaunch(context.WithoutCancel(ctx), reservation.Agent.ID, reservation.Token, process, ecosystem.PaneInfo{PaneID: pane})
+					if observed, err := e.store.Get(context.WithoutCancel(ctx), reservation.Agent.ID); err == nil && observed.State == ecosystem.Stopping {
+						_, _ = e.stop(context.WithoutCancel(ctx), reservation.Agent.Address, "agent")
+					}
+				} else if os.IsNotExist(err) {
+					// An exec failure can exit before kh gets to Claim. A dead
+					// pane proves this launch cannot later claim its ticket.
+					dead, _ := tmuxContext(context.WithoutCancel(ctx), "display-message", "-p", "-t", pane, "#{pane_dead}")
+					if dead == "1" {
+						_ = e.store.FailLaunch(context.WithoutCancel(ctx), reservation.Agent.ID, reservation.Token, true)
+					}
+				}
+			}
+		}
 		// Batch metadata and layout into a single round trip. Detached creation
 		// and title-only select-pane preserve the user's focus and current tab.
-		_, err = tmuxContext(ctx,
+		_, err = tmuxContext(context.WithoutCancel(ctx),
+			"set-option", "-p", "-t", pane, "@kh_ecosystem", reservation.Agent.EcosystemID, ";",
+			"set-option", "-p", "-t", pane, "@kh_agent_id", reservation.Agent.ID, ";",
 			"set-option", "-p", "-t", pane, "@kh_name", args[1], ";",
 			"select-pane", "-t", pane, "-T", args[1], ";",
 			"set-option", "-w", "-t", pane, "pane-border-status", "top", ";",
@@ -165,10 +210,14 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 		if len(args) != 3 || !validAddress(args[1]) || strings.TrimSpace(args[2]) == "" || strings.IndexFunc(args[2], unicode.IsControl) >= 0 {
 			return "", fmt.Errorf("usage: kh send kh:<name> <single-line message>")
 		}
-		pane, err := findAgentPane(ctx, strings.TrimPrefix(args[1], "kh:"))
+		receiver, err := e.store.Resolve(ctx, e.self.EcosystemID, args[1])
 		if err != nil {
 			return "", err
 		}
+		if !receiver.State.Live() || !receiver.Process.Valid() || receiver.Pane.PaneID == "" {
+			return "", fmt.Errorf("%s has no live receiver", receiver.Address)
+		}
+		pane := receiver.Pane.PaneID
 		// Never fall back to raw keys: a legacy receiver would append them to
 		// the human draft. The PID also rejects markers left by a crashed chat.
 		capability, err := tmuxContext(ctx, "display-message", "-p", "-t", pane, "#{@kh_peer_input}")
@@ -179,10 +228,11 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 		if parseErr != nil || pid <= 0 || syscall.Kill(pid, 0) != nil {
 			return "", fmt.Errorf("%s is not ready for isolated peer input; wait if it is starting, or restart it onto the new build", args[1])
 		}
-		sender, err := agentAddress(ctx)
-		if err != nil {
-			return "", err
+		identity, err := ecosystem.ProcessForPID(pid)
+		if err != nil || identity != receiver.Process {
+			return "", fmt.Errorf("%s is not ready for isolated peer input: receiver identity changed", args[1])
 		}
+		sender := e.self.Address
 		// Attribution also prevents a peer's "yes" from answering a bash approval.
 		// Hex-byte transport preserves UTF-8 and literal trailing semicolons:
 		// tmux otherwise interprets a final ';' as a command separator, even
@@ -197,32 +247,6 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 		}
 		_, err = tmuxContext(ctx, keys...)
 		return "sent to " + args[1], err
-	case "peek":
-		if len(args) != 2 || !validAddress(args[1]) {
-			return "", fmt.Errorf("usage: kh peek kh:<name>")
-		}
-		pane, err := findAgentPane(ctx, strings.TrimPrefix(args[1], "kh:"))
-		if err != nil {
-			return "", err
-		}
-		return tmuxContext(ctx, "capture-pane", "-p", "-t", pane, "-S", "-25")
-	case "agents":
-		if len(args) != 1 {
-			return "", fmt.Errorf("usage: kh agents")
-		}
-		panes, err := agentPanesContext(ctx)
-		if err != nil {
-			return "", err
-		}
-		var out strings.Builder
-		for _, pane := range panes {
-			state := pane.state
-			if state == "" {
-				state = "unknown"
-			}
-			fmt.Fprintf(&out, "kh:%s  %s\n", pane.name, state)
-		}
-		return strings.TrimSuffix(out.String(), "\n"), nil
 	}
 	return "", fmt.Errorf("unknown agent command: %s", args[0])
 }
@@ -286,7 +310,8 @@ func openChatPane(ctx context.Context, cfg config.Config, c *chat, fork bool) (s
 		command = append(command, "-s", id)
 	}
 	pane, err := tmuxContext(ctx, "split-window", "-h", "-P", "-F", "#{pane_id}", "-t", current, "-c", cwd,
-		"-e", "KH_PARENT=", "-e", "KH_AGENT=kh:"+name, sessionCommand(false, command...))
+		"-e", "KH_PARENT=", "-e", "KH_AGENT=kh:"+name,
+		"-e", "KH_ECOSYSTEM_ID=", "-e", "KH_ECOSYSTEM_AGENT_ID=", "-e", "KH_ECOSYSTEM_TOKEN=", sessionCommand(false, command...))
 	if err != nil {
 		return "", err
 	}
@@ -302,19 +327,6 @@ func openChatPane(ctx context.Context, cfg config.Config, c *chat, fork bool) (s
 		return fmt.Sprintf("forked to right pane %s (session %s, address kh:%s)", name, id, name), nil
 	}
 	return fmt.Sprintf("opened new session in right pane %s (address kh:%s)", name, name), nil
-}
-
-func findAgentPane(ctx context.Context, name string) (string, error) {
-	panes, err := agentPanesContext(ctx)
-	if err != nil {
-		return "", err
-	}
-	for _, pane := range panes {
-		if pane.name == name {
-			return pane.id, nil
-		}
-	}
-	return "", fmt.Errorf("agent kh:%s not found", name)
 }
 
 // Advertise only a live terminal receiver, not redirected children sharing its
@@ -352,6 +364,9 @@ func nameChatPane() error {
 		return err
 	}
 	name := strings.TrimPrefix(os.Getenv("KH_AGENT"), "kh:")
+	if currentEcosystem != nil {
+		name = currentEcosystem.self.Name
+	}
 	if !agentName.MatchString(name) {
 		name = "main"
 	}

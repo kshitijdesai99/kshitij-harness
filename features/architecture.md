@@ -12,6 +12,7 @@ Use this map to find the owning package; linked feature pages explain behavior a
 | [`internal/agent`](../internal/agent/) | Model/tool turn orchestration | [Execution loop](execution.md) |
 | [`internal/backend`](../internal/backend/) | Provider construction and selection | [Provider state](provider-state.md) |
 | [`internal/config`](../internal/config/) | Defaults and persisted configuration | [Model settings](model-settings.md) |
+| [`internal/ecosystem`](../internal/ecosystem/) | Shared agent directory, transactional admission and process lifecycle | [Native agents](native-agents.md), [worker lifecycle](worker-lifecycle.md) |
 | [`internal/help`](../internal/help/) | Standalone help requests | [Help](help.md) |
 | [`internal/hybrid`](../internal/hybrid/) | Managed local retrieval services | [Hybrid runtime](hybrid-runtime.md) |
 | [`internal/image`](../internal/image/) | Image attachment reading and clipboard snapshots | [Images](images.md) |
@@ -34,6 +35,16 @@ The [CLI](../cmd/kh/main.go) selects configuration, opens stores, and assembles 
 [Memory overview SVG](../diagrams/memory-architecture.svg): recall supplies the answer path; selective learning saves useful knowledge in the background. See [knowledge storage](knowledge-store.md) for database details.
 
 The [execution loop](execution.md) runs tool batches concurrently and returns results in call order. Shared files require explicit dependency coordination. See [learning hooks](learning-hooks.md) for message timing and [native agents](native-agents.md) for delegation.
+
+## Agent ecosystem
+
+![Recursive delegation with a shared registry and one capacity budget](../diagrams/agent-coordination.svg)
+
+[Coordination SVG](../diagrams/agent-coordination.svg): the root remains manager; descendants default to worker and may promote themselves to delegate. Parent links record ownership, not communication permissions. All participants discover and coordinate within the same ecosystem; one shared live-agent budget prevents recursive capacity multiplication. [Native agents](native-agents.md) owns the tool contract; [worker lifecycle](worker-lifecycle.md) owns capacity, stop and recovery behavior.
+
+The SQLite registry at `~/.kh/ecosystem.db` stores shared coordination state. The root initializes and refreshes the configured limit on genuine user turns and resume; descendants and peer messages cannot override it. Lower limits block new admission without killing existing agents.
+
+Each agent retains its own provider conversation. Shared first-line task summaries (at most 280 runes) and bounded conclusions do not expose raw multiline task prompts or full histories. Project files and memory remain shared resources, so file ownership and verification are still explicit responsibilities.
 
 ## Provider-owned history
 

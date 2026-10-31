@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"kh/internal/ecosystem"
 	"kh/internal/image"
 )
 
@@ -52,6 +53,9 @@ func currentPane(ctx context.Context) (string, error) {
 func address() (string, error) { return agentAddress(context.Background()) }
 
 func agentAddress(ctx context.Context) (string, error) {
+	if value, ok := registryAddress(); ok {
+		return value, nil
+	}
 	pane, err := currentPane(ctx)
 	if err != nil {
 		return "", err
@@ -113,6 +117,13 @@ func agentPanesContext(ctx context.Context) ([]namedPane, error) {
 }
 
 func setAgentState(state string) {
+	if currentEcosystem != nil {
+		s := ecosystem.Idle
+		if state == "busy" {
+			s = ecosystem.Running
+		}
+		_ = currentEcosystem.store.Heartbeat(context.Background(), currentEcosystem.self.ID, currentEcosystem.process, s)
+	}
 	if os.Getenv("TMUX") != "" {
 		pane, err := currentPane(context.Background())
 		if err == nil {
@@ -219,7 +230,7 @@ func chatTerminal() bool {
 	return in != nil && out != nil && in.Mode()&os.ModeCharDevice != 0 && out.Mode()&os.ModeCharDevice != 0
 }
 
-func attachChat(args []string, rebuilt bool) error {
+func attachChat(ctx context.Context, args []string, rebuilt bool) error {
 	if os.Getenv("TMUX") != "" {
 		return nil
 	}
@@ -256,7 +267,7 @@ func attachChat(args []string, rebuilt bool) error {
 	if _, err = tmux("set-option", "-w", "-t", pane, "pane-border-format", " #{pane_title} "); err != nil {
 		return err
 	}
-	cmd := exec.Command("tmux", "attach-session", "-t", "="+name)
+	cmd := exec.CommandContext(ctx, "tmux", "attach-session", "-t", "="+name)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
 }

@@ -1,26 +1,30 @@
-# Native workers
+# Native agent ecosystem
 
-Delegate independent tasks asynchronously while keeping parent and peer coordination visible.
+Delegate independent tasks recursively, with one shared directory and capacity budget.
 
 Introduced **2026-09-29** · commit `277c243` (tmux sub-agent commands).
 
 ## Current behavior
 
-- The native `agents` tool supports `spawn`, `send`, `peek`, and `list`; spawning returns immediately and opens a named tmux pane.
-- Workers use addresses such as `kh:review` to report to their parent or coordinate directly with peers.
+- The root session is a fixed manager. Descendants start as workers and can change their own role with `set_role` (`role: manager` or `worker`). Only managers can `spawn`; promotion enables recursive delegation without creating another capacity allowance.
+- `spawn` takes `name` and `task`, returns without waiting for task completion, and opens a named tmux pane. Use `keep: true` for follow-up work.
+- `list` discovers the ecosystem directory; `stats` reports shared live-session, manager/worker and capacity counts. Use returned stable `kh:<id>` addresses for coordination. Short `kh:<name>` aliases resolve within the current ecosystem, not across unrelated roots.
+- Any participant can `send` a single-line message to another agent in the same ecosystem, regardless of ownership branch or role.
+- `inspect` returns safe shared details, a first-line task summary capped at 280 runes, and bounded conclusions. `peek` is an alias for that safe view, not a capture of private pane output or full conversation history.
+- `stop` takes an `address` and optional `scope: agent` (default) or `subtree`. See [lifecycle and capacity](worker-lifecycle.md) for stop accounting and safeguards.
 - Workers share project files, not isolated worktrees. There is no dependency scheduler; assign independent files or coordinate overlapping edits explicitly.
 - Peer messages are attributed and displayed distinctly from human input; they are not human approval responses and [do not submit or modify the user's draft](input.md#peer-messages-and-drafts). Workers retrieve shared memory without learning delegated prompts as user instructions; see [learning-origin filtering](learning-origin.md).
 - See [worker lifecycle](worker-lifecycle.md) for successful/failed pane behavior, `keep`, and inherited policy.
 
 ## Coordination diagram
 
-![Human directs a manager; workers spawn without waiting and send independently of the human draft. All share project files.](../diagrams/agent-coordination.svg)
+![Human directs the root manager; a promoted child can spawn recursively. Agents share a registry and budget, not full histories.](../diagrams/agent-coordination.svg)
 
-Solid arrows show direction or spawn, not completion. Dashed arrows show `send` to a parent or peer; dotted lines show shared file access. Assign independent ownership; worker reports and pane outcomes still need verification.
+[Coordination SVG](../diagrams/agent-coordination.svg): solid arrows show direction or spawn, not completion; dashed arrows show messages; dotted lines show shared registry access. Ownership is a tree, but messaging, discovery and inspection are ecosystem-wide. Share compact conclusions and evidence deliberately; private conversation histories are not the coordination protocol. Shared files and memory are not security isolation.
 
 ## Human as CEO, main agent as manager
 
-Keep direction and important choices with the human. The main user-facing agent manages the work: plan, delegate implementation and inspection, oversee evidence, resolve conflicts, and present the result. Workers execute their assigned scope, including integration and checks; they are not required to delegate recursively.
+Keep direction and important choices with the human. The main user-facing agent manages the work: plan, delegate implementation and inspection, oversee evidence, resolve conflicts, and present the result. Workers execute their assigned scope, including integration and checks. They may remain workers or promote themselves before delegating; recursion is optional.
 
 This operating guidance does not add a deterministic scheduler or automatic runtime delegation. A useful request is:
 
@@ -44,9 +48,10 @@ The harness provides tools and visibility; the agent remains responsible for cho
 | 2026-10-04 | Added the native `agents` tool and coordinator implementation. | `c8de1bf` |
 | 2026-10-16 | Excluded worker/peer prompts from user-facing memory learning. | `46c225b` |
 | 2026-10-25 | Added isolated peer transport and live receiver checks instead of simulated typing into the human draft. | `dee1c86` |
+| 2026-10-31 | Added recursive roles, a shared registry/capacity budget, ecosystem discovery, safe inspection and stop controls. | Current change |
 
 ## Inspect
 
-[Agents tool](../internal/tools/agents.go) · [Coordinator](../cmd/kh/agents.go) · [Tool tests](../internal/tools/test/agents_test.go)
+[Agents tool](../internal/tools/agents.go) · [Coordinator](../cmd/kh/agents.go) · [Runtime wiring](../cmd/kh/ecosystem.go) · [Registry](../internal/ecosystem/registry.go) · [Tool tests](../internal/tools/test/agents_test.go)
 
 [Feature index](README.md)

@@ -530,7 +530,8 @@ func TestProjectConfigCLI(t *testing.T) {
 		}
 		found = false
 		for _, item := range second.Input {
-			if item["type"] == "function_call_output" && item["call_id"] == "cli-call-0" && item["output"] == "MCP-CLI-roundtrip" {
+			output, _ := item["output"].(string)
+			if item["type"] == "function_call_output" && item["call_id"] == "cli-call-0" && strings.HasPrefix(output, "MCP-CLI-roundtrip\n\n[ecosystem snapshot] ") {
 				found = true
 			}
 		}

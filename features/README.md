@@ -40,8 +40,8 @@ Shared guides: [Architecture](architecture.md) · [Development](development.md) 
 
 | Feature | Introduced | What followed |
 |---|---|---|
-| [Native agents](native-agents.md) | 2026-09-29 | Named routing, native tool, isolated peer transport |
-| [Worker lifecycle and policy](worker-lifecycle.md) | 2026-09-29 | Auto-closing panes and unified approval policy |
+| [Native agents](native-agents.md) | 2026-09-29 | Recursive roles, shared ecosystem registry, safe coordination |
+| [Worker lifecycle and policy](worker-lifecycle.md) | 2026-09-29 | Auto-closing panes, inherited approvals, root-refreshed shared live-agent cap |
 | [External coding CLIs](external-clis.md) | 2026-09-28 | Documented coordination through shell tools |
 
 ## Memory and learning

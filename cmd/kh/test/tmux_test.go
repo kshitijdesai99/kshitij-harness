@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"kh/internal/ecosystem"
 	"kh/internal/terminal"
 )
 
@@ -63,6 +65,7 @@ func testTmuxAgents(t *testing.T, source string) {
 	isolateCLIFixture(t)
 	name := fmt.Sprintf("kh_test_%d", os.Getpid())
 	home := t.TempDir() // spawned kh must not write to the user's real ~/.kh
+	t.Setenv("HOME", home)
 	runTmux := func(args ...string) string {
 		t.Helper()
 		cmd := exec.Command("tmux", append([]string{"-L", name, "-f", "/dev/null"}, args...)...)
@@ -79,7 +82,7 @@ func testTmuxAgents(t *testing.T, source string) {
 	waitConsole := func(pane string) {
 		t.Helper()
 		deadline := time.Now().Add(3 * time.Second)
-		for !strings.Contains(runTmux("capture-pane", "-p", "-t", pane), "CONSOLE_READY") {
+		for runTmux("display-message", "-p", "-t", pane, "#{@kh_peer_input}") == "" || !strings.Contains(runTmux("capture-pane", "-p", "-t", pane), "CONSOLE_READY") {
 			if time.Now().After(deadline) {
 				t.Fatal("console did not become ready")
 			}
@@ -99,6 +102,67 @@ func testTmuxAgents(t *testing.T, source string) {
 	mainPane := runTmux("display-message", "-p", "-t", "kh:main.0", "#{pane_id}")
 	runTmux("set-option", "-p", "-t", mainPane, "@kh_name", "main")
 	waitConsole(mainPane)
+	ctx := context.Background()
+	store, err := ecosystem.Open(ecosystem.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	registerConsole := func(pane, name string, parent *ecosystem.Agent) ecosystem.Agent {
+		t.Helper()
+		pid, err := strconv.Atoi(runTmux("display-message", "-p", "-t", pane, "#{@kh_peer_input}"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		process, err := ecosystem.ProcessForPID(pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		info := ecosystem.PaneInfo{PaneID: pane, SessionID: runTmux("display-message", "-p", "-t", pane, "#{session_id}")}
+		var a ecosystem.Agent
+		if parent == nil {
+			a, err = store.CreateRoot(ctx, ecosystem.RootOptions{Name: name, MaxAgents: 20, Process: process, Pane: info})
+		} else {
+			// Respawning a fixture console creates a new process incarnation;
+			// never retain the failed kh process's identity on its reused pane.
+			deadline := time.Now().Add(3 * time.Second)
+			var reservation ecosystem.Reservation
+			for {
+				if err := store.Reconcile(ctx, parent.EcosystemID, ecosystem.ProbeProcess); err != nil {
+					t.Fatal(err)
+				}
+				reservation, err = store.Reserve(ctx, parent.ID, name, "console transport fixture")
+				if err == nil || time.Now().After(deadline) {
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			if err == nil {
+				err = store.BeginLaunch(ctx, reservation.Agent.ID, reservation.Token, parent.Process)
+			}
+			if err == nil {
+				a, err = store.Claim(ctx, reservation.Agent.ID, reservation.Token, process, info)
+			}
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		runTmux("set-option", "-p", "-t", pane, "@kh_ecosystem", a.EcosystemID, ";", "set-option", "-p", "-t", pane, "@kh_agent_id", a.ID)
+		return a
+	}
+	mainAgent := registerConsole(mainPane, "main", nil)
+	// Pane capture is only a local assertion on this fixture's own console;
+	// public inspect/peek must never return these private transport contents.
+	assertConsole := func(pane, text string) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for !strings.Contains(runTmux("capture-pane", "-p", "-t", pane), text) {
+			if time.Now().After(deadline) {
+				t.Fatalf("console %s did not receive %q", pane, text)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
 	khFrom := func(pane string, args ...string) (string, error) {
 		t.Helper()
 		cmd := exec.Command(binary, args...)
@@ -108,7 +172,7 @@ func testTmuxAgents(t *testing.T, source string) {
 		return string(b), err
 	}
 	kh := func(args ...string) (string, error) { return khFrom(mainPane, args...) }
-	if s, err := kh("agents"); err != nil || !strings.Contains(s, "kh:main  unknown") {
+	if s, err := kh("agents"); err != nil || !strings.Contains(s, "kh:main  running  manager") {
 		t.Fatalf("agents: %q %v", s, err)
 	}
 	// A reused legacy pane must reject delivery instead of corrupting a draft.
@@ -129,16 +193,22 @@ func testTmuxAgents(t *testing.T, source string) {
 	for _, args := range [][]string{{"-provider", "codex"}, {"-p", "-provider", "codex", "nested task"}} {
 		// Both EOF chat and failed one-shot turns inherit the pane environment,
 		// but redirected input/output never own its interactive receiver.
-		_, _ = kh(args...)
+		if out, err := kh(args...); err == nil || !strings.Contains(out, "pane already belongs to a live ecosystem") {
+			t.Fatalf("redirected startup bypassed live-pane admission: %q: %v", out, err)
+		}
 		if got := runTmux("display-message", "-p", "-t", mainPane, "#{@kh_peer_input}"); got != owner {
 			t.Fatalf("redirected child changed receiver: got=%q want=%q", got, owner)
+		}
+		if got := runTmux("display-message", "-p", "-t", mainPane, "#{@kh_agent_id}"); got != mainAgent.ID {
+			t.Fatalf("redirected child changed ecosystem owner: got=%q want=%q", got, mainAgent.ID)
 		}
 	}
 	if s, err := kh("send", "kh:main", "hello from test"); err != nil {
 		t.Fatalf("send: %s %v", s, err)
 	}
-	if s, err := kh("peek", "kh:main"); err != nil || !strings.Contains(s, "hello from test") {
-		t.Fatalf("peek: %q %v", s, err)
+	assertConsole(mainPane, "hello from test")
+	if s, err := kh("peek", "kh:main"); err != nil || !strings.Contains(s, mainAgent.ID) || strings.Contains(s, "hello from test") {
+		t.Fatalf("peek must expose metadata, not pane output: %q %v", s, err)
 	}
 	start := time.Now()
 	if s, err := kh("--auto", "-provider", "codex", "-model", "future-model", "-effort", "low", "spawn", "docs", "hello world"); err != nil {
@@ -175,16 +245,43 @@ func testTmuxAgents(t *testing.T, source string) {
 	if s, err := kh("agents"); err != nil || !strings.Contains(s, "kh:docs") {
 		t.Fatalf("agents after spawn: %q %v", s, err)
 	}
-	if s, err := kh("spawn", "docs", "duplicate"); err == nil {
-		t.Fatalf("accepted duplicate: %q", s)
+	// An unauthenticated one-shot failure may leave a visible dead pane, but
+	// must not keep its kh process (and ecosystem capacity slot) alive.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		a, err := store.Resolve(ctx, mainAgent.EcosystemID, "kh:docs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a.Process.Valid() {
+			alive, err := ecosystem.ProbeProcess(a.Process)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !alive && runTmux("display-message", "-p", "-t", docsPane, "#{pane_dead}") == "1" {
+				if err := store.Reconcile(ctx, mainAgent.EcosystemID, ecosystem.ProbeProcess); err != nil {
+					t.Fatal(err)
+				}
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("failed one-shot retained a live process: %+v", a)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	if s, err := kh("send", "kh:main", "bad\nmessage"); err == nil {
 		t.Fatalf("accepted multiline: %q", s)
 	}
 	// Startup routing is checked above; use a real console as the receiver so
 	// these transport checks need neither provider credentials nor input echo.
+	runTmux("set-option", "-p", "-t", docsPane, "@kh_peer_input", "")
 	runTmux("respawn-pane", "-k", "-t", docsPane, helper)
 	waitConsole(docsPane)
+	docsAgent := registerConsole(docsPane, "docs", &mainAgent)
+	if s, err := kh("spawn", "docs", "duplicate"); err == nil {
+		t.Fatalf("accepted live duplicate: %q", s)
+	}
 	// The invoker's identity must not depend on which pane the user focuses.
 	runTmux("select-pane", "-t", docsPane)
 	if s, err := kh("spawn", "tests", "run isolated tests"); err != nil {
@@ -194,8 +291,10 @@ func testTmuxAgents(t *testing.T, source string) {
 		t.Fatalf("second spawn changed focus: %s", active)
 	}
 	testsPane := runTmux("display-message", "-p", "-t", "kh:main.2", "#{pane_id}")
+	runTmux("set-option", "-p", "-t", testsPane, "@kh_peer_input", "")
 	runTmux("respawn-pane", "-k", "-t", testsPane, helper)
 	waitConsole(testsPane)
+	testsAgent := registerConsole(testsPane, "tests", &mainAgent)
 	if count := runTmux("display-message", "-p", "-t", "kh:main", "#{window_panes}"); count != "3" {
 		t.Fatalf("want three panes: %s", count)
 	}
@@ -205,15 +304,11 @@ func testTmuxAgents(t *testing.T, source string) {
 	if s, err := khFrom(docsPane, "send", "kh:tests", "peer coordination"); err != nil {
 		t.Fatalf("peer send: %q %v", s, err)
 	}
-	if s, err := kh("peek", "kh:tests"); err != nil || !strings.Contains(s, "[from kh:docs] peer coordination") {
-		t.Fatalf("peer message missing: %q %v", s, err)
-	}
+	assertConsole(testsPane, "[from "+docsAgent.Address+"] peer coordination")
 	if s, err := khFrom(testsPane, "send", "kh:main", "yes"); err != nil {
 		t.Fatalf("reply: %q %v", s, err)
 	}
-	if s, err := kh("peek", "kh:main"); err != nil || !strings.Contains(s, "[from kh:tests] yes") {
-		t.Fatalf("reply lacks sender attribution: %q %v", s, err)
-	}
+	assertConsole(mainPane, "[from "+testsAgent.Address+"] yes")
 	// Pane identity, not a window name/index, survives a move and rejoin.
 	runTmux("break-pane", "-d", "-s", docsPane, "-n", "moved")
 	runTmux("join-pane", "-v", "-d", "-s", docsPane, "-t", testsPane)
@@ -226,9 +321,7 @@ func testTmuxAgents(t *testing.T, source string) {
 	if s, err := kh("send", "kh:docs", "direct to joined pane"); err != nil {
 		t.Fatalf("send after join: %q %v", s, err)
 	}
-	if s, err := kh("peek", "kh:docs"); err != nil || !strings.Contains(s, "direct to joined pane") {
-		t.Fatalf("peek after join: %q %v", s, err)
-	}
+	assertConsole(docsPane, "direct to joined pane")
 	if s, err := kh("spawn", "docs", "duplicate after join"); err == nil {
 		t.Fatalf("accepted duplicate after join: %q", s)
 	}
@@ -236,9 +329,7 @@ func testTmuxAgents(t *testing.T, source string) {
 		if s, err := khFrom(docsPane, "send", "kh:main", message); err != nil {
 			t.Fatalf("literal send: %q %v", s, err)
 		}
-		if s, err := kh("peek", "kh:main"); err != nil || !strings.Contains(s, "[from kh:docs] "+message) {
-			t.Fatalf("message altered: %q %v", s, err)
-		}
+		assertConsole(mainPane, "[from "+docsAgent.Address+"] "+message)
 	}
 	if s, err := kh("send", "kh:main", "interrupt\x03"); err == nil {
 		t.Fatalf("accepted terminal control input: %q", s)
@@ -248,18 +339,21 @@ func testTmuxAgents(t *testing.T, source string) {
 	workMain := runTmux("display-message", "-p", "-t", "work:chat.0", "#{pane_id}")
 	runTmux("set-option", "-p", "-t", workMain, "@kh_name", "main")
 	waitConsole(workMain)
+	workAgent := registerConsole(workMain, "main", nil)
 	if s, err := khFrom(workMain, "spawn", "docs", "independent session worker"); err != nil {
 		t.Fatalf("existing session spawn: %q %v", s, err)
 	}
 	workDocs := runTmux("display-message", "-p", "-t", "work:chat.1", "#{pane_id}")
+	runTmux("set-option", "-p", "-t", workDocs, "@kh_peer_input", "")
+	runTmux("respawn-pane", "-k", "-t", workDocs, helper)
+	waitConsole(workDocs)
+	registerConsole(workDocs, "docs", &workAgent)
 	if s, err := khFrom(workDocs, "send", "kh:main", "session-local reply"); err != nil {
 		t.Fatalf("existing session send: %q %v", s, err)
 	}
-	if s, err := khFrom(workMain, "peek", "kh:main"); err != nil || !strings.Contains(s, "session-local reply") {
-		t.Fatalf("reply misrouted: %q %v", s, err)
-	}
-	if s, err := kh("peek", "kh:main"); err != nil || strings.Contains(s, "session-local reply") {
-		t.Fatalf("message leaked across sessions: %q %v", s, err)
+	assertConsole(workMain, "session-local reply")
+	if s := runTmux("capture-pane", "-p", "-t", mainPane); strings.Contains(s, "session-local reply") {
+		t.Fatalf("message leaked across ecosystems: %q", s)
 	}
 	// --keep leaves the worker in chat for follow-up messages.
 	if s, err := khFrom(workMain, "spawn", "--keep", "keeper", "stay for follow-ups"); err != nil {
@@ -278,7 +372,9 @@ func assertTmuxStartupEnvironment(t *testing.T, command, source string) {
 	t.Helper()
 	// tmux quotes and escapes pane_start_command when it contains quotes.
 	if strings.HasPrefix(command, "\"") {
-		decoded, err := strconv.Unquote(command)
+		// tmux uses shell-style dollar escapes, which Go string literals do
+		// not recognise; remove only that quoting layer before decoding.
+		decoded, err := strconv.Unquote(strings.ReplaceAll(command, `\$`, `$`))
 		if err != nil {
 			t.Fatalf("decode tmux launch command %q: %v", command, err)
 		}
