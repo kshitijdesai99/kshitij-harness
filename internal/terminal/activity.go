@@ -19,7 +19,7 @@ type Activity struct {
 	out                     io.Writer
 	name, phase             string
 	liveDescendants         int
-	parent                  bool
+	role                    string
 	enabled, active, closed bool
 	started, updated        time.Time
 	frame                   int
@@ -57,14 +57,19 @@ func activityText(s string) string {
 
 // SetLiveDescendants updates the display name even while idle. The base name
 // remains unchanged, so repeated updates and activity transitions cannot stack
-// suffixes. It shares the renderer lock with spinner writes and Close.
-func (a *Activity) SetLiveDescendants(count int, parent bool) {
+// suffixes. Role is M or W; an empty role clears the label on shutdown.
+// It shares the renderer lock with spinner writes and Close.
+func (a *Activity) SetLiveDescendants(count int, role string) {
+	if role != "M" && role != "W" {
+		role = ""
+	}
+	count = max(0, count)
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.closed || (a.liveDescendants == count && a.parent == parent) {
+	if a.closed || (a.liveDescendants == count && a.role == role) {
 		return
 	}
-	a.liveDescendants, a.parent = max(0, count), parent
+	a.liveDescendants, a.role = count, role
 	if !a.enabled {
 		return
 	}
@@ -75,8 +80,8 @@ func (a *Activity) SetLiveDescendants(count int, parent bool) {
 	}
 }
 func (a *Activity) displayNameLocked() string {
-	if a.parent {
-		return fmt.Sprintf("%s (%d)", a.name, a.liveDescendants)
+	if a.role != "" {
+		return fmt.Sprintf("%s (%d - %s)", a.name, a.liveDescendants, a.role)
 	}
 	return a.name
 }

@@ -11,13 +11,13 @@ import (
 	"kh/internal/ecosystem"
 )
 
-func descendants(t *testing.T, s *ecosystem.Store, id string, want int, parent bool) {
+func descendants(t *testing.T, s *ecosystem.Store, id string, want int, role ecosystem.Role) {
 	t.Helper()
 	readCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	count, gotParent, err := s.LiveDescendants(readCtx, id)
-	if err != nil || count != want || gotParent != parent {
-		t.Fatalf("LiveDescendants(%s) = (%d, %v, %v), want (%d, %v, nil)", id, count, gotParent, err, want, parent)
+	count, gotRole, err := s.LiveDescendants(readCtx, id)
+	if err != nil || count != want || gotRole != role {
+		t.Fatalf("LiveDescendants(%s) = (%d, %v, %v), want (%d, %v, nil)", id, count, gotRole, err, want, role)
 	}
 }
 
@@ -26,7 +26,7 @@ func TestLiveDescendantsStates(t *testing.T) {
 		t.Run(string(state), func(t *testing.T) {
 			s := open(t, filepath.Join(t.TempDir(), "registry.db"))
 			r := root(t, s, 3)
-			descendants(t, s, r.ID, 0, true) // Root displays (0), but never counts itself.
+			descendants(t, s, r.ID, 0, ecosystem.Manager) // Never count self.
 			reservation := reserve(t, s, r, "child")
 			switch state {
 			case ecosystem.Reserved:
@@ -69,8 +69,8 @@ func TestLiveDescendantsStates(t *testing.T) {
 			if state.Live() {
 				want = 1
 			}
-			descendants(t, s, r.ID, want, true)
-			descendants(t, s, reservation.Agent.ID, 0, false)
+			descendants(t, s, r.ID, want, ecosystem.Manager)
+			descendants(t, s, reservation.Agent.ID, 0, ecosystem.Worker)
 		})
 	}
 }
@@ -82,28 +82,28 @@ func TestLiveDescendantsNestedDemotedAndCompletedParents(t *testing.T) {
 	if err := s.SetRole(ctx, manager.ID, ecosystem.Manager); err != nil {
 		t.Fatal(err)
 	}
-	descendants(t, s, manager.ID, 0, true)
+	descendants(t, s, manager.ID, 0, ecosystem.Manager)
 	leaf := claim(t, s, reserve(t, s, manager, "leaf"))
 	reserve(t, s, r, "sibling")
 	// A separate root in the same registry must never contribute to this tree.
 	unrelated := root(t, s, 3)
 	reserve(t, s, unrelated, "unrelated")
-	descendants(t, s, r.ID, 3, true)
-	descendants(t, s, manager.ID, 1, true)
-	descendants(t, s, leaf.ID, 0, false)
+	descendants(t, s, r.ID, 3, ecosystem.Manager)
+	descendants(t, s, manager.ID, 1, ecosystem.Manager)
+	descendants(t, s, leaf.ID, 0, ecosystem.Worker)
 	if err := s.SetRole(ctx, manager.ID, ecosystem.Worker); err != nil {
 		t.Fatal(err)
 	}
-	descendants(t, s, manager.ID, 1, true)
+	descendants(t, s, manager.ID, 1, ecosystem.Worker)
 	if err := s.ConfirmStopped(ctx, manager.ID, manager.Process, "completed ancestor"); err != nil {
 		t.Fatal(err)
 	}
-	descendants(t, s, r.ID, 2, true) // Traverse completed ancestors to their live children.
-	descendants(t, s, manager.ID, 1, true)
+	descendants(t, s, r.ID, 2, ecosystem.Manager) // Traverse completed ancestors to their live children.
+	descendants(t, s, manager.ID, 1, ecosystem.Worker)
 	if err := s.ConfirmStopped(ctx, leaf.ID, leaf.Process, "completed leaf"); err != nil {
 		t.Fatal(err)
 	}
-	descendants(t, s, manager.ID, 0, true) // Keep a parent's visible (0) after completion.
+	descendants(t, s, manager.ID, 0, ecosystem.Worker) // Keep the role after completion.
 	if _, _, err := s.LiveDescendants(ctx, "missing"); !errors.Is(err, ecosystem.ErrNotFound) {
 		t.Fatalf("missing agent: %v", err)
 	}
@@ -137,9 +137,9 @@ func TestLiveDescendantsRejectsInvalidAncestry(t *testing.T) {
 			if _, err := db.Exec("UPDATE agents SET parent_id=? WHERE id=?", parent, branch.ID); err != nil {
 				t.Fatal(err)
 			}
-			descendants(t, s, r.ID, 0, true)
+			descendants(t, s, r.ID, 0, ecosystem.Manager)
 			if kind == "cross-ecosystem" {
-				descendants(t, s, parent, 0, true) // Foreign parent IDs cannot import this subtree.
+				descendants(t, s, parent, 0, ecosystem.Manager) // Foreign parent IDs cannot import this subtree.
 			}
 		})
 	}

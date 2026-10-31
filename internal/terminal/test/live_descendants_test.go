@@ -39,22 +39,27 @@ try:
  expect(b'> ')
  command(b'stop',b'STOPPED')
  command(b'count-three',b'COUNT_THREE')
- assert titles()==[b'test-agent (3)'],titles() # Count changes render while idle.
+ assert titles()==[b'test-agent (3 - M)'],titles() # Count changes render while idle.
  command(b'count-zero',b'COUNT_ZERO')
- assert titles()==[b'test-agent (0)'],titles()
+ assert titles()==[b'test-agent (0 - M)'],titles()
  command(b'count-leaf',b'COUNT_LEAF')
- assert titles()==[b'test-agent'],titles()
+ assert titles()==[b'test-agent (0 - W)'],titles()
+ command(b'count-zero',b'COUNT_ZERO')
+ assert titles()==[b'test-agent (0 - M)'],titles()
  command(b'start',b'STARTED');pump(1.1)
  command(b'count-three',b'COUNT_THREE')
- assert titles() and all(re.match(rb'test-agent \(3\) [|/\\-] working \([1-9][0-9]*s\)$',x) for x in titles()),titles()
+ # An old spinner tick may arrive before the command is read; inspect the settled title.
+ assert titles() and re.match(rb'test-agent \(3 - M\) [|/\\-] working \([1-9][0-9]*s\)$',titles()[-1]),titles()
  command(b'phase',b'PHASE')
- assert titles() and all(b'test-agent (3) ' in x and b'running bash' in x for x in titles()),titles()
+ assert titles() and b'test-agent (3 - M) ' in titles()[-1] and b'running bash' in titles()[-1],titles()
  command(b'count-concurrent',b'COUNT_CONCURRENT')
- assert titles() and re.match(rb'test-agent \(7\) [|/\\-] running bash \([1-9][0-9]*s\)$',titles()[-1]),titles()[-5:]
+ assert titles() and re.match(rb'test-agent \(7 - M\) [|/\\-] running bash \([1-9][0-9]*s\)$',titles()[-1]),titles()[-5:]
  command(b'stop',b'STOPPED')
- assert titles()==[b'test-agent (7)'],titles()
+ assert titles()==[b'test-agent (7 - M)'],titles()
  command(b'count-zero',b'COUNT_ZERO')
- assert titles()==[b'test-agent (0)'],titles()
+ assert titles()==[b'test-agent (0 - M)'],titles()
+ command(b'count-clear',b'COUNT_CLEAR')
+ assert titles()==[b'test-agent'],titles()
  command(b'close',b'CLOSED')
  command(b'count-three',b'COUNT_THREE')
  assert not titles(),titles() # Late polling updates cannot write after Close.

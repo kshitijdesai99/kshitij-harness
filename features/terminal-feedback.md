@@ -10,13 +10,13 @@ Terminal feedback includes activity indicators, distinct commentary/tool/peer st
 
 ## Live descendant counts
 
-Inside tmux, a parent agent's pane label shows a suffix such as `dummy (5)`. It counts **all live descendants**, not just direct children, and excludes the agent itself. The count follows current ownership links, not manager/worker role: a manager demoted to worker can still be a parent. The root and current managers show `(0)` even before spawning; workers with no descendant history have no suffix. A worker that remains a historical parent keeps `(0)` after its descendants finish.
+Inside tmux, every ecosystem agent's pane label shows `name (N - M)` for a manager or `name (N - W)` for a worker, for example `main (5 - M)` or `tests (0 - W)`. N counts **all live descendants**, including managers, not just direct children or worker-role agents, and excludes the agent itself. The count follows current ownership links independently of role: a manager demoted to worker can still have descendants. All ecosystem panes show zero and their role when they have no live descendants, including leaf workers.
 
 The suffix uses the same live states as [capacity accounting](worker-lifecycle.md#roles-and-shared-capacity): reserved, starting, running, idle and stopping. Completed, failed and cancelled agents are excluded. Confirmed exits are reconciled before counting; an ambiguous process identity is not treated as an exit.
 
-Counts refresh automatically about once per second, including while the chat is idle; no new user message or `agents` call is required. Process-probe errors leave uncertain agents counted. A failed count query or tmux update can leave the last displayed count in place rather than presenting an unknown count as zero, so the display can be stale during errors.
+Counts and role labels refresh automatically about once per second, including while the chat is idle and after role switches; no new user message or `agents` call is required. Process-probe errors leave uncertain agents counted. A failed count query or tmux update can leave the last displayed count in place rather than presenting an unknown count as zero, so the display can be stale during errors.
 
-The tmux tab displays the **active pane's** count beside the existing window name, not necessarily the root's count or a fixed window owner's count. Custom raw `window_name` values are preserved; the suffix is presentation, not part of an agent's logical address. Existing window-status styling is retained by decorating top-level `#W` or `#{window_name}` tokens only. Nested format expressions are left untouched; a shell segment (`#(...)`) and the remaining format tail are conservatively left untouched too. A custom format without an eligible name token has no tab suffix. This is tmux pane/tab feedback, not a separate tree view or dashboard.
+The tmux tab displays the **active pane's** count and role beside the existing window name, not necessarily the root's or a fixed window owner's. Custom raw `window_name` values are preserved; the suffix is presentation, not part of an agent's logical address. Existing window-status styling is retained by decorating top-level `#W` or `#{window_name}` tokens only. Nested format expressions are left untouched; a shell segment (`#(...)`) and the remaining format tail are conservatively left untouched too. A custom format without an eligible name token has no tab suffix. This is tmux pane/tab feedback, not a separate tree view or dashboard.
 
 On normal shutdown, kh restores the activity label's unsuffixed name and attempts to clear the pane count only if it still owns the pane. The composed window-status format remains installed but is inert for panes without a count, avoiding replacement of another pane's decoration or later theme changes.
 
@@ -29,7 +29,7 @@ On normal shutdown, kh restores the activity label's unsuffixed name and attempt
 | 2026-10-16 | Styled commentary and turn statistics separately. | `efde4fb` |
 | 2026-10-16 | Unified tool and peer-message styling. | `7cf70cf` |
 | 2026-10-16 | Made chat URLs clickable. | `cf2024c` |
-| 2026-10-31 | Added idle-refreshing parent pane/tab suffixes counting all live descendants, excluding self. | Current change |
+| 2026-10-31 | Added idle-refreshing pane/tab suffixes counting all live descendants, excluding self, then role labels (`N - M`/`N - W`) for every ecosystem pane including leaf workers. | Current change |
 
 ## Inspect
 

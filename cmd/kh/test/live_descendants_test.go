@@ -56,9 +56,9 @@ func TestLiveDescendantsIdleTmux(t *testing.T) {
 		}
 	}
 	value := func(pane, format string) string { return f.runTmux("display-message", "-p", "-t", pane, format) }
-	count := func(pane string, n int) {
+	count := func(pane string, n int, role string) {
 		t.Helper()
-		want := strconv.Itoa(n)
+		want := strconv.Itoa(n) + " - " + role
 		wait("idle pane count "+pane+"="+want, func() (string, bool) { got := value(pane, "#{@kh_live_descendants}"); return got, got == want })
 		wait("idle title count "+pane+"="+want, func() (string, bool) {
 			got := value(pane, "#{pane_title}")
@@ -70,7 +70,7 @@ func TestLiveDescendantsIdleTmux(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	count(rootPane, 0)
+	count(rootPane, 0, "M")
 	// The format must retain whitespace and literal escaped tokens exactly.
 	statusFormat := func(pane, option string) string {
 		t.Helper()
@@ -88,12 +88,12 @@ func TestLiveDescendantsIdleTmux(t *testing.T) {
 	}
 	// display-message expands a supplied status format just as the status line does.
 	rendered := value(rootPane, format)
-	if rendered != "literal=#W/#{window_name} name=My custom tab (0)" {
+	if rendered != "literal=#W/#{window_name} name=My custom tab (0 - M)" {
 		t.Fatalf("rendered custom format: %q", rendered)
 	}
 	originalFormat := format
 	currentFormat := statusFormat(rootPane, "window-status-current-format")
-	if got := value(rootPane, currentFormat); got != "YES My custom tab (0)" {
+	if got := value(rootPane, currentFormat); got != "YES My custom tab (0 - M)" {
 		t.Fatalf("nested format comparison changed semantics: %q (%q)", got, currentFormat)
 	}
 	reservation, err := store.Reserve(ctx, root.ID, "manager", "idle manager fixture")
@@ -114,15 +114,23 @@ func TestLiveDescendantsIdleTmux(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A leaf omits a zero count. Promotion adds it without a model turn.
-	if got := value(managerPane, "#{@kh_live_descendants}"); got != "" {
-		t.Fatalf("plain leaf has counter %q", got)
+	// Leaf zeroes and unchanged-count role switches refresh without model turns.
+	count(managerPane, 0, "W")
+	for _, role := range []ecosystem.Role{ecosystem.Manager, ecosystem.Worker, ecosystem.Manager} {
+		if err := store.SetRole(ctx, manager.ID, role); err != nil {
+			t.Fatal(err)
+		}
+		label := "M"
+		if role == ecosystem.Worker {
+			label = "W"
+		}
+		count(managerPane, 0, label)
+		got := value(managerPane, statusFormat(managerPane, "window-status-current-format"))
+		if !strings.Contains(got, "Manager custom tab (0 - "+label+")") {
+			t.Fatalf("idle role switch not reflected in tab: %q", got)
+		}
 	}
-	if err := store.SetRole(ctx, manager.ID, ecosystem.Manager); err != nil {
-		t.Fatal(err)
-	}
-	count(managerPane, 0)
-	count(rootPane, 1)
+	count(rootPane, 1, "M")
 	// This window inherits tmux's defaults rather than an explicit local format.
 	inherited := f.runTmux("show-options", "-A", "-w", "-v", "-t", managerPane, "window-status-current-format")
 	if !strings.Contains(inherited, "@kh_live_descendants") {
@@ -132,9 +140,9 @@ func TestLiveDescendantsIdleTmux(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	count(rootPane, 2)
-	count(managerPane, 1)
-	if got := value(rootPane, currentFormat); got != "YES My custom tab (2)" {
+	count(rootPane, 2, "M")
+	count(managerPane, 1, "M")
+	if got := value(rootPane, currentFormat); got != "YES My custom tab (2 - M)" {
 		t.Fatalf("nested comparison/count update: %q", got)
 	}
 	if got := value(rootPane, "#{window_name}"); got != "My custom tab" {
@@ -146,12 +154,12 @@ func TestLiveDescendantsIdleTmux(t *testing.T) {
 	if err := store.SetRole(ctx, manager.ID, ecosystem.Worker); err != nil {
 		t.Fatal(err)
 	}
-	count(managerPane, 1) // Historical parents keep their label after demotion.
+	count(managerPane, 1, "W") // Role changes do not alter the descendant count.
 	if err := store.CancelReservation(ctx, nested.Agent.ID, nested.Token); err != nil {
 		t.Fatal(err)
 	}
-	count(rootPane, 1)
-	count(managerPane, 0)
+	count(rootPane, 1, "M")
+	count(managerPane, 0, "W")
 	if got := statusFormat(rootPane, "window-status-format"); got != originalFormat {
 		t.Fatalf("idle refresh stacked/changed custom format: %q -> %q", originalFormat, got)
 	}
@@ -170,7 +178,7 @@ func TestLiveDescendantsIdleTmux(t *testing.T) {
 		got := f.runTmux("show-options", "-w", "-v", "-t", rootPane, "window-status-current-format")
 		return got, strings.Contains(got, "@kh_live_descendants")
 	})
-	count(rootPane, 1)
+	count(rootPane, 1, "M")
 	if got := statusFormat(rootPane, "window-status-current-format"); !strings.HasSuffix(got, shellOperand) || strings.Count(got, "@kh_live_descendants") != 2 {
 		t.Fatalf("shell operand changed or top-level suffix duplicated: %q", got)
 	}
@@ -193,7 +201,7 @@ func TestLiveDescendantsIdleTmux(t *testing.T) {
 	if got := value(managerPane, "#{@kh_live_descendants}"); got != "" {
 		t.Fatalf("graceful exit retained pane counter: %q", got)
 	}
-	count(rootPane, 0) // Root reconciles the exact exited manager while idle.
+	count(rootPane, 0, "M") // Root reconciles the exact exited manager while idle.
 
 	// A failed one-shot task with no credentials exits locally before any
 	// provider request. Its retained pane must also clear an owned old suffix.

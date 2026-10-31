@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"kh/internal/ecosystem"
 	"kh/internal/terminal"
 )
 
@@ -25,11 +26,20 @@ func (e *ecosystemRuntime) startLiveDescendants(ctx context.Context, activity *t
 			// Probe errors are conservative: Reconcile still applies proven exits,
 			// leaving uncertain incarnations counted. Count errors keep the old UI.
 			_ = e.reconcile(poll)
-			count, parent, err := e.store.LiveDescendants(poll, e.self.ID)
+			count, role, err := e.store.LiveDescendants(poll, e.self.ID)
 			if err != nil {
 				return
 			}
-			activity.SetLiveDescendants(count, parent)
+			label := ""
+			switch role {
+			case ecosystem.Manager:
+				label = "M"
+			case ecosystem.Worker:
+				label = "W"
+			default:
+				return // Unknown roles must not publish a misleading label.
+			}
+			activity.SetLiveDescendants(count, label)
 			pane := e.self.Pane.PaneID
 			if pane == "" {
 				return
@@ -39,10 +49,7 @@ func (e *ecosystemRuntime) startLiveDescendants(ctx context.Context, activity *t
 			if err != nil || len(parts) != 2 || parts[0] != e.self.ID {
 				return
 			}
-			value := ""
-			if parent {
-				value = strconv.Itoa(count)
-			}
+			value := strconv.Itoa(count) + " - " + label
 			if published != value || window != parts[1] {
 				if _, err := tmuxContext(poll, "set-option", "-p", "-t", pane, "@kh_live_descendants", value); err != nil {
 					return
@@ -69,7 +76,7 @@ func (e *ecosystemRuntime) startLiveDescendants(ctx context.Context, activity *t
 	return func() {
 		cancel()
 		<-done
-		activity.SetLiveDescendants(0, false)
+		activity.SetLiveDescendants(0, "")
 		activity.Stop()
 		if pane := e.self.Pane.PaneID; pane != "" {
 			cleanup, stop := context.WithTimeout(context.Background(), time.Second)

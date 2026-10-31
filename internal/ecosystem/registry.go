@@ -449,42 +449,37 @@ func (s *Store) List(ctx context.Context, ecoID string) ([]Agent, error) {
 }
 
 // LiveDescendants counts live descendants, traversing completed ancestors too.
-// parent indicates whether a counter should be displayed: roots, managers and
-// agents with historical descendants qualify independently of their live count.
-func (s *Store) LiveDescendants(ctx context.Context, agentID string) (count int, parent bool, err error) {
+// role is the queried agent's current role, read from the same snapshot.
+func (s *Store) LiveDescendants(ctx context.Context, agentID string) (count int, role Role, err error) {
 	rows, err := s.db.QueryContext(ctx, `WITH RECURSIVE tree(id,ecosystem_id) AS (
 		SELECT id,ecosystem_id FROM agents WHERE id=?
 		UNION SELECT a.id,a.ecosystem_id FROM agents a JOIN tree t ON a.parent_id=t.id AND a.ecosystem_id=t.ecosystem_id
-	) SELECT a.id,a.state,a.role,a.parent_id FROM agents a JOIN tree t ON a.id=t.id`, agentID)
+	) SELECT a.id,a.state,a.role FROM agents a JOIN tree t ON a.id=t.id`, agentID)
 	if err != nil {
-		return 0, false, err
+		return 0, "", err
 	}
 	defer rows.Close()
 	found := false
 	for rows.Next() {
-		var id, parentID string
+		var id string
 		var state State
-		var role Role
-		if err := rows.Scan(&id, &state, &role, &parentID); err != nil {
-			return 0, false, err
+		var agentRole Role
+		if err := rows.Scan(&id, &state, &agentRole); err != nil {
+			return 0, "", err
 		}
 		if id == agentID {
-			found = true
-			parent = parent || parentID == "" || role == Manager
-		} else {
-			parent = true
-			if state.Live() {
-				count++
-			}
+			found, role = true, agentRole
+		} else if state.Live() {
+			count++
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return 0, false, err
+		return 0, "", err
 	}
 	if !found {
-		return 0, false, ErrNotFound
+		return 0, "", ErrNotFound
 	}
-	return count, parent, nil
+	return count, role, nil
 }
 
 func (s *Store) Stats(ctx context.Context, ecoID string) (Stats, error) {
