@@ -16,8 +16,8 @@ Introduced **2026-09-28** · commit `84d64c8` (initial shell execution, not a se
 |---|---|---|
 | 2026-09-28 | Initial `bash` tool could execute installed commands, including external CLIs. | `84d64c8` |
 | 2026-09-28 | Added macOS shell write sandboxing. | `83bb8cd` |
-| 2026-10-31 | Removed kh filesystem confinement for shell subprocesses. | Current change |
 | 2026-10-23 | Documented the external-CLI integration boundary and verification responsibilities. | `23e7a86` |
+| 2026-10-31 | Removed kh filesystem confinement for shell subprocesses. | Current change |
 
 ## Inspect
 

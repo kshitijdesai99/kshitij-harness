@@ -76,14 +76,14 @@ func TestOneOffHelp(t *testing.T) {
 							t.Errorf("local tool advertised: %+v", tool)
 						}
 					}
-					for _, reference := range []string{"standalone help request", "help assistant for kh", "kh -s SESSION_ID", "kh -r", "kh --sessions", "working folder", "creation ID", "-example-live-flag"} {
+					for _, reference := range []string{"standalone help request", "help assistant for kh", "kh -s SESSION_ID", "kh -r", "kh --sessions", "all this working folder's saved chats", "working folder", "creation ID", "-example-live-flag"} {
 						if !strings.Contains(body.Instructions, reference) {
 							t.Errorf("missing help reference %q", reference)
 						}
 					}
-					for _, forbidden := range []string{"autonomous coding assistant", "Use the native agents tool", "Use curl only"} {
+					for _, forbidden := range []string{"autonomous coding assistant", "Use the native agents tool", "Use curl only", "20 most recently saved chats"} {
 						if strings.Contains(body.Instructions, forbidden) {
-							t.Errorf("tool-less help inherited unavailable capability instructions %q", forbidden)
+							t.Errorf("help contains forbidden reference %q", forbidden)
 						}
 					}
 					return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(tc.stream))}, nil

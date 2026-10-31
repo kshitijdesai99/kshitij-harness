@@ -24,9 +24,9 @@ Introduced **2026-09-29** · commit `277c243` (tmux sub-agent commands).
 
 ## Human as CEO, main agent as manager
 
-Keep direction and important choices with the human. The main user-facing agent manages the work: plan, delegate implementation and inspection, oversee evidence, resolve conflicts, and present the result. Workers execute their assigned scope, including integration and checks. They may remain workers or promote themselves before delegating; recursion is optional.
+Keep direction and important choices with the human. The main user-facing agent answers ordinary user questions directly and manages execution work: plan, delegate implementation and inspection, oversee evidence, resolve conflicts, and present the result. Not every reply requires a worker. Workers execute their assigned scope, including integration and checks. They may remain workers or promote themselves before delegating; recursion is optional.
 
-This operating guidance does not add a deterministic scheduler or automatic runtime delegation. A useful request is:
+This is operating policy, not enforced delegation: it does not add a deterministic scheduler or automatic runtime delegation. A useful request is:
 
 > Split this change into independent tasks, delegate implementation and review, integrate the results, and report what you verified. Ask me only for decisions you cannot make safely.
 
