@@ -58,6 +58,10 @@ func TestProjectConfigMCPProcess(t *testing.T) {
 				capabilities["resources"] = map[string]any{}
 				capabilities["prompts"] = map[string]any{}
 			}
+			if os.Getenv("KH_PROJECT_MCP_RESOURCE_ONLY") == "true" {
+				delete(capabilities, "tools")
+				capabilities["resources"] = map[string]any{}
+			}
 			result = map[string]any{"protocolVersion": "2025-03-26", "capabilities": capabilities, "serverInfo": map[string]any{"name": "cli-fixture", "version": "1"}}
 		case "notifications/initialized":
 			initialized = true
@@ -65,6 +69,14 @@ func TestProjectConfigMCPProcess(t *testing.T) {
 		case "tools/list":
 			if !initialized {
 				os.Exit(5)
+			}
+			if names := os.Getenv("KH_PROJECT_MCP_TOOL_NAMES"); names != "" {
+				var tools []any
+				for _, name := range strings.Split(names, ",") {
+					tools = append(tools, map[string]any{"name": name, "inputSchema": map[string]any{"type": "object"}})
+				}
+				result = map[string]any{"tools": tools}
+				break
 			}
 			result = map[string]any{"tools": []any{map[string]any{"name": "echo", "description": "CLI fixture echo", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"value": map[string]any{"type": "string", "enum": []string{"roundtrip"}}}, "required": []string{"value"}, "additionalProperties": false}}}}
 		case "tools/call":

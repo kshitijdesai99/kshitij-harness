@@ -14,6 +14,7 @@ import (
 	"kh/internal/backend"
 	"kh/internal/config"
 	"kh/internal/learn"
+	"kh/internal/mcp"
 	"kh/internal/memory"
 	"kh/internal/projectconfig"
 	"kh/internal/provider"
@@ -39,6 +40,7 @@ type chat struct {
 	recentContext     string // bounded last exchange; never a second transcript archive
 	policy            *tools.ApprovalPolicy
 	project           *projectconfig.Config
+	connectors        []mcp.ConnectionResult
 	forkMu            sync.Mutex
 	forkState         []byte // last completed conversation; never read a streaming model
 	forkModel         string

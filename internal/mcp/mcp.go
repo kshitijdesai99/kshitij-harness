@@ -75,6 +75,26 @@ func result(m rpcMessage) (json.RawMessage, error) {
 // Cleanup is idempotent and must be called. Canceling ctx also closes connections.
 // Warnings deliberately omit commands, URLs, headers, stderr and remote messages.
 func Connect(ctx context.Context, servers map[string]Server) ([]tools.Tool, func(), []string) {
+	return ConnectWithOptions(ctx, servers, Options{})
+}
+
+// ConnectionResult is a startup snapshot, not a live health or product-auth check.
+// ToolNames contains raw discovered names, excluding generated resource/prompt helpers.
+type ConnectionResult struct {
+	Name      string
+	Status    string
+	ToolNames []string
+	Resources bool
+	Prompts   bool
+}
+
+// Options configures optional startup observation.
+type Options struct {
+	Observe func(ConnectionResult)
+}
+
+// ConnectWithOptions retains Connect's startup behavior with optional observation.
+func ConnectWithOptions(ctx context.Context, servers map[string]Server, options Options) ([]tools.Tool, func(), []string) {
 	var ts []tools.Tool
 	var warnings []string
 	var connections []transport
@@ -85,6 +105,7 @@ func Connect(ctx context.Context, servers map[string]Server) ([]tools.Tool, func
 	sort.Strings(names)
 	used := map[string]bool{}
 	for _, name := range names {
+		report := ConnectionResult{Name: name, Status: "failed"}
 		s, err := expand(servers[name])
 		var tr transport
 		if err == nil {
@@ -111,6 +132,13 @@ func Connect(ctx context.Context, servers map[string]Server) ([]tools.Tool, func
 			}
 			cancel()
 			if err == nil {
+				report.Status = "connected"
+				_, report.Resources = capabilities["resources"]
+				_, report.Prompts = capabilities["prompts"]
+				for _, remote := range discovered {
+					report.ToolNames = append(report.ToolNames, remote.Name)
+				}
+				sort.Strings(report.ToolNames)
 				connections = append(connections, tr)
 				ts = append(ts, contentTools(name, tr, capabilities, used)...)
 				sort.SliceStable(discovered, func(i, j int) bool { return discovered[i].Name < discovered[j].Name })
@@ -159,6 +187,9 @@ func Connect(ctx context.Context, servers map[string]Server) ([]tools.Tool, func
 				tr.close()
 			}
 			warnings = append(warnings, fmt.Sprintf("MCP server %q: %s", name, err))
+		}
+		if options.Observe != nil {
+			options.Observe(report)
 		}
 	}
 	return ts, func() {

@@ -16,9 +16,9 @@ import (
 
 // Project MCP servers are external programs/services. Both connecting (which
 // may launch a program) and calls use the active command approval policy.
-func projectTools(ctx context.Context, project *projectconfig.Config, approval tools.Approver, policy *tools.ApprovalPolicy, notice func(string)) ([]tools.Tool, func(), error) {
+func projectTools(ctx context.Context, project *projectconfig.Config, approval tools.Approver, policy *tools.ApprovalPolicy, notice func(string)) ([]tools.Tool, func(), []mcp.ConnectionResult, error) {
 	if len(project.Servers) == 0 {
-		return nil, func() {}, nil
+		return nil, func() {}, nil, nil
 	}
 	lifetime, cancel := context.WithCancel(ctx)
 	interrupts := make(chan os.Signal, 1)
@@ -33,6 +33,7 @@ func projectTools(ctx context.Context, project *projectconfig.Config, approval t
 		}
 	}()
 	defer func() { signal.Stop(interrupts); close(ready) }()
+	var reports []mcp.ConnectionResult
 	servers := make(map[string]mcp.Server)
 	names := make([]string, 0, len(project.Servers))
 	for name := range project.Servers {
@@ -42,13 +43,16 @@ func projectTools(ctx context.Context, project *projectconfig.Config, approval t
 	for _, name := range names {
 		allowed, err := approval.Approve(lifetime, fmt.Sprintf("Trust MCP server %q: connect/start external code", name), policy.Auto())
 		if err != nil || !allowed {
+			reports = append(reports, mcp.ConnectionResult{Name: name, Status: "not connected"})
 			notice(fmt.Sprintf("(project config) MCP server %q not connected", name))
 			continue
 		}
 		s := project.Servers[name]
 		servers[name] = mcp.Server{Command: s.Command, Args: s.Args, Env: s.Env, URL: s.URL, Headers: s.Headers, Type: s.Type, Dir: s.Dir}
 	}
-	ts, close, warnings := mcp.Connect(lifetime, servers)
+	ts, close, warnings := mcp.ConnectWithOptions(lifetime, servers, mcp.Options{Observe: func(report mcp.ConnectionResult) {
+		reports = append(reports, report)
+	}})
 	for _, warning := range warnings {
 		notice("(project config) " + warning)
 	}
@@ -76,5 +80,5 @@ func projectTools(ctx context.Context, project *projectconfig.Config, approval t
 	if len(ts) > 0 {
 		notice(fmt.Sprintf("(project config) loaded %d MCP tools", len(ts)))
 	}
-	return ts, func() { cancel(); close() }, lifetime.Err()
+	return ts, func() { cancel(); close() }, reports, lifetime.Err()
 }

@@ -26,6 +26,7 @@ kh command reference:
 - kh --help: show CLI usage. kh --help REQUEST (or -h REQUEST): answer once without opening or saving a chat. It cannot be combined with -r, -s, -i, -p, or --sessions. Put flags before the request; quote shell-special characters.
 - kh login codex: authenticate. Configuration is in ~/.kh/config.json.
 - kh --model MODEL --effort LEVEL "TASK": override model and reasoning effort for this invocation. /model [MODEL] and /effort [low|medium|high] in chat show or change settings; changes persist in config.
+- /connector lists MCP server startup snapshots and exposed service hints from discovered tool names for this session. It makes no probes, reconnects, authorization or model requests; registered availability is not live health or proof of product authentication.
 - /compact summarizes chat context and saves it. /image [PATH] attaches an image for the next message. /help lists chat commands.
 - /new opens a fresh session with no copied conversation in a tmux pane on the right and selects it, without steering or cancelling the original chat.
 - /fork opens the last completed conversation in a new tmux pane on the right and selects it. It works during a reply or tool execution without steering or cancelling the original chat; partial replies and unfinished tool calls are excluded.

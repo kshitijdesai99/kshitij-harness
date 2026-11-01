@@ -251,7 +251,7 @@ func main() {
 	if len(project.Servers) > 0 {
 		console.Start()
 	}
-	mcpTools, closeMCP, err := projectTools(ctx, project, console, policy, ui.Notice)
+	mcpTools, closeMCP, connectors, err := projectTools(ctx, project, console, policy, ui.Notice)
 	defer closeMCP()
 	exit(err)
 	ts = append(ts, mcpTools...)
@@ -273,7 +273,7 @@ func main() {
 	}
 
 	exportModel(p, cfg.Provider)
-	c := chat{model: p, backend: cfg.Provider, id: *id, repo: repoScope, project: project, identity: saved.Identity,
+	c := chat{model: p, backend: cfg.Provider, id: *id, repo: repoScope, project: project, connectors: connectors, identity: saved.Identity,
 		memory: db, memoryActive: memoryActive, learn: learner, input: console, ui: ui, tools: ts, seen: fromFile, policy: policy,
 		budget: memory.Budget{SummaryChars: cfg.SummaryMaxTokens * 4, TopInstructions: cfg.TopInstructions, TopGotchas: cfg.TopGotchas,
 			TopKnowledge: cfg.TopKnowledge, TotalChars: cfg.MemoryMaxTokens * 4}}
@@ -373,6 +373,13 @@ func (c *chat) command(ctx context.Context, line string) {
 	cmd, arg, _ := strings.Cut(line, " ")
 	var model, effort string
 	switch cmd {
+	case "/connector":
+		if strings.TrimSpace(arg) != "" {
+			fmt.Fprintln(stdout, "usage: /connector")
+			return
+		}
+		fmt.Fprint(stdout, connectorSummary(c.connectors))
+		return
 	case "/project":
 		if strings.TrimSpace(arg) != "diagnostics" {
 			fmt.Fprintln(stdout, "usage: /project diagnostics")
@@ -436,7 +443,7 @@ func (c *chat) command(ctx context.Context, line string) {
 		if c.project != nil && len(c.project.Commands) > 0 {
 			fmt.Fprintln(stdout, "Project commands/skills: "+strings.Join(c.project.CommandNames(), ", "))
 		}
-		fmt.Fprintln(stdout, "/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/new   open a fresh session in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message\n/auto [on|off]   persist automatic command execution approval\n/memory hybrid on|off   enable local hybrid retrieval or keyword-only memory\n/memory explain   show the last retrieval’s full candidate IDs and scores\n/project diagnostics   show startup configuration diagnostics")
+		fmt.Fprintln(stdout, "/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/new   open a fresh session in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message\n/auto [on|off]   persist automatic command execution approval\n/memory hybrid on|off   enable local hybrid retrieval or keyword-only memory\n/memory explain   show the last retrieval’s full candidate IDs and scores\n/project diagnostics   show startup configuration diagnostics\n/connector   list session MCP startup snapshot and exposed service hints")
 		return
 	}
 	fmt.Fprintln(stdout, terminal.Color(stdout, terminal.Muted, fmt.Sprintf("(model %s, effort %s)", model, effort)))

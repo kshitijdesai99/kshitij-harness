@@ -74,7 +74,7 @@ var argumentPattern = regexp.MustCompile(`\$\{CLAUDE_SKILL_DIR\}|\$\{CLAUDE_PLUG
 // Native controls must remain reachable even if a project uses the same name.
 func nativeCommand(name string) bool {
 	switch name {
-	case "/help", "/compact", "/fork", "/new", "/model", "/effort", "/image", "/auto", "/memory", "/project":
+	case "/help", "/compact", "/fork", "/new", "/model", "/effort", "/image", "/auto", "/memory", "/project", "/connector":
 		return true
 	}
 	return false

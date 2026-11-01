@@ -86,6 +86,12 @@ Templates describe URI patterns; use a concrete URI for reading. Returned prompt
 
 Home JSON configuration and environment values used for server credentials are not copied into model context. Do not put secrets in Markdown instructions: supported text is intentionally included in context. This does not redact secrets returned by an external tool.
 
+### Session connector inventory
+
+Use `/connector` to list this session's MCP startup snapshot without a model request, live probe, reconnection, or authorization. Connected servers appear first, followed by failed and not-connected servers, each group sorted by name. Counts include advertised tools only, not generated resource/prompt helpers; resource-only and zero-tool servers can still be connected. Unsafe server labels are redacted and failure details stay generic.
+
+Exposed service hints come conservatively from explicit tokens in discovered tool names, including camel-case operation names. Hints such as Jira, Confluence, and Slack are best-effort labels. A gateway's generic discovery or execution tools cannot establish which products it connects to, so hints may be incomplete. Registered availability is not live health, verified product authentication, or proof of permissions. Restart to refresh startup discovery; declarations added later are not part of this snapshot.
+
 ## Compatibility limits
 
 MCP does not support sampling, OAuth login, or legacy SSE transport. HTTP supports POST response streams, not GET streams or resumption; use static headers for authentication. Startup discovery times out after 15 seconds per server; calls after 60 seconds. List operations follow pagination with bounded page, entry, and response sizes; incomplete lists fail rather than silently dropping entries. Large content output is bounded with a truncation marker.
@@ -98,12 +104,14 @@ This is a supported subset of filesystem configuration and local plugin content,
 |---|---|---|
 | 2026-10-30 | Added home/ancestor configuration, lazy skills/commands/assets, local plugin references, and approved MCP tools/resources/prompts. | `752f184` |
 | 2026-10-31 | Added plain ancestor entry points, explicit target workspace inspection/preparation/decisions, and directory-scoped capability lookup. | Current change |
+| 2026-11-01 | Added `/connector` session startup inventory with advertised-tool counts, resource/prompt availability, and conservative service hints without live probes. | Current change |
 
 ## Inspect
 
 - Configuration: [discovery and context](../internal/projectconfig/projectconfig.go), [slash expansion](../internal/projectconfig/commands.go), [on-demand loading](../internal/projectconfig/tools.go), [local plugins](../internal/projectconfig/plugins.go).
 - Target workspaces: [inspect/prepare/record](../internal/projectconfig/workspace.go), [workspace tests](../internal/projectconfig/test/workspace_test.go).
 - MCP: [client](../internal/mcp/mcp.go), [resource and prompt operations](../internal/mcp/content.go), [CLI trust and approval](../cmd/kh/project.go).
+- Connector inventory: [formatter](../cmd/kh/connector.go), [CLI coverage](../cmd/kh/test/connector_test.go), [startup observation](../internal/mcp/test/connector_test.go), [native command reservation](../internal/projectconfig/test/connector_test.go).
 - Representative coverage: [configuration](../internal/projectconfig/test/projectconfig_test.go), [lazy loading](../internal/projectconfig/test/lazy_test.go), [plugins](../internal/projectconfig/test/plugins_test.go), [MCP content](../internal/mcp/test/content_test.go), [CLI integration](../cmd/kh/test/project_config_test.go).
 
 [Feature index](README.md)

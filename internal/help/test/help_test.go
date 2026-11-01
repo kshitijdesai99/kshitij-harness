@@ -76,7 +76,7 @@ func TestOneOffHelp(t *testing.T) {
 							t.Errorf("local tool advertised: %+v", tool)
 						}
 					}
-					for _, reference := range []string{"standalone help request", "help assistant for kh", "kh -s SESSION_ID", "kh -r", "kh --sessions", "all this working folder's saved chats", "working folder", "creation ID", "-example-live-flag"} {
+					for _, reference := range []string{"standalone help request", "help assistant for kh", "kh -s SESSION_ID", "kh -r", "kh --sessions", "all this working folder's saved chats", "working folder", "creation ID", "-example-live-flag", "/connector", "startup snapshots", "not live health or proof of product authentication"} {
 						if !strings.Contains(body.Instructions, reference) {
 							t.Errorf("missing help reference %q", reference)
 						}
