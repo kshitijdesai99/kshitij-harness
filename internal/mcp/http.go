@@ -28,15 +28,19 @@ type httpTransport struct {
 	protocol string
 	next     atomic.Uint64
 	once     sync.Once
+	oauth    *oauthAuth
 }
 
-func newHTTP(ctx context.Context, s Server) (transport, error) {
+func newHTTP(ctx context.Context, s Server, oauth *OAuthOptions) (transport, error) {
 	u, err := url.Parse(s.URL)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.Fragment != "" || s.Command != "" {
 		return nil, fmt.Errorf("streamable HTTP requires an http(s) URL without credentials or fragment and no command")
 	}
 	lifetime, cancel := context.WithCancel(ctx)
 	t := &httpTransport{endpoint: s.URL, headers: s.Headers, ctx: lifetime, cancel: cancel, client: &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone(), CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("MCP redirects are disabled") }}}
+	if oauth != nil {
+		t.enableOAuth(*oauth)
+	}
 	go func() { <-lifetime.Done(); t.close() }()
 	return t, nil
 }
@@ -51,13 +55,20 @@ func (t *httpTransport) close() {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			req, err := t.makeRequest(ctx, http.MethodDelete, nil)
 			if err == nil {
-				if resp, err := t.client.Do(req); err == nil {
+				client := t.client
+				if t.oauth != nil && req.Header.Get("Authorization") != "" {
+					client = t.oauth.resourceClient()
+				}
+				if resp, err := client.Do(req); err == nil {
 					resp.Body.Close()
 				}
 			}
 			cancel()
 		}
 		t.client.CloseIdleConnections()
+		if t.oauth != nil {
+			t.oauth.client.CloseIdleConnections()
+		}
 	})
 }
 func (t *httpTransport) makeRequest(ctx context.Context, method string, data []byte) (*http.Request, error) {
@@ -78,6 +89,13 @@ func (t *httpTransport) makeRequest(ctx context.Context, method string, data []b
 		req.Header.Set("MCP-Protocol-Version", t.protocol)
 	}
 	t.mu.Unlock()
+	if t.oauth != nil {
+		t.oauth.mu.Lock()
+		if t.oauth.access != "" {
+			req.Header.Set("Authorization", "Bearer "+t.oauth.access)
+		}
+		t.oauth.mu.Unlock()
+	}
 	return req, nil
 }
 func (t *httpTransport) request(ctx context.Context, method string, params any) (json.RawMessage, error) {
@@ -112,10 +130,13 @@ func (t *httpTransport) post(ctx context.Context, message any, id string, initia
 	if err != nil {
 		return empty, err
 	}
-	resp, err := t.client.Do(req)
+	resp, err := t.do(req)
 	if err != nil {
 		if ctx.Err() != nil {
 			return empty, ctx.Err()
+		}
+		if t.oauth != nil {
+			return empty, err // OAuth errors are deliberately credential-free.
 		}
 		return empty, fmt.Errorf("MCP HTTP request failed")
 	}

@@ -92,7 +92,7 @@ func TestNativeAgentsEcosystemSchema(t *testing.T) {
 			t.Errorf("%s schema = %#v, want enum %v", field, tool.Params[field], want)
 		}
 	}
-	for _, text := range []string{"configurable shared agent cap", "known agent directory", "Before starting a task", "Only managers can spawn", "Any worker or manager", "peek is a safe alias", "never full private contexts"} {
+	for _, text := range []string{"configurable shared agent cap", "known agent directory", "Before starting a task", "Every manager delegates implementation and integration edits", "routine tests, builds, installation and restart execution", "On promotion, hand existing execution tasks to workers", "Do not switch roles to bypass delegation", "No active workers or full capacity is not permission", "Managers may answer ordinary informational questions", "Only managers can spawn", "Any worker or manager", "peek is a safe alias", "never full private contexts"} {
 		if !strings.Contains(tool.Description, text) {
 			t.Errorf("description missing %q", text)
 		}

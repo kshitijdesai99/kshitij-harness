@@ -12,7 +12,7 @@ Introduced **2026-09-29** · commit `277c243` (worker launch and auto-policy inh
 
 ## Roles and shared capacity
 
-The [root remains manager](native-agents.md); descendants default to worker and can switch their own role. Role changes do not consume a new slot or multiply the limit. Parent links remain ownership metadata, not a restriction on cross-branch coordination. The [pane/tab label](terminal-feedback.md#live-descendant-counts) shows the current role and a live descendant count that follows these links independently of role.
+The [root remains manager](native-agents.md); descendants default to worker and can switch their own role. Every current manager follows the [delegation duties](native-agents.md#human-as-ceo-main-agent-as-manager), including handing existing execution tasks to workers on promotion. Workers execute their scope without needing to promote. These duties are operating instructions, not new registry permissions or tool bans. Role changes do not consume a new slot or multiply the limit. Parent links remain ownership metadata, not a restriction on cross-branch coordination. The [pane/tab label](terminal-feedback.md#live-descendant-counts) shows the current role and a live descendant count that follows these links independently of role.
 
 Set the shared budget in `~/.kh/config.json`:
 
@@ -43,6 +43,7 @@ Exact process identity is supported on **macOS and Linux**: macOS combines PID, 
 | 2026-10-23 | Made interactive chats and auto approval the defaults. | `bf2c75d` |
 | 2026-10-31 | Removed directory grants and filesystem confinement; command approval remains inherited. | Current change |
 | 2026-10-31 | Added mutable descendant roles and one shared live-agent budget including the root. | Current change |
+| 2026-11-01 | Clarified execution handoff on manager promotion and retained orchestration when workers finish or capacity is full. | Current change |
 
 ## Inspect
 

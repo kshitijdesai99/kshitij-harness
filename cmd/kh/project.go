@@ -50,7 +50,7 @@ func projectTools(ctx context.Context, project *projectconfig.Config, approval t
 		s := project.Servers[name]
 		servers[name] = mcp.Server{Command: s.Command, Args: s.Args, Env: s.Env, URL: s.URL, Headers: s.Headers, Type: s.Type, Dir: s.Dir}
 	}
-	ts, close, warnings := mcp.ConnectWithOptions(lifetime, servers, mcp.Options{Observe: func(report mcp.ConnectionResult) {
+	ts, close, warnings := mcp.ConnectWithOptions(lifetime, servers, mcp.Options{OAuth: projectOAuth(approval, notice), Observe: func(report mcp.ConnectionResult) {
 		reports = append(reports, report)
 	}})
 	for _, warning := range warnings {

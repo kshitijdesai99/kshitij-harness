@@ -88,12 +88,14 @@ type ConnectionResult struct {
 	Prompts   bool
 }
 
-// Options configures optional startup observation.
+// Options configures optional startup observation and HTTP authorization.
 type Options struct {
+	OAuth   *OAuthOptions
 	Observe func(ConnectionResult)
 }
 
-// ConnectWithOptions retains Connect's startup behavior with optional observation.
+// ConnectWithOptions retains Connect's startup behavior, with an optional separate
+// five-minute, cancelable browser authorization before retrying startup once.
 func ConnectWithOptions(ctx context.Context, servers map[string]Server, options Options) ([]tools.Tool, func(), []string) {
 	var ts []tools.Tool
 	var warnings []string
@@ -112,7 +114,7 @@ func ConnectWithOptions(ctx context.Context, servers map[string]Server, options 
 			switch strings.ToLower(s.Type) {
 			case "", "stdio", "http", "streamable-http":
 				if s.Type == "" && s.URL != "" || strings.ToLower(s.Type) == "http" || strings.ToLower(s.Type) == "streamable-http" {
-					tr, err = newHTTP(ctx, s)
+					tr, err = newHTTP(ctx, s, options.OAuth)
 				} else {
 					tr, err = newStdio(ctx, s)
 				}
@@ -126,9 +128,26 @@ func ConnectWithOptions(ctx context.Context, servers map[string]Server, options 
 			startup, cancel := context.WithTimeout(ctx, startupTimeout)
 			var discovered []remoteTool
 			var capabilities map[string]json.RawMessage
-			capabilities, err = initialize(startup, tr)
-			if _, ok := capabilities["tools"]; err == nil && ok {
-				discovered, err = discover(startup, tr)
+			start := func() {
+				capabilities, err = initialize(startup, tr)
+				if _, ok := capabilities["tools"]; err == nil && ok {
+					discovered, err = discover(startup, tr)
+				}
+			}
+			start()
+			if needed, ok := err.(*oauthRequired); ok {
+				cancel()
+				authorization, stop := context.WithTimeout(ctx, 5*time.Minute)
+				err = needed.auth.authorize(authorization, needed.challenge, needed.rejected)
+				stop()
+				if err == nil {
+					startup, cancel = context.WithTimeout(ctx, startupTimeout)
+					if capabilities != nil {
+						discovered, err = discover(startup, tr)
+					} else {
+						start()
+					}
+				}
 			}
 			cancel()
 			if err == nil {

@@ -325,6 +325,12 @@ func TestEcosystemStopCancellationFinishesWholeRoot(t *testing.T) {
 
 func newEcosystemProviderCLI(t *testing.T, script func(int) *projectCLICall) string {
 	t.Helper()
+	binary, _ := newEcosystemProviderRequests(t, script)
+	return binary
+}
+
+func newEcosystemProviderRequests(t *testing.T, script func(int) *projectCLICall) (string, <-chan projectCLIRequest) {
+	t.Helper()
 	binary := filepath.Join(t.TempDir(), "kh")
 	build := exec.Command("go", "build", "-o", binary, "./cmd/kh")
 	build.Dir = "../../.."
@@ -334,7 +340,7 @@ func newEcosystemProviderCLI(t *testing.T, script func(int) *projectCLICall) str
 	isolateCLIFixture(t)
 	home := os.Getenv("HOME")
 	projectCLIWrite(t, filepath.Join(home, ".kh", "config.json"), `{"auto":true,"memory_model":"off","memory_hybrid":false,"web_search":false,"map_cap":0}`)
-	proxy, _ := projectCLIProxyScript(t, home, script)
+	proxy, requests := projectCLIProxyScript(t, home, script)
 	for key, value := range map[string]string{
 		"KH_AUTO_REBUILD": "0", "KH_AUTO": "", "KH_PROVIDER": "codex", "KH_MODEL": "", "KH_EFFORT": "",
 		"KH_PARENT": "", "KH_AGENT": "", "TMUX": "", "TMUX_PANE": "", "HTTPS_PROXY": proxy, "HTTP_PROXY": proxy,
@@ -343,7 +349,7 @@ func newEcosystemProviderCLI(t *testing.T, script func(int) *projectCLICall) str
 	} {
 		t.Setenv(key, value)
 	}
-	return binary
+	return binary, requests
 }
 
 func onlyEcosystemRoot(t *testing.T, store *ecosystem.Store) ecosystem.Agent {
