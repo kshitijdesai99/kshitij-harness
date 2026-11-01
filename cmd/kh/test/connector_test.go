@@ -26,7 +26,7 @@ func TestConnectorCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, kind := range []string{"connected", "mixed", "failed", "declined", "empty"} {
+	for _, kind := range []string{"connected", "mixed", "failed", "declined", "resource-only", "zero-tools", "empty"} {
 		t.Run(kind, func(t *testing.T) {
 			home, cwd := t.TempDir(), t.TempDir()
 			projectCLIWrite(t, filepath.Join(home, ".kh", "config.json"), fmt.Sprintf(`{"auto":%t,"memory_model":"off","web_search":false,"map_cap":0}`, kind != "declined"))
@@ -48,6 +48,17 @@ func TestConnectorCLI(t *testing.T) {
 					}
 					servers[name] = map[string]any{"command": exe, "args": []string{"-test.run=^TestProjectConfigMCPProcess$"}, "env": env}
 				}
+			}
+			if kind == "resource-only" || kind == "zero-tools" {
+				marker := filepath.Join(cwd, "only-traffic")
+				markers["only"] = marker
+				env := map[string]string{"KH_PROJECT_MCP_CHILD": "1", "KH_PROJECT_MCP_MARKER": marker}
+				if kind == "resource-only" {
+					env["KH_PROJECT_MCP_RESOURCE_ONLY"] = "true"
+				} else {
+					env["KH_PROJECT_MCP_ZERO_TOOLS"] = "true"
+				}
+				servers["only"] = map[string]any{"command": exe, "args": []string{"-test.run=^TestProjectConfigMCPProcess$"}, "env": env}
 			}
 			if kind == "mixed" || kind == "failed" {
 				servers["a-failed"] = map[string]any{"command": "/missing/connector-secret-command", "args": []string{"secret-args"}, "env": map[string]string{"TOKEN": "secret-env"}}
@@ -79,6 +90,25 @@ func TestConnectorCLI(t *testing.T) {
 				t.Fatalf("missing summary: %s", out)
 			}
 			summary := text[start:]
+			startup := text[:start]
+			wantStartup := map[string]string{
+				"connected": "(MCP: 3 connected)", "mixed": "(MCP: 3 connected, 2 failed)",
+				"failed": "(MCP: 0 connected, 2 failed)", "resource-only": "(MCP: 1 connected)", "zero-tools": "(MCP: 1 connected)",
+			}[kind]
+			if wantStartup != "" {
+				if strings.Count(startup, "(MCP:") != 1 || !strings.Contains(startup, wantStartup) {
+					t.Fatalf("missing or redundant startup summary %q: %s", wantStartup, startup)
+				}
+			} else if strings.Contains(startup, "(MCP:") {
+				t.Fatalf("unexpected auto startup summary: %s", startup)
+			}
+			if kind == "declined" {
+				if strings.Count(startup, "Trust MCP server") != 3 || strings.Count(startup, "run it? [y/N]") != 3 {
+					t.Fatalf("manual trust prompts missing: %s", startup)
+				}
+			} else if strings.Contains(startup, "Trust MCP server") || strings.Contains(startup, "loaded ") && strings.Contains(startup, " MCP tools") {
+				t.Fatalf("auto startup clutter: %s", startup)
+			}
 			if requests.Load() != 0 {
 				t.Fatalf("command made %d model/network requests", requests.Load())
 			}
@@ -111,6 +141,14 @@ func TestConnectorCLI(t *testing.T) {
 				if strings.Count(summary, "not connected (startup trust not granted or interrupted)") != 6 {
 					t.Fatal(summary)
 				}
+			case "resource-only", "zero-tools":
+				want := "only: connected; 0 advertised tools"
+				if kind == "resource-only" {
+					want += "; resources available"
+				}
+				if !strings.Contains(summary, want) {
+					t.Fatal(summary)
+				}
 			case "connected":
 				if strings.Count(summary, ": connected;") != 6 || strings.Contains(summary, ": failed (") {
 					t.Fatal(summary)
@@ -138,7 +176,7 @@ func TestConnectorCLI(t *testing.T) {
 					continue
 				}
 				want := "started\ninitialize\nnotifications/initialized\n"
-				if name != "demo:api" {
+				if name != "demo:api" && kind != "resource-only" {
 					want += "tools/list\n"
 				}
 				if err != nil || string(log) != want {

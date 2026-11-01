@@ -70,6 +70,8 @@ Declare `mcpServers` in `mcp.json`, `.mcp.json`, `settings.json`, or `settings.l
 
 MCP servers expose real tools and advertised resources/prompts over stdio or Streamable HTTP. Connecting requires startup trust; individual calls, including content reads, require tool approval when [auto approval](write-approvals.md) is off. Auto mode can approve both steps automatically.
 
+With auto enabled, startup replaces per-server trust action lines and the loaded-tool notice with one concise status summary, such as `(MCP: 2 connected, 1 failed)`. It counts server startup results, not tools: resource-only and zero-tool servers can be connected. Failed and not-connected counts appear when nonzero; no summary is printed when no servers are configured. This is a startup snapshot, not a live-health or product-authentication check; use `/connector` for details. Connection errors and OAuth diagnostics remain visible. With auto off, each server still asks for startup trust; per-call action logging/approval and explicit OAuth browser consent are unchanged.
+
 Resource and prompt content is lazy: startup does not fetch their lists or bodies. For a server named `docs`, kh exposes these operations only when the server advertises the relevant capability:
 
 | Tool | Input | Purpose |
@@ -120,6 +122,7 @@ This is a supported subset of filesystem configuration and local plugin content,
 | 2026-10-31 | Added plain ancestor entry points, explicit target workspace inspection/preparation/decisions, and directory-scoped capability lookup. | Current change |
 | 2026-11-01 | Added generic native HTTP OAuth discovery, interactive root browser login, and locked cached credentials/refresh for headless sessions and agents. | Current change |
 | 2026-11-01 | Added `/connector` session startup inventory with advertised-tool counts, resource/prompt availability, and conservative service hints without live probes. | Current change |
+| 2026-11-01 | Replaced auto-mode per-server startup trust chatter and tool-count notice with one server-status summary; manual trust, OAuth consent, errors and per-call policy remain unchanged. | Current change |
 
 ## Inspect
 

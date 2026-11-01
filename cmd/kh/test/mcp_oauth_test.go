@@ -160,6 +160,9 @@ sys.stdout.buffer.write(out)
 			t.Fatalf("CLI: %s: %v (context %v)", out, err, ctx.Err())
 		}
 		text := string(out)
+		if strings.Contains(text, "Trust MCP server") || strings.Contains(text, "loaded 1 MCP tools") {
+			t.Fatalf("auto startup trust clutter: %s", text)
+		}
 		for _, secret := range []string{"code_challenge=", "state=", "cli-fixture-access-secret", "cli-fixture-refresh-secret", "cli-fixture-code"} {
 			if strings.Contains(text, secret) {
 				t.Fatalf("OAuth secret exposed in CLI output: %s", text)
@@ -218,7 +221,7 @@ sys.stdout.buffer.write(out)
 	})
 	t.Run("terminal-consent-sigint", func(t *testing.T) {
 		out := run(t, true, false, "interrupt")
-		if !strings.Contains(out, "context canceled") || authorizations.Load() != 0 {
+		if !strings.Contains(out, "context canceled") || !strings.Contains(out, "(MCP: 0 connected, 1 failed)") || authorizations.Load() != 0 {
 			t.Fatalf("SIGINT did not cancel login: %s", out)
 		}
 		if _, err := os.Stat(marker); !os.IsNotExist(err) {
@@ -238,7 +241,7 @@ sys.stdout.buffer.write(out)
 		projectCLIWrite(t, failMarker, "fail")
 		defer os.Remove(failMarker)
 		out := run(t, true, false, "y")
-		if strings.Contains(out, "loaded 1 MCP tools") || authorizations.Load() != 0 {
+		if !strings.Contains(out, "(MCP: 0 connected, 1 failed)") || authorizations.Load() != 0 {
 			t.Fatalf("failed opener unexpectedly logged in: %s", out)
 		}
 		if _, err := os.Stat(marker); err != nil {
@@ -250,7 +253,7 @@ sys.stdout.buffer.write(out)
 	})
 	t.Run("terminal-login", func(t *testing.T) {
 		out := run(t, true, false, "y")
-		if !strings.Contains(out, "loaded 1 MCP tools") || authorizations.Load() != 1 {
+		if !strings.Contains(out, "(MCP: 1 connected)") || authorizations.Load() != 1 {
 			t.Fatalf("OAuth login failed: %s", out)
 		}
 		if _, err := os.Stat(marker); err != nil {
@@ -263,7 +266,7 @@ sys.stdout.buffer.write(out)
 	for _, headless := range []bool{false, true} {
 		t.Run(fmt.Sprintf("cached-redirected-headless-%t", headless), func(t *testing.T) {
 			out := run(t, false, headless, "")
-			if !strings.Contains(out, "loaded 1 MCP tools") || strings.Contains(out, "Open browser") || authorizations.Load() != 1 {
+			if !strings.Contains(out, "(MCP: 1 connected)") || strings.Contains(out, "Open browser") || authorizations.Load() != 1 {
 				t.Fatalf("cached OAuth unavailable headless: %s", out)
 			}
 			if _, err := os.Stat(marker); !os.IsNotExist(err) {

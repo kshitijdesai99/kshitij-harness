@@ -70,6 +70,10 @@ func TestProjectConfigMCPProcess(t *testing.T) {
 			if !initialized {
 				os.Exit(5)
 			}
+			if os.Getenv("KH_PROJECT_MCP_ZERO_TOOLS") == "true" {
+				result = map[string]any{"tools": []any{}}
+				break
+			}
 			if names := os.Getenv("KH_PROJECT_MCP_TOOL_NAMES"); names != "" {
 				var tools []any
 				for _, name := range strings.Split(names, ",") {
@@ -501,11 +505,23 @@ func TestProjectConfigCLI(t *testing.T) {
 			t.Fatalf("unapproved MCP child ran: %v", err)
 		}
 	})
+	t.Run("MCP manual startup still asks before discovery", func(t *testing.T) {
+		home, cwd := fixture(t, false)
+		marker := mcpConfig(t, cwd)
+		out := run(t, home, cwd, "", "y\n/help\n")
+		if !strings.Contains(out, `Trust MCP server "fixture": connect/start external code`) || !strings.Contains(out, "run it? [y/N]") || !strings.Contains(out, "loaded 1 MCP tools") || strings.Contains(out, "(MCP:") {
+			t.Fatalf("manual discovery: %s", out)
+		}
+		log, err := os.ReadFile(marker)
+		if err != nil || string(log) != "started\ninitialize\nnotifications/initialized\ntools/list\n" {
+			t.Fatalf("approved discovery protocol: %q %v", log, err)
+		}
+	})
 	t.Run("MCP auto startup launches child and discovers tools", func(t *testing.T) {
 		home, cwd := fixture(t, true)
 		marker := mcpConfig(t, cwd)
 		out := run(t, home, cwd, "", "/help\n")
-		if !strings.Contains(out, "loaded 1 MCP tools") || strings.Contains(out, "run it? [y/N]") {
+		if !strings.Contains(out, "(MCP: 1 connected)") || strings.Contains(out, "run it? [y/N]") || strings.Contains(out, "Trust MCP server") || strings.Contains(out, "loaded 1 MCP tools") {
 			t.Fatalf("auto discovery: %s", out)
 		}
 		log, err := os.ReadFile(marker)
@@ -518,7 +534,7 @@ func TestProjectConfigCLI(t *testing.T) {
 		marker := mcpConfig(t, cwd)
 		proxy, requests := projectCLIProxy(t, home, true)
 		out := run(t, home, cwd, proxy, "", "-p", "exercise MCP")
-		if !strings.Contains(out, "loaded 1 MCP tools") || !strings.Contains(out, "PROJECT-CLI-DONE") || strings.Contains(out, "run it? [y/N]") {
+		if !strings.Contains(out, "(MCP: 1 connected)") || !strings.Contains(out, "PROJECT-CLI-DONE") || !strings.Contains(out, `Call MCP tool "mcp__fixture__echo" (external effects)`) || strings.Contains(out, "run it? [y/N]") || strings.Contains(out, "Trust MCP server") {
 			t.Fatalf("auto: %s", out)
 		}
 		if len(requests) != 2 {

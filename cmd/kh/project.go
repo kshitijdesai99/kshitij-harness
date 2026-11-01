@@ -40,8 +40,14 @@ func projectTools(ctx context.Context, project *projectconfig.Config, approval t
 		names = append(names, name)
 	}
 	sort.Strings(names)
+	auto := policy.Auto()
 	for _, name := range names {
-		allowed, err := approval.Approve(lifetime, fmt.Sprintf("Trust MCP server %q: connect/start external code", name), policy.Auto())
+		// Auto already grants startup trust. Avoid logging an approval action
+		// for every server; OAuth consent and per-call approvals stay separate.
+		allowed, err := auto, lifetime.Err()
+		if !auto && err == nil {
+			allowed, err = approval.Approve(lifetime, fmt.Sprintf("Trust MCP server %q: connect/start external code", name), false)
+		}
 		if err != nil || !allowed {
 			reports = append(reports, mcp.ConnectionResult{Name: name, Status: "not connected"})
 			notice(fmt.Sprintf("(project config) MCP server %q not connected", name))
@@ -77,7 +83,27 @@ func projectTools(ctx context.Context, project *projectconfig.Config, approval t
 			return provider.Result{Output: output}, err
 		}
 	}
-	if len(ts) > 0 {
+	if auto {
+		connected, failed, notConnected := 0, 0, 0
+		for _, report := range reports {
+			switch report.Status {
+			case "connected":
+				connected++
+			case "failed":
+				failed++
+			default:
+				notConnected++
+			}
+		}
+		summary := fmt.Sprintf("(MCP: %d connected", connected)
+		if failed > 0 {
+			summary += fmt.Sprintf(", %d failed", failed)
+		}
+		if notConnected > 0 {
+			summary += fmt.Sprintf(", %d not connected", notConnected)
+		}
+		notice(summary + ")")
+	} else if len(ts) > 0 {
 		notice(fmt.Sprintf("(project config) loaded %d MCP tools", len(ts)))
 	}
 	return ts, func() { cancel(); close() }, reports, lifetime.Err()
