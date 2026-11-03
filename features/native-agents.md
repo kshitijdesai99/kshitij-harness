@@ -26,17 +26,21 @@ Introduced **2026-09-29** · commit `277c243` (tmux sub-agent commands).
 
 Keep direction and important choices with the human. Every current manager, including promoted descendants, plans, allocates execution to workers, coordinates their work, assesses evidence, resolves conflicts, and presents verified outcomes. Managers assign implementation and integration edits, routine tests, builds, installation and restart execution to workers, rather than performing that execution themselves. Finished workers do not transfer execution back to the manager: retain or reassign a worker or spawn another scoped worker. At full capacity, retain orchestration and wait, inspect or stop work before retrying; do not fall back to executing the task.
 
-Managers may answer ordinary informational questions directly and perform bounded read-only inspection to understand the situation or assess evidence. Not every reply requires a worker. Workers execute their assigned scope, including integration and checks, and need not promote or delegate. On promotion, hand existing coding or execution tasks to workers before continuing. Do not switch roles to bypass delegation or become a worker while managing live descendants.
+Managers delegate substantial investigation and source/document exploration. Once delegated, do not independently repeat broad exploration; use concise worker conclusions and targeted follow-ups first. Managers may answer ordinary informational questions directly, do initial scoping, and make narrow reads for specific missing evidence, conflicts or verification. Not every reply requires a worker. Workers execute their assigned scope, including integration and checks, and return conclusions, exact references, checks and uncertainty, not raw history or bulk source; they need not promote or delegate. On promotion, hand existing coding or execution tasks to workers before continuing. Do not switch roles to bypass delegation or become a worker while managing live descendants.
 
 These role-conditional duties are supplied in universal runtime instructions to new and resumed roots and descendants, even with a custom system prompt. Successful native-tool promotion also returns a short manager reminder; CLI `set_role` keeps its JSON snapshot output. This is operating policy, not a hard tool prohibition: it does not add a deterministic scheduler or automatic runtime delegation. A useful request is:
 
 > Split this change into independent tasks, delegate implementation and review, integrate the results, and report what you verified. Ask me only for decisions you cannot make safely.
 
+### Duplicate manager exploration
+
+The reported problem is a manager delegating investigation but then independently rereading broad source/document sets, duplicating worker effort and expanding the manager's context. The instruction-level fix is to consume compact worker evidence first and reserve direct reads for initial scoping or a specific evidence gap, conflict or verification need. Root/resume instructions, the native promotion reminder, the discoverable tool contract and repository guidance carry this policy. Regression tests check instruction delivery and the bounded-read exceptions, not deterministic model compliance; no hard read blocking or automatic scheduler is added.
+
 ## Integrate and verify
 
 1. Inspect the project and divide work by ownership or independent concern.
 2. Give each worker a concrete outcome, scope, and verification requirement.
-3. Collect findings and resolve overlapping changes before integration.
+3. Collect concise conclusions, exact references, checks and uncertainty; use targeted follow-ups before direct reads and resolve overlapping changes before integration.
 4. Assign relevant checks to workers, assess their evidence, inspect the combined diff, and state any remaining uncertainty.
 
 The harness provides tools and visibility; the agent remains responsible for choosing and checking this workflow. Follow [development conventions](development.md) and the shared [command approval](write-approvals.md) and [shell execution guidance](shell.md). [External coding CLIs](external-clis.md) are shell subprocesses, not native workers.
@@ -52,6 +56,7 @@ The harness provides tools and visibility; the agent remains responsible for cho
 | 2026-10-25 | Added isolated peer transport and live receiver checks instead of simulated typing into the human draft. | `dee1c86` |
 | 2026-10-31 | Added recursive roles, a shared registry/capacity budget, ecosystem discovery, safe inspection and stop controls. | Current change |
 | 2026-11-01 | Made manager execution delegation explicit for roots and promoted descendants, with universal role-conditional instructions and a native promotion reminder. | Current change |
+| 2026-11-03 | Extended manager delegation to substantial investigation and source/document exploration; prefer compact worker evidence over duplicate broad reads while retaining initial scoping and targeted verification. | Current change |
 
 ## Inspect
 

@@ -76,7 +76,7 @@ func agentTool(cfg config.Config, action func(string), policy *tools.ApprovalPol
 		out, err := agentOperation(ctx, args, active)
 		if err == nil && request.Action == "set_role" && request.Role == "manager" {
 			// Native tool reminder only: preserve the CLI's JSON snapshot contract.
-			out += "\n\nManager role: hand any existing coding or execution task to workers before continuing; delegate implementation, routine tests, builds, installation and restart execution, and coordinate/assess their evidence. Do not switch roles or execute the work yourself to bypass delegation, including when no workers are active or capacity is full."
+			out += "\n\nManager role: hand any existing coding or execution task to workers before continuing; delegate implementation, routine tests, builds, installation and restart execution, and coordinate/assess their evidence. Do not switch roles or execute the work yourself to bypass delegation, including when no workers are active or capacity is full. Delegate substantial investigation and source/document exploration. Once delegated, do not independently repeat broad exploration; use concise worker conclusions and targeted follow-ups first. Initial scoping and narrow reads for specific missing evidence, conflicts or verification remain allowed. Workers return conclusions, exact references, checks and uncertainty, not raw history or bulk source."
 		}
 		if err == nil && action != nil {
 			if request.Action == "spawn" {

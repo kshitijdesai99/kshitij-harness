@@ -45,8 +45,12 @@ func TestEcosystemManagerPolicyRootResumeAndPromotion(t *testing.T) {
 				"having no active workers does not transfer execution to the manager",
 				"On promotion to manager, hand any existing coding or execution task to workers before continuing",
 				"Do not switch roles to bypass delegation", "do not become a worker while managing live descendants",
-				"Managers may answer ordinary informational questions directly", "bounded read-only inspection",
-				"Workers execute their assigned scope and report evidence; they need not promote or delegate",
+				"Managers delegate substantial investigation and source/document exploration",
+				"Once delegated, do not independently repeat broad exploration",
+				"use concise worker conclusions and targeted follow-ups first",
+				"Managers may answer ordinary informational questions directly", "do initial scoping",
+				"narrow reads for specific missing evidence, conflicts or verification",
+				"Workers execute their assigned scope and return conclusions, exact references, checks and uncertainty, not raw history or bulk source; they need not promote or delegate",
 				"At capacity, retain orchestration", "never fall back to doing the execution yourself",
 			} {
 				if !strings.Contains(request.Instructions, want) {
@@ -101,7 +105,7 @@ func TestEcosystemManagerPolicyRootResumeAndPromotion(t *testing.T) {
 	}
 	promoted := checkPolicy("promoted manager")
 	encoded, _ := json.Marshal(promoted.Input)
-	for _, want := range []string{`\"role\":\"manager\"`, "Manager role: hand any existing coding or execution task to workers before continuing", "routine tests, builds, installation and restart execution", "no workers are active or capacity is full"} {
+	for _, want := range []string{`\"role\":\"manager\"`, "Manager role: hand any existing coding or execution task to workers before continuing", "routine tests, builds, installation and restart execution", "no workers are active or capacity is full", "Delegate substantial investigation and source/document exploration", "Once delegated, do not independently repeat broad exploration", "use concise worker conclusions and targeted follow-ups first", "Initial scoping and narrow reads for specific missing evidence, conflicts or verification remain allowed", "Workers return conclusions, exact references, checks and uncertainty, not raw history or bulk source"} {
 		if !strings.Contains(string(encoded), want) {
 			t.Errorf("promotion result missing %q: %s", want, encoded)
 		}
