@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="650" viewBox="0 0 1400 650" role="img" aria-labelledby="title description" font-family="Arial, Helvetica, sans-serif">
+  <title id="title">Session snapshots and conversation archive</title>
+  <desc id="description">Actual conversation events append to a private JSONL archive. Provider state saves a separate JSON snapshot used for resume and fork. Compaction changes provider state only, not the archive. System and memory injection and structured image attachments are excluded; arbitrary text may contain image data or secrets.</desc>
+  <rect width="1400" height="650" fill="#f8fafc"/>
+  <text x="60" y="58" font-size="32" font-weight="700" fill="#0f172a">One session, two different records</text>
+  <text x="60" y="94" font-size="19" fill="#475569">Append-only conversation evidence is separate from resumable working context.</text>
+  <rect x="735" y="135" width="605" height="375" rx="18" fill="#f0fdf4" stroke="#86efac" stroke-width="2" stroke-dasharray="8 6"/>
+  <text x="765" y="170" font-size="18" fill="#166534">Private local session files</text>
+  <g fill="none" stroke="#2563eb" stroke-width="3">
+    <path d="M440 255 H788"/>
+    <path d="M440 430 H788"/>
+    <path d="M275 550 V499"/>
+  </g>
+  <g fill="#2563eb">
+    <polygon points="800,255 787,248 787,262"/>
+    <polygon points="800,430 787,423 787,437"/>
+    <polygon points="275,487 268,500 282,500"/>
+  </g>
+  <g font-size="18" fill="#2563eb">
+    <text x="530" y="238">append actual events</text>
+    <text x="530" y="413">save checkpoint</text>
+  </g>
+  <g stroke="#93c5fd" stroke-width="1.5" fill="#eff6ff">
+    <rect x="60" y="195" width="380" height="120" rx="14"/>
+    <rect x="60" y="370" width="380" height="115" rx="14"/>
+    <rect x="800" y="195" width="480" height="120" rx="14"/>
+    <rect x="800" y="370" width="480" height="115" rx="14"/>
+  </g>
+  <rect x="125" y="550" width="300" height="65" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <g fill="#0f172a" font-size="22" font-weight="700">
+    <text x="85" y="240">Conversation events</text>
+    <text x="85" y="415">Provider working state</text>
+    <text x="825" y="240">session-id.jsonl</text>
+    <text x="825" y="415">session-id.json</text>
+    <text x="150" y="591">Compaction</text>
+  </g>
+  <g fill="#334155" font-size="18">
+    <text x="85" y="275">User / assistant / tool interactions</text>
+    <text x="85" y="450">May become a summary</text>
+    <text x="825" y="275">Archive; not used to resume or fork</text>
+    <text x="825" y="450">Snapshot for resume / fork</text>
+  </g>
+  <text x="465" y="530" font-size="18" fill="#475569">State only; archive unchanged.</text>
+  <text x="735" y="550" font-size="18" fill="#166534">No system/memory injection; structured images omitted.</text>
+  <text x="735" y="580" font-size="18" fill="#475569">Private does not mean redacted:</text>
+  <text x="735" y="608" font-size="18" fill="#475569">arbitrary conversation text may contain secrets.</text>
+</svg>

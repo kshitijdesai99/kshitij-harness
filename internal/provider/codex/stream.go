@@ -3,6 +3,7 @@ package codex
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -28,13 +29,24 @@ func (e streamError) detail() string {
 }
 
 // readStream is adapter-specific: the loop and renderer never see SSE events.
-func (c *Client) readStream(r io.Reader) ([]provider.Call, error) {
+func (c *Client) readStream(r io.Reader) (returned []provider.Call, err error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(nil, 16<<20)
 	var calls []provider.Call
 	displayed, completed := false, false
-	phase := ""
+	phase, messageID, hadDelta := "", "", false
+	messageEnd := func(status string) error {
+		if messageID == "" {
+			return nil
+		}
+		err := c.event(provider.Event{Type: "assistant_end", MessageID: messageID, Phase: phase, Status: status})
+		messageID = ""
+		return err
+	}
 	defer func() {
+		if messageID != "" {
+			err = errors.Join(err, messageEnd("interrupted"))
+		}
 		if displayed || completed {
 			provider.Reply(c.out, "\n", phase)
 		}
@@ -75,7 +87,15 @@ func (c *Client) readStream(r io.Reader) ([]provider.Call, error) {
 		switch ev.Type {
 		case "response.output_item.added":
 			if ev.Item["type"] == "message" {
+				if err := messageEnd("interrupted"); err != nil {
+					return nil, err
+				}
 				phase, _ = ev.Item["phase"].(string)
+				messageID, _ = ev.Item["id"].(string)
+				if messageID == "" {
+					messageID = eventID()
+				}
+				hadDelta = false
 			}
 			if c.stats.TTFT == 0 {
 				c.stats.TTFT = time.Since(c.start)
@@ -84,10 +104,46 @@ func (c *Client) readStream(r io.Reader) ([]provider.Call, error) {
 			if ev.Delta != "" {
 				displayed = true
 			}
+			if ev.Delta != "" {
+				if messageID == "" {
+					messageID = eventID()
+					hadDelta = false
+				}
+				if err := c.event(provider.Event{Type: "assistant_delta", MessageID: messageID, Phase: phase, Text: ev.Delta}); err != nil {
+					return nil, err
+				}
+				hadDelta = true
+			}
 			provider.Reply(c.out, ev.Delta, phase)
 		case "response.output_item.done":
 			if ev.Item == nil {
 				return nil, fmt.Errorf("codex: missing output item")
+			}
+			if ev.Item["type"] == "message" && ev.Item["role"] == "assistant" {
+				if messageID == "" {
+					messageID, _ = ev.Item["id"].(string)
+					if messageID == "" {
+						messageID = eventID()
+					}
+				}
+				phase, _ = ev.Item["phase"].(string)
+				if !hadDelta {
+					if content, ok := ev.Item["content"].([]any); ok {
+						for _, part := range content {
+							if p, ok := part.(map[string]any); ok && p["type"] == "output_text" {
+								if text, ok := p["text"].(string); ok {
+									if err := c.event(provider.Event{Type: "assistant_delta", MessageID: messageID, Phase: phase, Text: text}); err != nil {
+										return nil, err
+									}
+								}
+							}
+						}
+					}
+				}
+				if err := messageEnd("completed"); err != nil {
+					return nil, err
+				}
+				hadDelta = false
 			}
 			delete(ev.Item, "id")
 			c.input = append(c.input, ev.Item)
@@ -95,6 +151,9 @@ func (c *Client) readStream(r io.Reader) ([]provider.Call, error) {
 				action, _ := ev.Item["action"].(map[string]any)
 				if s := webAction(action); s != "" {
 					displayed = true
+					if err := c.event(provider.Event{Type: "hosted_action", Name: "web_search", Text: s}); err != nil {
+						return nil, err
+					}
 					c.out.Action(s)
 				}
 			}
@@ -105,9 +164,15 @@ func (c *Client) readStream(r io.Reader) ([]provider.Call, error) {
 				if id == "" || name == "" || !json.Valid([]byte(args)) {
 					return nil, fmt.Errorf("codex: invalid tool call")
 				}
+				if err := c.event(provider.Event{Type: "tool_call", CallID: id, Name: name, Input: json.RawMessage(args)}); err != nil {
+					return nil, err
+				}
 				calls = append(calls, provider.Call{ID: id, Name: name, Input: json.RawMessage(args)})
 			}
 		case "response.completed":
+			if err := messageEnd("completed"); err != nil {
+				return nil, err
+			}
 			completed = true
 			u := ev.Response.Usage
 			c.stats.In += u.In

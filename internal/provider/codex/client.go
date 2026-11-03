@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -32,6 +33,9 @@ const (
 
 type Client struct {
 	out          provider.Output
+	observe      func(provider.Event) error
+	observeErr   error
+	attemptID    string
 	model        string
 	effort       string
 	rules        string // always today's config, so rule changes reach old sessions
@@ -85,6 +89,15 @@ func New(c config.Config, repoMap string, ts []tools.Tool, out provider.Output) 
 }
 
 func (c *Client) Step(ctx context.Context, user string, results []provider.Result) (calls []provider.Call, err error) {
+	c.observeErr = nil
+	if c.observe != nil {
+		defer func() {
+			err = errors.Join(err, c.observeErr)
+			if err != nil {
+				calls = nil
+			}
+		}()
+	}
 	if results == nil {
 		c.start = time.Now() // a new turn, not a step inside one
 	}

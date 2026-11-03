@@ -42,6 +42,7 @@ func (c *Client) Compact(ctx context.Context) error {
 		return err
 	}
 	copy := *c
+	copy.observe, copy.observeErr = nil, nil // synthetic summary is not conversation evidence
 	copy.input = append([]map[string]any(nil), c.input...)
 	copy.tools, copy.image, copy.memory = nil, "", ""
 	copy.toolChoice = "none"

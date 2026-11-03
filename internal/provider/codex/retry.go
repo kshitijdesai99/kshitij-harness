@@ -42,12 +42,16 @@ func (c *Client) requestWithRetry(ctx context.Context, body []byte, access, acco
 		if !recoveryDeadline.IsZero() {
 			attemptCtx, stopDeadline = context.WithDeadline(ctx, recoveryDeadline)
 		}
+		if err := c.startAttempt(); err != nil {
+			stopDeadline()
+			return nil, err
+		}
 		requestCtx, watch := newIdleWatch(attemptCtx, c.idleTimeout)
 		req, err := http.NewRequestWithContext(requestCtx, "POST", codexURL, bytes.NewReader(body))
 		if err != nil {
 			watch.stop()
 			stopDeadline()
-			return nil, err
+			return nil, c.endAttempt(err)
 		}
 		setHeaders(req, access, account)
 		req.Header.Set("Content-Type", "application/json")
@@ -103,9 +107,17 @@ func (c *Client) requestWithRetry(ctx context.Context, body []byte, access, acco
 		cause := context.Cause(requestCtx)
 		watch.stop()
 		stopDeadline()
+		attemptErr := err
+		if ctx.Err() != nil {
+			attemptErr = ctx.Err()
+		}
+		endErr := c.endAttempt(attemptErr)
+		if c.observeErr != nil {
+			return nil, endErr
+		}
 		if ctx.Err() != nil {
 			c.stats = stats
-			return nil, ctx.Err()
+			return nil, endErr
 		}
 		if err == nil {
 			return calls, nil

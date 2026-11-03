@@ -313,8 +313,13 @@ func openChatPane(ctx context.Context, cfg config.Config, c *chat, fork bool) (s
 	if fork {
 		command = append(command, "-s", id)
 	}
+	forkParent := ""
+	if fork {
+		forkParent = c.id
+	}
 	pane, err := tmuxContext(ctx, "split-window", "-h", "-P", "-F", "#{pane_id}", "-t", current, "-c", cwd,
 		"-e", "KH_PARENT=", "-e", "KH_AGENT=kh:"+name,
+		"-e", "KH_FORK_SESSION_ID="+forkParent,
 		"-e", "KH_ECOSYSTEM_ID=", "-e", "KH_ECOSYSTEM_AGENT_ID=", "-e", "KH_ECOSYSTEM_TOKEN=", sessionCommand(false, command...))
 	if err != nil {
 		return "", err

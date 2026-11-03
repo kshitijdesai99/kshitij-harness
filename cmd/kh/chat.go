@@ -29,6 +29,7 @@ type chat struct {
 	model             provider.Provider
 	backend, id, repo string
 	identity          *session.Identity
+	archive           *session.Archive
 	memory            *memory.Store
 	memoryActive      bool // applied pipeline, distinct from persisted opt-in after startup failure
 	budget            memory.Budget
@@ -140,11 +141,32 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 			c.lastMemoryBytes = len(relevant)
 			setter.SetMemory(relevant)
 		}
+		if c.archive != nil {
+			var messageOrigin learn.RunOrigin
+			messageOrigin.Observe(query)
+			source := "user"
+			if !messageOrigin.Eligible() {
+				source = "peer"
+			} else if c.identity != nil && c.identity.Role == "subagent" {
+				source = "delegated"
+			}
+			return c.archive.Append(session.ArchiveRecord{Event: provider.Event{Type: "user_message", Text: query}, Origin: source})
+		}
 		return nil
 	}
 	var steps []learn.Step
 	runner := agent.Runner{Model: c.model, Tools: c.tools, Input: c.input.Lines,
-		Held: c.input.Held, Notice: c.ui.Notice, BeforeMessage: beforeMessage, ExpandMessage: func(message string) string {
+		Held: c.input.Held, Notice: c.ui.Notice, BeforeMessage: beforeMessage,
+		AfterTools: func(calls []provider.Call, results []provider.Result) error {
+			if c.archive == nil {
+				return nil
+			}
+			var errs []error
+			for _, r := range results {
+				errs = append(errs, c.archive.Append(session.ArchiveRecord{Event: provider.Event{Type: "tool_result", CallID: r.ID, Text: r.Output, IsError: r.IsError}}))
+			}
+			return errors.Join(errs...)
+		}, ExpandMessage: func(message string) string {
 			message = c.project.Expand(message)
 			if ecosystemSnapshot != "" {
 				message += "\n\n[ecosystem snapshot] " + ecosystemSnapshot
@@ -198,7 +220,11 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 	if c.ui.Activity != nil {
 		c.ui.Activity.Set("saving session")
 	}
-	return errors.Join(err, c.save())
+	var archiveErr error
+	if c.archive != nil {
+		archiveErr = c.archive.Err()
+	}
+	return errors.Join(err, c.save(), archiveErr)
 }
 
 // showMemory reports what the background hooks saved, between turns so it

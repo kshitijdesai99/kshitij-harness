@@ -31,10 +31,10 @@ Shared guides: [Architecture](architecture.md) · [Development](development.md) 
 
 | Feature | Introduced | What followed |
 |---|---|---|
-| [Saved sessions](saved-sessions.md) | 2026-09-28 | Replay, previews, provider-owned checkpoints |
+| [Saved sessions](saved-sessions.md) | 2026-09-28 | Replay, previews, provider-owned JSON checkpoints and append-only JSONL archives |
 | [Running tmux chats](tmux-chats.md) | 2026-09-29 | Fresh independent sessions on launch |
 | [Chat branches](chat-branches.md) | 2026-10-05 | Right-pane forks and `/new` |
-| [Context compaction](compaction.md) | 2026-10-04 | Tool-less enforcement, feedback, persistence fixes |
+| [Context compaction](compaction.md) | 2026-10-04 | Tool-less enforcement, persistence fixes; interaction archives stay separate |
 
 ## Delegation
 
@@ -88,7 +88,7 @@ Shared guides: [Architecture](architecture.md) · [Development](development.md) 
 
 | Feature | Introduced | What followed |
 |---|---|---|
-| [Provider state and boundaries](provider-state.md) | 2026-09-28 | Backend-neutral contract and failure cleanup |
+| [Provider state and boundaries](provider-state.md) | 2026-09-28 | Backend-neutral contract, failure cleanup and separate conversation-event observation |
 | [Authentication and connection recovery](connection-recovery.md) | 2026-09-28 | Retry/idle handling and expired-token recovery |
 | [Rebuild and updates](startup-rebuild.md) | 2026-10-04 | Automatic rebuild/re-exec at startup |
 | [Managed hybrid runtime](hybrid-runtime.md) | 2026-10-23 | Bounded contention and revision-aware helpers |

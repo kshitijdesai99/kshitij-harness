@@ -31,6 +31,9 @@ type Runner struct {
 	Notice   func(string)
 	Activity func(string)
 	Observe  func([]provider.Call, []provider.Result) // sees each batch of tool calls, e.g. for memory hooks
+	// AfterTools persists completed results before any follow-up. On failure the
+	// deferred canceled Step still pairs outputs without generating another reply.
+	AfterTools func([]provider.Call, []provider.Result) error
 	// BeforeMessage runs with the caller's context for each nonempty user message,
 	// after image processing and before the model. An error aborts the turn.
 	BeforeMessage func(context.Context, string) error
@@ -112,6 +115,11 @@ func (r Runner) Run(ctx context.Context, task string) error {
 		results = runAll(ctx, ts, calls)
 		if r.Observe != nil {
 			r.Observe(calls, results)
+		}
+		if r.AfterTools != nil {
+			if err := r.AfterTools(calls, results); err != nil {
+				return err
+			}
 		}
 		var held []string
 		if r.Held != nil {

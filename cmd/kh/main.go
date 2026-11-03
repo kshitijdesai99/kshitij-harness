@@ -307,8 +307,28 @@ func main() {
 		}
 	}
 
+	archive, err := session.OpenArchive(*id)
+	exit(err)
+	defer func() {
+		if err := archive.Close(); err != nil {
+			fmt.Fprintln(stderr, "error:", err)
+		}
+	}()
+	archiveOrigin := "new"
+	if resuming {
+		archiveOrigin = "resume"
+	}
+	parentSession := os.Getenv("KH_FORK_SESSION_ID")
+	if parentSession != "" && resuming {
+		archiveOrigin = "fork"
+	}
+	os.Unsetenv("KH_FORK_SESSION_ID")
+	exit(archive.Append(session.ArchiveRecord{Event: provider.Event{Type: "session_start"}, Origin: archiveOrigin, ParentSessionID: parentSession}))
+	if observed, ok := p.(provider.EventObserver); ok {
+		observed.SetEventObserver(func(ev provider.Event) error { return archive.Append(session.ArchiveRecord{Event: ev}) })
+	}
 	exportModel(p, cfg.Provider)
-	c := chat{model: p, backend: cfg.Provider, id: *id, repo: repoScope, project: project, connectors: connectors, identity: saved.Identity,
+	c := chat{archive: archive, model: p, backend: cfg.Provider, id: *id, repo: repoScope, project: project, connectors: connectors, identity: saved.Identity,
 		memory: db, memoryActive: memoryActive, learn: learner, input: console, ui: ui, tools: dispatch, bootstrap: bootstrap, logicalCall: registry.LogicalCall, seen: fromFile, policy: policy,
 		budget: memory.Budget{SummaryChars: cfg.SummaryMaxTokens * 4, TopInstructions: cfg.TopInstructions, TopGotchas: cfg.TopGotchas,
 			TopKnowledge: cfg.TopKnowledge, TotalChars: cfg.MemoryMaxTokens * 4}}
