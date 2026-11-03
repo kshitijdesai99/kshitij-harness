@@ -26,6 +26,9 @@ type workspaceArgs struct {
 	Affected     string `json:"affected"`
 	Verification string `json:"verification"`
 	Status       string `json:"status"`
+	Detail       string `json:"detail"`
+	Offset       int    `json:"offset"`
+	Limit        int    `json:"limit"`
 }
 
 // Serializes size checks and appends across tool instances in this process.
@@ -34,12 +37,15 @@ var workspaceWrites sync.Mutex
 func workspaceTool() tools.Tool {
 	return tools.Tool{
 		Name:        "workspace",
-		Description: "Inspect an existing target folder's applicable guidance, capability metadata and bounded decisions without writing or executing MCP/scripts. Before work, explicitly prepare to create .agents at the Git/workspace root (never each subdirectory). Record meaningful dated decisions only, with rationale, affected areas and verification/outstanding work; distinguish proposed, implemented and superseded decisions. Never record secrets, transcripts or routine logs. Use decision_path to respect an existing Markdown decision convention; inspect it first. Writes are explicit, not triggered by inspection.",
+		Description: "Inspect target binding guidance, source counts and decision_path without writes or execution. Use detail=decisions for bounded decision text; project_capability searches/reads references. Prepare creates .agents at the workspace root. Record appends meaningful dated decisions with rationale, affected areas, verification and status; never secrets or logs. Inspect the existing convention before writing.",
 		Params: map[string]any{
 			"action":        map[string]any{"type": "string", "enum": []string{"inspect", "prepare", "record"}},
 			"directory":     map[string]any{"type": "string", "description": "Existing target directory; nested guidance applies here."},
 			"root":          map[string]any{"type": "string", "description": "Optional explicit existing non-Git workspace root containing directory. Git targets always use the nearest Git root. Otherwise the nearest ancestor with .agents, or directory itself, is used."},
 			"decision_path": map[string]any{"type": "string", "description": "Optional root-relative Markdown file for an existing decision convention, defaults to .agents/decisions.md. Parent must exist; no traversal or symlinks."},
+			"detail":        map[string]any{"type": "string", "enum": []string{"decisions"}, "description": "Optional inspect detail: retrieve bounded decision text instead of guidance. Default inspection includes neither catalog nor historical decision prose."},
+			"offset":        map[string]any{"type": "integer", "minimum": 0, "description": "Decision text byte offset (inspect detail=decisions); use next_offset from the preceding page."},
+			"limit":         map[string]any{"type": "integer", "minimum": 1, "maximum": 16384, "description": "Decision text page byte limit, default 8192 (inspect detail=decisions)."},
 			"title":         map[string]any{"type": "string", "description": "Decision heading (record)."},
 			"rationale":     map[string]any{"type": "string", "description": "Why the decision was made (record)."},
 			"affected":      map[string]any{"type": "string", "description": "Affected areas/files (record)."},
@@ -71,7 +77,7 @@ func workspaceTool() tools.Tool {
 				return "", err
 			}
 			if args.Action == "inspect" {
-				return inspectWorkspace(ctx, directory, root, path)
+				return inspectWorkspace(ctx, directory, root, path, args)
 			}
 			workspaceWrites.Lock()
 			defer workspaceWrites.Unlock()
@@ -237,37 +243,68 @@ func decisionEntry(args workspaceArgs) (string, error) {
 	return fmt.Sprintf("\n\n## %s — %s\n\n- Status: %s\n- Rationale: %s\n- Affected: %s\n- Verification / outstanding: %s\n", time.Now().Format("2006-01-02"), strings.TrimSpace(args.Title), args.Status, strings.TrimSpace(args.Rationale), strings.TrimSpace(args.Affected), strings.TrimSpace(args.Verification)), nil
 }
 
-func inspectWorkspace(ctx context.Context, directory, root, path string) (string, error) {
+func inspectWorkspace(ctx context.Context, directory, root, path string, args workspaceArgs) (string, error) {
 	c, err := Load(directory)
 	if err != nil {
 		return "", err
 	}
-	catalog, err := c.Tools()[0].Run(ctx, json.RawMessage(`{"action":"search"}`))
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	if args.Detail != "" && args.Detail != "decisions" {
+		return "", fmt.Errorf("unknown workspace detail %q", args.Detail)
+	}
 	full := filepath.Join(root, path)
+	if args.Detail == "" {
+		return workspaceJSON(struct {
+			Directory    string `json:"directory"`
+			Root         string `json:"root"`
+			Guidance     string `json:"guidance"`
+			Capabilities int    `json:"capability_count"`
+			Servers      int    `json:"mcp_count"`
+			DecisionPath string `json:"decision_path"`
+			WarningCount int    `json:"warning_count"`
+		}{directory, root, c.Prompt, len(c.assets), len(c.Servers), full, len(c.Warnings)})
+	}
+	if args.Offset < 0 || args.Limit < 0 || args.Limit > 16384 {
+		return "", fmt.Errorf("decision offset must be nonnegative and limit at most 16384 bytes")
+	}
+	if args.Limit == 0 {
+		args.Limit = 8192
+	}
 	decisions := ""
+	var warnings []string
 	if _, err := os.Lstat(full); !os.IsNotExist(err) {
 		if err := safeAssetPath(full, root); err != nil {
-			c.Warnings = append(c.Warnings, err.Error())
+			warnings = append(warnings, err.Error())
 		} else {
 			local := &loader{config: &Config{}}
 			if data, ok := local.read(full); ok {
 				decisions = string(data)
 			}
-			c.Warnings = append(c.Warnings, local.config.Warnings...)
+			warnings = append(warnings, local.config.Warnings...)
 		}
 	}
+	if args.Offset > len(decisions) || args.Offset < len(decisions) && !utf8.RuneStart(decisions[args.Offset]) {
+		return "", fmt.Errorf("decision offset must be within text at a UTF-8 boundary")
+	}
+	end := args.Offset + args.Limit
+	if end > len(decisions) {
+		end = len(decisions)
+	}
+	for end > args.Offset && end < len(decisions) && !utf8.RuneStart(decisions[end]) {
+		end--
+	}
+	if end == args.Offset && end < len(decisions) {
+		return "", fmt.Errorf("decision limit is too small for the next UTF-8 character")
+	}
 	return workspaceJSON(struct {
-		Directory    string          `json:"directory"`
-		Root         string          `json:"root"`
-		Guidance     string          `json:"guidance"`
-		Catalog      json.RawMessage `json:"catalog"`
-		DecisionPath string          `json:"decision_path"`
-		Decisions    string          `json:"decisions"`
-		Warnings     []string        `json:"warnings,omitempty"`
-	}{directory, root, c.Prompt, json.RawMessage(catalog), full, decisions, c.Warnings})
+		DecisionPath string   `json:"decision_path"`
+		Decisions    string   `json:"decisions"`
+		NextOffset   int      `json:"next_offset"`
+		Truncated    bool     `json:"truncated"`
+		Warnings     []string `json:"warnings,omitempty"`
+	}{full, decisions[args.Offset:end], end, end < len(decisions), warnings})
 }
 
 func workspaceJSON(value any) (string, error) {

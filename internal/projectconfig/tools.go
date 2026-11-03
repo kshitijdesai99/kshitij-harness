@@ -177,7 +177,7 @@ func (l *loader) asset(path, root, kind string) {
 }
 
 // command registers a lazy entry point. The body is intentionally discarded;
-// only bounded frontmatter metadata is retained in the startup prompt.
+// only bounded frontmatter metadata is retained in the on-demand catalog.
 func (l *loader) command(key, path string) {
 	previous := l.config.commandPaths[key]
 	if _, ok := l.config.assets[path]; !ok && len(l.config.assets) >= maxAssets && previous == "" {
@@ -207,15 +207,20 @@ func (l *loader) command(key, path string) {
 	l.config.commandPaths[key] = path
 	l.config.CommandDirs[key] = filepath.Dir(path)
 	delete(l.config.commandRoots, key)
-	l.block(path, fmt.Sprintf("Project %s /%s: %s\nUse project_capability search/load/read for its body and supporting files; scripts are never executed by loading.", kind, key, description))
 	if strings.HasPrefix(strings.TrimSpace(string(data)), "---") {
 		l.warn(path, "command/skill frontmatter is reference text only; metadata such as allowed-tools, model, hooks and invocation restrictions is not enforced")
 	}
 }
 
 func (l *loader) rule(path string) {
+	before := len(l.config.Warnings)
 	data, ok := l.read(path)
 	if !ok {
+		for _, warning := range l.config.Warnings[before:] {
+			if strings.Contains(warning, "file exceeds") {
+				l.err = fmt.Errorf("binding project guidance cannot be loaded: %s", warning)
+			}
+		}
 		return
 	}
 	if strings.HasPrefix(strings.TrimSpace(string(data)), "---") && frontmatter(string(data)) == nil {

@@ -9,6 +9,23 @@ import (
 	"kh/internal/config"
 )
 
+func TestCompactMemoryBudgetDefaultsAndExplicitOverrides(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	defaults, err := config.Load()
+	if err != nil || defaults.MemoryMaxTokens != 500 || defaults.SummaryMaxTokens != 2500 || defaults.MapCap != 0 {
+		t.Fatalf("compact defaults: %+v: %v", defaults, err)
+	}
+	for _, budget := range []int{0, 500, 4000, 12345} {
+		if err := config.Set("memory_max_tokens", budget); err != nil {
+			t.Fatal(err)
+		}
+		got, err := config.Load()
+		if err != nil || got.MemoryMaxTokens != budget {
+			t.Fatalf("explicit budget %d: %+v: %v", budget, got, err)
+		}
+	}
+}
+
 // Set changes one key and keeps the rest of the user's file.
 func TestSetKeepsOtherKeys(t *testing.T) {
 	home := t.TempDir()

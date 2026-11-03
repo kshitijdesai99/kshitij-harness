@@ -80,12 +80,12 @@ func TestLazyCapabilityCatalogAndSlash(t *testing.T) {
 	write(t, root, ".claude/CLAUDE.md", "CORE_BODY")
 	write(t, root, ".claude/rules/global.md", "RULE_BODY")
 	c := load(t, root)
-	for _, body := range []string{"SKILL_BODY", "REFERENCE_BODY", "SCRIPT_BODY", "COMMAND_BODY"} {
+	for _, body := range []string{"SKILL_BODY", "REFERENCE_BODY", "SCRIPT_BODY", "COMMAND_BODY", "Check the release", "Run a check", "Project skill /check"} {
 		if strings.Contains(c.Prompt, body) {
 			t.Errorf("startup leaked %s", body)
 		}
 	}
-	for _, metadata := range []string{"Check the release", "Run a check", "CORE_BODY", "RULE_BODY", "project_capability"} {
+	for _, metadata := range []string{"CORE_BODY", "RULE_BODY", "project_capability", "Sources available:"} {
 		if !strings.Contains(c.Prompt, metadata) {
 			t.Errorf("missing %s", metadata)
 		}

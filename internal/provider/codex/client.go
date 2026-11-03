@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"kh/internal/config"
@@ -30,21 +31,23 @@ const (
 )
 
 type Client struct {
-	out         provider.Output
-	model       string
-	effort      string
-	rules       string // always today's config, so rule changes reach old sessions
-	repoMap     string // frozen per session: it changes often and would miss the cache
-	memory      string // memory message for the next user message; saved with it, so it is sent once
-	image       string // data URL attached to the next user message; retained if the request fails
-	tools       []map[string]any
-	toolChoice  string           // empty means auto; compaction uses none to prohibit new tools
-	input       []map[string]any // full history; the server stores nothing (store: false)
-	session     string
-	stats       provider.Stats
-	start       time.Time     // when the current turn's user message was sent
-	window      int           // context limit of c.model: 0 = not looked up, -1 = unknown
-	idleTimeout time.Duration // bounds silent headers/streams, not total reasoning time
+	out          provider.Output
+	model        string
+	effort       string
+	rules        string // always today's config, so rule changes reach old sessions
+	repoMap      string // frozen per session: it changes often and would miss the cache
+	memory       string // memory message for the next user message; saved with it, so it is sent once
+	image        string // data URL attached to the next user message; retained if the request fails
+	tools        []map[string]any
+	webAvailable bool
+	webActive    *atomic.Bool     // shared pointer keeps Compact's private copy lock-free
+	toolChoice   string           // empty means auto; compaction uses none to prohibit new tools
+	input        []map[string]any // full history; the server stores nothing (store: false)
+	session      string
+	stats        provider.Stats
+	start        time.Time     // when the current turn's user message was sent
+	window       int           // context limit of c.model: 0 = not looked up, -1 = unknown
+	idleTimeout  time.Duration // bounds silent headers/streams, not total reasoning time
 }
 
 func New(c config.Config, repoMap string, ts []tools.Tool, out provider.Output) *Client {
@@ -57,7 +60,8 @@ func New(c config.Config, repoMap string, ts []tools.Tool, out provider.Output) 
 	if idle <= 0 {
 		idle = 120 * time.Second
 	}
-	x := &Client{out: out, model: c.Model, effort: c.Effort, rules: c.System, repoMap: repoMap, session: hex.EncodeToString(id), idleTimeout: idle}
+	x := &Client{out: out, model: c.Model, effort: c.Effort, rules: c.System, repoMap: repoMap, session: hex.EncodeToString(id), idleTimeout: idle, webAvailable: c.WebSearch, webActive: new(atomic.Bool)}
+	x.webActive.Store(c.WebSearch)
 	for _, t := range ts {
 		schema := t.InputSchema
 		if schema == nil {
@@ -69,8 +73,6 @@ func New(c config.Config, repoMap string, ts []tools.Tool, out provider.Output) 
 		})
 	}
 	if c.WebSearch {
-		// Server-side tool: OpenAI runs the search, we never see a call to execute.
-		x.tools = append(x.tools, map[string]any{"type": "web_search"})
 		x.rules += "\n\nWeb\n- For anything on the web, use the built-in web search: it can search, open pages and find text on them."
 		for _, tool := range ts {
 			if tool.Name == "bash" {
@@ -126,6 +128,10 @@ func (c *Client) Step(ctx context.Context, user string, results []provider.Resul
 		}
 	}()
 
+	if !c.webAvailable && c.toolChoice != "none" && c.hasWebHistory() {
+		return nil, fmt.Errorf("web search is disabled but saved history contains hosted searches; use /compact to clear that history before continuing")
+	}
+	requestTools := c.requestTools()
 	choice := c.toolChoice
 	if choice == "" {
 		choice = "auto"
@@ -134,7 +140,7 @@ func (c *Client) Step(ctx context.Context, user string, results []provider.Resul
 		"model":               c.model,
 		"instructions":        c.instructions(),
 		"input":               c.input,
-		"tools":               c.tools,
+		"tools":               requestTools,
 		"tool_choice":         choice,
 		"parallel_tool_calls": true,
 		"reasoning":           map[string]string{"effort": c.effort},
@@ -142,13 +148,43 @@ func (c *Client) Step(ctx context.Context, user string, results []provider.Resul
 		"stream":              true,
 		// Lets us replay reasoning next turn without the server storing it.
 		"include":          []string{"reasoning.encrypted_content"},
-		"prompt_cache_key": c.cacheKey(),
+		"prompt_cache_key": c.cacheKey(requestTools),
 	})
 	access, account, err := Token(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return c.requestWithRetry(ctx, body, access, account, n)
+}
+
+// DeferWebSearch is called during application setup, before the first request.
+// Existing hosted-search history still requires its declaration on continuation.
+func (c *Client) DeferWebSearch() { c.webActive.Store(false) }
+
+// EnableWebSearch is safe for concurrent, repeated activation tool calls.
+func (c *Client) EnableWebSearch() error {
+	if !c.webAvailable {
+		return fmt.Errorf("web search is disabled in configuration")
+	}
+	c.webActive.Store(true)
+	return nil
+}
+
+func (c *Client) hasWebHistory() bool {
+	for _, item := range c.input {
+		if item["type"] == "web_search_call" {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Client) requestTools() []map[string]any {
+	// Compact constructs its own minimal schema and prohibits tool execution.
+	if c.toolChoice == "none" || (!c.webActive.Load() && !c.hasWebHistory()) {
+		return c.tools
+	}
+	return append(append([]map[string]any(nil), c.tools...), map[string]any{"type": "web_search"})
 }
 
 // AttachImage stages a data URL for the next user message. The current session
@@ -167,8 +203,8 @@ func (c *Client) instructions() string {
 
 // cacheKey is a hash of everything before the history. Same prompt and tools
 // = same key, so every session in a repo shares one warm cache.
-func (c *Client) cacheKey() string {
-	b, _ := json.Marshal([]any{c.model, c.instructions(), c.tools})
+func (c *Client) cacheKey(requestTools []map[string]any) string {
+	b, _ := json.Marshal([]any{c.model, c.instructions(), requestTools})
 	h := sha256.Sum256(b)
 	return "kh_" + hex.EncodeToString(h[:12])
 }

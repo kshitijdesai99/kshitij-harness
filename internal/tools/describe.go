@@ -20,6 +20,12 @@ func DescribeCall(name string, input json.RawMessage) []string {
 		return []string{toolLabel(name)}
 	}
 	switch name {
+	case InvokeToolName:
+		// Never display nested argument values: they may hold credentials or
+		// large payloads. Only a syntactically safe underlying identity is shown.
+		if registryName(args.Name) {
+			return []string{toolLabel(args.Name)}
+		}
 	case "bash":
 		if args.Command != "" {
 			return []string{CommandLabel(args.Command)}

@@ -128,9 +128,11 @@ func TestProjectConfigMCPProcess(t *testing.T) {
 }
 
 type projectCLIRequest struct {
-	Instructions string           `json:"instructions"`
-	Input        []map[string]any `json:"input"`
-	Tools        []map[string]any `json:"tools"`
+	PromptCacheKey string           `json:"prompt_cache_key"`
+	Instructions   string           `json:"instructions"`
+	Input          []map[string]any `json:"input"`
+	Tools          []map[string]any `json:"tools"`
+	ToolChoice     string           `json:"tool_choice"`
 }
 
 // projectCLIProxy terminates only the fixture's chatgpt.com HTTPS requests.
@@ -332,13 +334,7 @@ func TestProjectConfigCLI(t *testing.T) {
 				t.Errorf("startup eagerly includes %s", marker)
 			}
 		}
-		registered := false
-		for _, tool := range first.Tools {
-			registered = registered || tool["name"] == "project_capability"
-		}
-		if !registered {
-			t.Error("project_capability absent from actual provider tool schema")
-		}
+		assertCompactToolSchemas(t, first)
 		for step, markers := range [][]string{
 			{"fixture-guide", "Explain the small inert", "fixture-demo:hello", "Explain the fixture-demo plugin greeting", "fixture-demo:check", "Describe the local fixture plugin", "fixture-fallback"},
 			{"LAZY-FIXTURE-SKILL-BODY"},
@@ -413,15 +409,9 @@ func TestProjectConfigCLI(t *testing.T) {
 			t.Fatalf("content tool loop incomplete (%d requests): %s", len(requests), out)
 		}
 		first := <-requests
-		registered := map[string]bool{}
-		for _, tool := range first.Tools {
-			name, _ := tool["name"].(string)
-			registered[name] = true
-		}
+		assertCompactToolSchemas(t, first)
+		// Historical direct calls remain dispatchable despite compact schemas.
 		for step, want := range []string{"CLI resource metadata", "fixture://{name}", "MCP-CLI-RESOURCE-BODY", "CLI prompt metadata", "MCP-CLI-PROMPT-reader"} {
-			if !registered[calls[step].Name] {
-				t.Errorf("content tool missing from provider schema: %s", calls[step].Name)
-			}
 			if output := toolOutput(t, <-requests, step); !strings.Contains(output, want) {
 				t.Errorf("content step %d missing %q: %s", step, want, output)
 			}
@@ -529,6 +519,34 @@ func TestProjectConfigCLI(t *testing.T) {
 			t.Fatalf("child discovery protocol: %q %v", log, err)
 		}
 	})
+	t.Run("MCP registry describe and invoke preserves contract and approval", func(t *testing.T) {
+		home, cwd := fixture(t, true)
+		mcpConfig(t, cwd)
+		proxy, requests := projectCLIProxyScript(t, home, func(step int) *projectCLICall {
+			if step == 0 {
+				return &projectCLICall{Name: "tool_registry", Arguments: `{"action":"describe","name":"mcp__fixture__echo"}`}
+			}
+			if step == 1 {
+				return &projectCLICall{Name: "tool_invoke", Arguments: `{"name":"mcp__fixture__echo","arguments":{"value":"roundtrip"}}`}
+			}
+			return nil
+		})
+		out := run(t, home, cwd, proxy, "", "-p", "exercise discovered MCP")
+		if !strings.Contains(out, `Call MCP tool "mcp__fixture__echo" (external effects)`) {
+			t.Fatal(out)
+		}
+		first, described, invoked := <-requests, <-requests, <-requests
+		assertCompactToolSchemas(t, first)
+		contract := toolOutput(t, described, 0)
+		for _, want := range []string{"CLI fixture echo", `"additionalProperties":false`, `"enum":["roundtrip"]`, `"required":["value"]`} {
+			if !strings.Contains(contract, want) {
+				t.Errorf("described original schema missing %q: %s", want, contract)
+			}
+		}
+		if got := toolOutput(t, invoked, 1); !strings.Contains(got, "MCP-CLI-roundtrip") {
+			t.Fatal(got)
+		}
+	})
 	t.Run("MCP auto startup discovers schema and completes tool roundtrip", func(t *testing.T) {
 		home, cwd := fixture(t, true)
 		marker := mcpConfig(t, cwd)
@@ -541,22 +559,9 @@ func TestProjectConfigCLI(t *testing.T) {
 			t.Fatalf("provider requests=%d, want 2", len(requests))
 		}
 		first, second := <-requests, <-requests
+		assertCompactToolSchemas(t, first)
+		// Kept as a direct historical call fixture: the host still dispatches it.
 		found := false
-		for _, tool := range first.Tools {
-			if tool["name"] != "mcp__fixture__echo" {
-				continue
-			}
-			found = true
-			params, _ := tool["parameters"].(map[string]any)
-			encoded, _ := json.Marshal(params)
-			if tool["description"] != "CLI fixture echo" || params["additionalProperties"] != false || !strings.Contains(string(encoded), `"enum":["roundtrip"]`) || !strings.Contains(string(encoded), `"required":["value"]`) {
-				t.Errorf("schema lost: %v", tool)
-			}
-		}
-		if !found {
-			t.Error("MCP schema missing from provider tools")
-		}
-		found = false
 		for _, item := range second.Input {
 			output, _ := item["output"].(string)
 			if item["type"] == "function_call_output" && item["call_id"] == "cli-call-0" && strings.HasPrefix(output, "MCP-CLI-roundtrip\n\n[ecosystem snapshot] ") {

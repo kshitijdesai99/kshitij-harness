@@ -13,9 +13,9 @@ Shared guides: [Architecture](architecture.md) · [Development](development.md) 
 | [Execution loop](execution.md) | 2026-09-28 | Steering, provider separation, user-message hooks |
 | [Shell commands](shell.md) | 2026-09-28 | Output handling and unrestricted filesystem access under OS permissions |
 | [Structured editing](editing.md) | 2026-09-28 | Validated batches and cross-folder edits |
-| [Web search](web-search.md) | 2026-09-28 | Visible search/open/find actions |
+| [Web search](web-search.md) | 2026-09-28 | Visible search/open/find actions; hosted schema activated on demand |
 | [Repository map](repository-map.md) | 2026-09-28 | Git-only scope; now opt-in |
-| [Project configuration](project-configuration.md) | 2026-10-30 | `.agents`/`.agent`/`.claude`, target workspace inspection/decisions, lazy capabilities/assets, local plugins, and MCP with native HTTP OAuth and session connector inventory |
+| [Project configuration](project-configuration.md) | 2026-10-30 | `.agents`/`.agent`/`.claude`, compact context with on-demand contracts/catalogs/decisions and hosted web activation, local plugins, MCP OAuth and connector inventory |
 
 ## Interactive control
 
@@ -59,7 +59,7 @@ Shared guides: [Architecture](architecture.md) · [Development](development.md) 
 
 | Feature | Introduced | What followed |
 |---|---|---|
-| [Keyword recall](keyword-recall.md) | 2026-09-29 | Bounded context and less redundant recall |
+| [Keyword recall](keyword-recall.md) | 2026-09-29 | Bounded context, less redundant recall, smaller default injection budget |
 | [Hybrid retrieval](hybrid-retrieval.md) | 2026-10-16 | Managed local models, [runtime](hybrid-runtime.md), and applicability scoring |
 | [Retrieval diagnostics](retrieval-diagnostics.md) | 2026-10-23 | Candidate scores, rejection and fallback details |
 | [Procedure learning](procedure-learning.md) | 2026-10-23 | No later changes at baseline |

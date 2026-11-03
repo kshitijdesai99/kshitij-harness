@@ -79,12 +79,12 @@ func TestWorkspaceInspectPrepareAndDecision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{root, "ROOT_GUIDANCE", "LOCAL_GUIDANCE", "Target skill", "PLAIN_ROOT_GUIDANCE", "PLAIN_NESTED_GUIDANCE"} {
+	for _, want := range []string{root, "ROOT_GUIDANCE", "LOCAL_GUIDANCE", "capability_count", "PLAIN_ROOT_GUIDANCE", "PLAIN_NESTED_GUIDANCE"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %s: %s", want, got)
 		}
 	}
-	for _, unwanted := range []string{"UNRELATED_GUIDANCE", "LAZY_BODY", "PRIVATE_SECRET", "UNRELATED_PLAIN_GUIDANCE"} {
+	for _, unwanted := range []string{"UNRELATED_GUIDANCE", "LAZY_BODY", "PRIVATE_SECRET", "UNRELATED_PLAIN_GUIDANCE", "Target skill", "\"catalog\"", "\"decisions\""} {
 		if strings.Contains(got, unwanted) {
 			t.Fatalf("leaked %s", unwanted)
 		}
@@ -133,6 +133,7 @@ func TestWorkspaceInspectPrepareAndDecision(t *testing.T) {
 		t.Fatal("decision not appended")
 	}
 	args["action"] = "inspect"
+	args["detail"] = "decisions"
 	got, err = runProjectTool(t, c, "workspace", args)
 	if err != nil || !strings.Contains(got, "Target-aware loading") {
 		t.Fatalf("decision not inspected: %s %v", got, err)
@@ -165,6 +166,7 @@ func TestWorkspaceExistingConventionAndNonGitRoot(t *testing.T) {
 		t.Fatal("existing convention overwritten")
 	}
 	args["action"] = "inspect"
+	args["detail"] = "decisions"
 	got, err := runProjectTool(t, c, "workspace", args)
 	if err != nil || !strings.Contains(got, "Custom convention") {
 		t.Fatalf("custom decisions: %s %v", got, err)
@@ -278,7 +280,7 @@ func TestWorkspaceValidationAndBoundedDecisions(t *testing.T) {
 	_, root := fixture(t)
 	write(t, root, ".agents/decisions.md", strings.Repeat("x", 512*1024+1))
 	c := load(t, root)
-	args := map[string]any{"action": "inspect", "directory": root}
+	args := map[string]any{"action": "inspect", "directory": root, "detail": "decisions"}
 	got, err := runProjectTool(t, c, "workspace", args)
 	if err != nil || !strings.Contains(got, "512 KiB") {
 		t.Fatalf("unbounded decisions: %d %v", len(got), err)

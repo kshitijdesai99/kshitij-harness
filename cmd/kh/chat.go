@@ -36,6 +36,8 @@ type chat struct {
 	input             *terminal.Console
 	ui                terminal.Renderer
 	tools             []tools.Tool
+	bootstrap         bootstrapDiagnostic
+	logicalCall       func(provider.Call) (provider.Call, bool) // evidence only; never rewrites provider/archive history
 	seen              config.Config
 	recentContext     string // bounded last exchange; never a second transcript archive
 	policy            *tools.ApprovalPolicy
@@ -47,6 +49,7 @@ type chat struct {
 	forkEffort        string
 
 	lastMemoryDiagnostic string // last retrieval only; no query or note bodies
+	lastMemoryBytes      int
 }
 
 func (c *chat) turn(ctx context.Context, msg string) error {
@@ -134,6 +137,7 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 			if err != nil {
 				return fmt.Errorf("retrieve memory: %w", err)
 			}
+			c.lastMemoryBytes = len(relevant)
 			setter.SetMemory(relevant)
 		}
 		return nil
@@ -149,7 +153,15 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 		},
 		Observe: func(calls []provider.Call, results []provider.Result) {
 			for i := range min(len(calls), len(results)) {
-				steps = append(steps, learn.Step{Name: calls[i].Name, Input: string(calls[i].Input),
+				call := calls[i]
+				if c.logicalCall != nil {
+					var eligible bool
+					call, eligible = c.logicalCall(call)
+					if !eligible {
+						continue
+					}
+				}
+				steps = append(steps, learn.Step{Name: call.Name, Input: string(call.Input),
 					Output: results[i].Output, Failed: learn.Failed(results[i].IsError, results[i].Output)})
 			}
 		}}

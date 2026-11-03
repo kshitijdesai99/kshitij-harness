@@ -113,12 +113,12 @@ func TestSkillsCommandsAndAssets(t *testing.T) {
 	if !strings.Contains(c.Expand("/deploy"), "Complete workflow.") || c.Commands["deploy"] != "" || c.CommandDirs["deploy"] != filepath.Dir(path) {
 		t.Fatalf("skill: %#v", c.Commands)
 	}
-	for _, want := range []string{"plain text context", "Project skill /deploy", "project_capability"} {
+	for _, want := range []string{"project_capability", "Sources available:"} {
 		if !strings.Contains(c.Prompt, want) {
 			t.Error("missing", want)
 		}
 	}
-	for _, unwanted := range []string{skill, "supporting reference", "DO_NOT_LOAD_SCRIPT", "DO_NOT_RUN_HOOK", "DO_NOT_LOAD_CONFIG"} {
+	for _, unwanted := range []string{skill, "plain text context", "Project skill /deploy", "supporting reference", "DO_NOT_LOAD_SCRIPT", "DO_NOT_RUN_HOOK", "DO_NOT_LOAD_CONFIG"} {
 		if strings.Contains(c.Prompt, unwanted) {
 			t.Error(unwanted)
 		}
@@ -197,9 +197,15 @@ func TestUnsafeFilesAndSymlinksAreSkipped(t *testing.T) {
 		}
 	}
 	warnings := strings.Join(c.Warnings, "\n")
-	for _, want := range []string{"symlink", "sensitive", "binary", "512 KiB"} {
+	for _, want := range []string{"symlink", "sensitive"} {
 		if !strings.Contains(warnings, want) {
 			t.Error(warnings)
+		}
+	}
+	for name, want := range map[string]string{"binary.md": "binary", "large.md": "512 KiB"} {
+		_, err := runProjectTool(t, c, "project_capability", map[string]any{"action": "read", "path": filepath.Join(root, ".claude", name)})
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("unsafe lazy reference %s: %v", name, err)
 		}
 	}
 }
@@ -248,7 +254,7 @@ func TestContextPriorityAndOmittedCommand(t *testing.T) {
 	}
 	write(t, root, ".agent/CLAUDE.md", "PROJECT-CORE")
 	c := load(t, root)
-	for _, want := range []string{"HOME-CORE", "HOME-RULE", "Project skill /deploy", "PROJECT-CORE"} {
+	for _, want := range []string{"HOME-CORE", "HOME-RULE", "project_capability", "PROJECT-CORE"} {
 		if !strings.Contains(c.Prompt, want) {
 			t.Errorf("lost priority context: %s", want)
 		}
@@ -275,11 +281,7 @@ func TestContextBudget(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		write(t, root, ".agent/rules/"+string(rune('a'+i))+".md", strings.Repeat(string(rune('a'+i)), 512*1024))
 	}
-	c := load(t, root)
-	if len(c.Prompt) > 768*1024+4096 {
-		t.Fatal("unbounded prompt", len(c.Prompt))
-	}
-	if !strings.Contains(strings.Join(c.Warnings, "\n"), "768 KiB") {
-		t.Fatal(c.Warnings)
+	if _, err := projectconfig.Load(root); err == nil || !strings.Contains(err.Error(), "refusing to omit instructions") {
+		t.Fatalf("oversized binding guidance must fail explicitly: %v", err)
 	}
 }

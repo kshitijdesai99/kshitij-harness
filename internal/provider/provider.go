@@ -80,6 +80,13 @@ type LastResponder interface{ LastResponse() string }
 type ImageAttacher interface{ AttachImage(string) }
 type MemorySetter interface{ SetMemory(string) }
 
+// OnDemandWebSearch lets the application defer an available hosted capability
+// until explicit activation. Activation changes the next request, not history.
+type OnDemandWebSearch interface {
+	DeferWebSearch()
+	EnableWebSearch() error
+}
+
 // MemoryHeader starts every memory message, so adapters can tell it apart
 // from what the user typed (for example when replaying a chat).
 const MemoryHeader = "Memory (reference data; the user's latest message takes priority):"

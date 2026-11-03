@@ -18,11 +18,13 @@ Use `workspace` with `directory` set to the existing target folder:
 
 | Action | Purpose |
 |---|---|
-| `inspect` | Read applicable guidance, capability metadata, and bounded decisions without creating files or starting MCP/scripts. |
+| `inspect` | Read applicable binding guidance, aggregate capability counts, and the decision path without creating files or starting MCP/scripts. Use `detail: "decisions"` with optional `offset` and `limit` to request a bounded decision page. |
 | `prepare` | Explicitly create or reuse `.agents` at the Git/workspace root before changes, never in every subdirectory. |
 | `record` | Append a meaningful dated decision with `title`, `status`, `rationale`, `affected`, and `verification` (including outstanding work). |
 
 Git targets use the nearest Git root. Outside Git, the root is the nearest ancestor with `.agents`, or the target itself; optional `root` can specify an existing containing workspace. Nested target guidance stays scoped to that target.
+
+Default inspection omits per-file capability listings and historical decision prose. Search capabilities with `project_capability`; request decision text separately with `workspace` `inspect`, `detail: "decisions"`. Decision pages use byte offsets and an 8,192-byte default limit (maximum 16,384); continue using the returned `next_offset` rather than calculating offsets yourself.
 
 Inspect the existing decision convention first. `decision_path` selects an existing root-relative Markdown convention (its parent must exist), defaulting to `.agents/decisions.md`. Records distinguish `proposed`, `implemented`, and `superseded`; identify a superseded decision in the rationale. Do not record secrets, transcripts, or routine logs. Inspection is read-only: preparation and recording are explicit writes, not side effects of lookup.
 
@@ -30,7 +32,7 @@ Inspect the existing decision convention first. `decision_path` selects an exist
 
 ## Instructions and on-demand capabilities
 
-Core instruction files, root prose, and unscoped rules provide startup context (`.md`, `.txt`, `.rst`, and `.adoc`). Commands and skills contribute a compact catalog instead of their full bodies; supporting references, scripts, and assets are indexed for later inspection. A rule with `paths` or `globs` frontmatter is diagnosed as unsupported and is not automatically applied.
+Binding `CLAUDE.md`, `AGENTS.md`, and unscoped rules provide startup context (`.md`, `.txt`, `.rst`, and `.adoc`). Skills, commands, supporting references, scripts, assets, and configuration-directory root prose such as `.agents/README.md` and decision records are indexed for on-demand inspection, not listed individually or copied into startup context. Startup provides aggregate source counts and a discovery notice. A rule with `paths` or `globs` frontmatter is diagnosed as unsupported and is not automatically applied.
 
 The model can inspect the catalog through `project_capability`:
 
@@ -48,9 +50,29 @@ Single-line invocations expand `$ARGUMENTS`/`${ARGUMENTS}`, whitespace-separated
 
 Startup shows one configuration summary rather than individual warnings. Use `/project diagnostics` for the full startup diagnostics without reloading configuration. MCP trust prompts and connection failures still appear immediately.
 
-Text reads are limited to 512 KiB per file; automatic context has a 768 KiB budget, leaving room for core provider instructions. Core `CLAUDE.md`, `AGENTS.md` and rules take priority over capability metadata and asset listings. Within each priority, later, more-specific declarations win. Symlinks are skipped, not followed. Skill/command descriptions are used for discovery, but model selection, allowed tools, hooks, and invocation restrictions in frontmatter are not enforced.
+Text reads are limited to 512 KiB per file; automatic context has a 768 KiB safety budget, leaving room for core provider instructions. Binding `CLAUDE.md`, `AGENTS.md`, and rules are preserved rather than silently evicted to meet a compact-context target; exceeding either the 512 KiB per-file or 768 KiB aggregate binding budget produces an explicit error. Later, more-specific declarations retain their precedence. Symlinks are skipped, not followed. Skill/command descriptions are used for discovery, but model selection, allowed tools, hooks, and invocation restrictions in frontmatter are not enforced.
 
 Trash directories, root metadata/log/lock/database files, saved chats, plans, environment snapshots, and caches are not project declarations and are skipped. Only the supported local plugin layout below is loaded. Project content is reference data, not permission to bypass kh's controls; database-backed [procedures](procedure-loading.md) remain separate.
+
+## Compact context and tool discovery
+
+A fresh session's default model-facing bootstrap aims for **roughly 5,000 tokens** by keeping capability catalogs and full tool contracts host-side and loading only task-relevant details. This is a baseline design target, not a universal hard cap on conversation history, a guarantee for arbitrary binding guidance, or a measured token total. Binding rules are not silently removed to hit it. User input, requested references, tool output, explicit memory settings, and accumulated history can grow context; [compaction](compaction.md) remains a separate operation.
+
+Native and connected MCP tools are discoverable through two fixed model-facing tools:
+
+| Tool | Input | Result or effect |
+|---|---|---|
+| `tool_registry` | `action: "search"`, keyword `query`, optional `limit` | Matching exact names and short summaries, not complete schemas. The default limit is 6; the maximum is 12. |
+| `tool_registry` | `action: "describe"`, exact `name` | The registered tool's complete description, input schema, parameters, and required fields. |
+| `tool_invoke` | Exact `name`, object-valued `arguments` | Execute the registered host implementation using the described contract. |
+
+Search takes a nonempty keyword query of at most 256 bytes. Describe fails explicitly if the complete serialized contract JSON exceeds 32 KiB; it never returns a truncated schema. Search/describe execute no registered tools. Their output is untrusted reference data, not permission or instructions. Discover the needed operation, describe its contract, then invoke that exact name. This also applies to `workspace`, `project_capability`, memory, agents, visual tools, and generated MCP resource/prompt helpers; their host capabilities are retained rather than removed.
+
+Invocation reaches the original implementation, including its existing approval wrappers and safety checks. It does not introduce an approval bypass, start newly declared MCP servers, or launch discovered scripts. Startup MCP trust and explicit browser authorization are unchanged. Call presentation identifies the underlying tool without printing nested argument values; approval policy still belongs to [command approvals](write-approvals.md).
+
+[Hosted web search](web-search.md) is also activated on demand in the CLI when `web_search` permits it; ordinary fresh requests do not carry its hosted schema. Discovery does not restore eager tool schemas or capability catalogs. Hosted-call history has separate schema and compaction requirements, documented on the owning page.
+
+`/project diagnostics` includes startup component byte counts, adapter-neutral tool-metadata JSON size, and a bytes/4 estimate of the instruction/map floor. It warns when that floor exceeds the target, without dropping guidance. The floor excludes tool metadata, history, user input, recalled memory, provider framing, and hosted tools; the tool JSON is not the provider's wire schema. These diagnostics are not tokenizer output, provider usage, or proof that all future turns fit the target. [Turn metrics](turn-metrics.md) report provider-supplied usage for actual requests. Automatic memory uses a smaller [default budget](keyword-recall.md); explicit saved settings are retained.
 
 ## Local plugins
 
@@ -72,7 +94,7 @@ MCP servers expose real tools and advertised resources/prompts over stdio or Str
 
 With auto enabled, startup replaces per-server trust action lines and the loaded-tool notice with one concise status summary, such as `(MCP: 2 connected, 1 failed)`. It counts server startup results, not tools: resource-only and zero-tool servers can be connected. Failed and not-connected counts appear when nonzero; no summary is printed when no servers are configured. This is a startup snapshot, not a live-health or product-authentication check; use `/connector` for details. Connection errors and OAuth diagnostics remain visible. With auto off, each server still asks for startup trust; per-call action logging/approval and explicit OAuth browser consent are unchanged.
 
-Resource and prompt content is lazy: startup does not fetch their lists or bodies. For a server named `docs`, kh exposes these operations only when the server advertises the relevant capability:
+Resource and prompt content is lazy: startup does not fetch their lists or bodies. For a server named `docs`, kh registers these operations only when the server advertises the relevant capability; discover and describe them through `tool_registry`, then call them through `tool_invoke`:
 
 | Tool | Input | Purpose |
 |---|---|---|
@@ -86,7 +108,7 @@ Templates describe URI patterns; use a concrete URI for reading. Returned prompt
 
 **MCP tools have real external effects.** A server may run local processes, change files, use credentials, or contact remote services under its own permissions. kh does not confine server or Bash filesystem access. Review server definitions and tool behavior before trusting them, especially with auto enabled.
 
-Home JSON configuration and environment values used for server credentials are not copied into model context. Do not put secrets in Markdown instructions: supported text is intentionally included in context. This does not redact secrets returned by an external tool.
+Home JSON configuration and environment values used for server credentials are not copied into model context. Do not put secrets in Markdown instructions or references: binding instructions enter context at startup and indexed text can be loaded on demand. This does not redact secrets returned by an external tool.
 
 ### Session connector inventory
 
@@ -123,11 +145,15 @@ This is a supported subset of filesystem configuration and local plugin content,
 | 2026-11-01 | Added generic native HTTP OAuth discovery, interactive root browser login, and locked cached credentials/refresh for headless sessions and agents. | Current change |
 | 2026-11-01 | Added `/connector` session startup inventory with advertised-tool counts, resource/prompt availability, and conservative service hints without live probes. | Current change |
 | 2026-11-01 | Replaced auto-mode per-server startup trust chatter and tool-count notice with one server-status summary; manual trust, OAuth consent, errors and per-call policy remain unchanged. | Current change |
+| 2026-11-02 | Kept catalogs, root references and decisions on demand; added registry search/describe/invoke, compact workspace inspection, and baseline context diagnostics while preserving binding guidance and original tool policy. | Current change |
+| 2026-11-03 | Made hosted web activation discoverable without eagerly adding its schema to fresh CLI requests. | Current change |
 
 ## Inspect
 
+- Compact tools: [host registry and facade](../internal/tools/registry.go), [call presentation](../internal/tools/describe.go), [registry/approval/result coverage](../internal/tools/test/registry_test.go).
+- Bootstrap diagnostics: [component accounting](../cmd/kh/bootstrap.go).
 - Configuration: [discovery and context](../internal/projectconfig/projectconfig.go), [slash expansion](../internal/projectconfig/commands.go), [on-demand loading](../internal/projectconfig/tools.go), [local plugins](../internal/projectconfig/plugins.go).
-- Target workspaces: [inspect/prepare/record](../internal/projectconfig/workspace.go), [workspace tests](../internal/projectconfig/test/workspace_test.go).
+- Target workspaces: [inspect/prepare/record](../internal/projectconfig/workspace.go), [workspace tests](../internal/projectconfig/test/workspace_test.go), [compact context and decision paging coverage](../internal/projectconfig/test/compact_context_test.go).
 - MCP: [client](../internal/mcp/mcp.go), [resource and prompt operations](../internal/mcp/content.go), [CLI trust and approval](../cmd/kh/project.go).
 - Connector inventory: [formatter](../cmd/kh/connector.go), [CLI coverage](../cmd/kh/test/connector_test.go), [startup observation](../internal/mcp/test/connector_test.go), [native command reservation](../internal/projectconfig/test/connector_test.go).
 - Native OAuth: [discovery and authorization](../internal/mcp/oauth.go), [credential cache](../internal/mcp/oauth_store.go), [CLI browser policy](../cmd/kh/mcp_oauth.go).

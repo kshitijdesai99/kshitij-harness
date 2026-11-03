@@ -18,7 +18,7 @@ import (
 func TestEcosystemManagerPolicyRootResumeAndPromotion(t *testing.T) {
 	binary, requests := newEcosystemProviderRequests(t, func(step int) *projectCLICall {
 		if step == 2 { // Fresh root and resumed root finish; a worker promotes.
-			return &projectCLICall{Name: "agents", Arguments: `{"action":"set_role","role":"manager"}`}
+			return &projectCLICall{Name: "tool_invoke", Arguments: `{"name":"agents","arguments":{"action":"set_role","role":"manager"}}`}
 		}
 		return nil
 	})
@@ -53,12 +53,7 @@ func TestEcosystemManagerPolicyRootResumeAndPromotion(t *testing.T) {
 					t.Errorf("%s instructions missing %q", label, want)
 				}
 			}
-			for _, tool := range request.Tools {
-				if tool["name"] == "agents" && strings.Contains(tool["description"].(string), "Every manager delegates") {
-					return request
-				}
-			}
-			t.Errorf("%s lacks manager duties in agents tool guidance", label)
+			assertCompactToolSchemas(t, request)
 			return request
 		default:
 			t.Fatalf("%s: no provider request", label)
@@ -100,7 +95,10 @@ func TestEcosystemManagerPolicyRootResumeAndPromotion(t *testing.T) {
 		t.Fatal(err)
 	}
 	run([]string{"KH_ECOSYSTEM_ID=" + root.EcosystemID, "KH_ECOSYSTEM_AGENT_ID=" + reservation.Agent.ID, "KH_ECOSYSTEM_TOKEN=" + reservation.Token, "KH_PARENT=" + root.Address}, "-p", "complete worker task")
-	checkPolicy("spawned worker")
+	spawned := checkPolicy("spawned worker")
+	if !strings.Contains(spawned.Instructions, "parent: "+root.Address) || !strings.Contains(spawned.Instructions, "Discover the agents operation") {
+		t.Error("compact provider lost child coordination identity")
+	}
 	promoted := checkPolicy("promoted manager")
 	encoded, _ := json.Marshal(promoted.Input)
 	for _, want := range []string{`\"role\":\"manager\"`, "Manager role: hand any existing coding or execution task to workers before continuing", "routine tests, builds, installation and restart execution", "no workers are active or capacity is full"} {
