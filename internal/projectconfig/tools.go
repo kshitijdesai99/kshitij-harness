@@ -55,7 +55,9 @@ func (c *Config) Tools() []tools.Tool {
 			catalog := c
 			if args.Directory != "" {
 				var err error
-				catalog, err = Load(args.Directory)
+				var snapshot FoundationSnapshot
+				snapshot, err = Resolve(ctx, args.Directory)
+				catalog = snapshot.Config
 				if err != nil {
 					return "", err
 				}

@@ -11,11 +11,11 @@ Shared guides: [Architecture](architecture.md) · [Development](development.md) 
 | Feature | Introduced | What followed |
 |---|---|---|
 | [Execution loop](execution.md) | 2026-09-28 | Steering, provider separation, user-message hooks |
-| [Shell commands](shell.md) | 2026-09-28 | Output handling and unrestricted filesystem access under OS permissions |
+| [Shell commands](shell.md) | 2026-09-28 | Output handling, OS-permission filesystem access, explicit verified-state Git push |
 | [Structured editing](editing.md) | 2026-09-28 | Validated batches and cross-folder edits |
 | [Web search](web-search.md) | 2026-09-28 | Visible search/open/find actions; hosted schema activated on demand |
 | [Repository map](repository-map.md) | 2026-09-28 | Git-only scope; now opt-in |
-| [Project configuration](project-configuration.md) | 2026-10-30 | `.agents`/`.agent`/`.claude`, compact context with on-demand contracts/catalogs/decisions and hosted web activation, local plugins, MCP OAuth and connector inventory |
+| [Project configuration](project-configuration.md) | 2026-10-30 | `.agents`/`.agent`/`.claude`, compact on-demand context, validated assignment foundations, local plugins, MCP OAuth and connector inventory |
 
 ## Interactive control
 
@@ -40,8 +40,8 @@ Shared guides: [Architecture](architecture.md) · [Development](development.md) 
 
 | Feature | Introduced | What followed |
 |---|---|---|
-| [Native agents](native-agents.md) | 2026-09-29 | Recursive roles, shared ecosystem registry, safe coordination |
-| [Worker lifecycle and policy](worker-lifecycle.md) | 2026-09-29 | Auto-closing panes, inherited approvals, root-refreshed shared live-agent cap |
+| [Native agents](native-agents.md) | 2026-09-29 | Recursive roles, bounded handoffs, explicit task-fresh assignment and safe coordination |
+| [Worker lifecycle and policy](worker-lifecycle.md) | 2026-09-29 | Opt-in idle-worker reuse, fenced task leases, retirement and shared live-agent cap |
 | [External coding CLIs](external-clis.md) | 2026-09-28 | Documented coordination through shell tools |
 
 ## Memory and learning
@@ -80,7 +80,7 @@ Shared guides: [Architecture](architecture.md) · [Development](development.md) 
 |---|---|---|
 | [Markdown and math](markdown.md) | 2026-10-05 | Distinct commentary/stats, unified tool styling, correct hyphen wrapping |
 | [Terminal feedback](terminal-feedback.md) | 2026-10-01 | Activity indicators, commentary, peer colors, URLs, live descendant counts and roles |
-| [Turn metrics](turn-metrics.md) | 2026-09-28 | Thinking/context metrics and corrected TTFT |
+| [Turn metrics](turn-metrics.md) | 2026-09-28 | Thinking/context metrics, corrected TTFT and assignment phase timings |
 | [Images](images.md) | 2026-09-30 | Encoding cleanup and local image-viewing tool |
 | [Visual companion](visual-companion.md) | 2026-10-29 | Native session-owned marimo lifecycle, external artifacts, shared cache |
 

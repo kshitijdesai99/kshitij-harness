@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -45,10 +46,29 @@ func agentTool(cfg config.Config, action func(string), policy *tools.ApprovalPol
 				return "", ctx.Err()
 			}
 			defer func() { <-spawning }()
-			args = []string{"spawn", request.Name, request.Task}
+			args = []string{"spawn"}
 			if request.Keep {
-				args = []string{"spawn", "--keep", request.Name, request.Task}
+				args = append(args, "--keep")
 			}
+			if request.Reuse {
+				args = append(args, "--reuse")
+			}
+			task := request.Task
+			if request.Handoff != nil {
+				b, err := json.Marshal(request.Handoff)
+				if err != nil {
+					return "", err
+				}
+				args = append(args, "--handoff")
+				task = string(b)
+			}
+			args = append(args, request.Name, task)
+		case "assign":
+			b, err := json.Marshal(request.Handoff)
+			if err != nil {
+				return "", err
+			}
+			args = []string{"assign", request.Address, string(b)}
 		case "send":
 			args = []string{"send", request.Address, request.Message}
 		case "peek":
@@ -105,13 +125,12 @@ func (e *ecosystemRuntime) agentTransport(ctx context.Context, args []string, cf
 	}
 	switch args[0] {
 	case "spawn":
-		keep := len(args) > 1 && args[1] == "--keep"
-		if keep {
-			args = append(args[:1:1], args[2:]...)
+		spawn, err := parseWorkerSpawn(args)
+		if err != nil {
+			return "", err
 		}
-		if len(args) != 3 || !agentName.MatchString(args[1]) || args[1] == "main" || strings.TrimSpace(args[2]) == "" {
-			return "", fmt.Errorf("usage: kh spawn [--keep] <name> <task> (name cannot be main)")
-		}
+		args = []string{"spawn", spawn.name, spawn.task}
+		keep := spawn.keep
 		parent := e.self.Address
 		panes, err := agentPanesContext(ctx)
 		if err != nil {
@@ -148,10 +167,20 @@ func (e *ecosystemRuntime) agentTransport(ctx context.Context, args []string, cf
 		}
 		command := []string{exe, "--provider", cfg.Provider, "--model", cfg.Model, "--effort", cfg.Effort, "--auto=" + strconv.FormatBool(cfg.Auto)}
 		// One-shot workers exit after their task; keep retains interactive chat.
-		if keep {
+		if keep || spawn.reuse {
 			command = append(command, "-i")
 		} else {
 			command = append(command, "-p")
+		}
+		if spawn.reuse {
+			command = append(command, "--reuse-worker")
+		}
+		if spawn.handoff != nil {
+			b, err := json.Marshal(spawn.handoff)
+			if err != nil {
+				return "", err
+			}
+			command = append(command, "--task-handoff", string(b))
 		}
 		command = append(command, args[2])
 		reservation, ok := ctx.Value(spawnReservationKey{}).(ecosystem.Reservation)
@@ -235,6 +264,14 @@ func (e *ecosystemRuntime) agentTransport(ctx context.Context, args []string, cf
 		identity, err := ecosystem.ProcessForPID(pid)
 		if err != nil || identity != receiver.Process {
 			return "", fmt.Errorf("%s is not ready for isolated peer input: receiver identity changed", args[1])
+		}
+		status, err := e.store.TaskStatus(ctx, receiver.ID)
+		if err != nil {
+			return "", err
+		}
+		if status.Reusable {
+			err := e.sendWorkerControl(ctx, receiver, terminal.TaskControl{Kind: "message", Generation: status.Lease.Generation, Message: "[from " + e.self.Address + "] " + args[2]})
+			return "sent to " + args[1], err
 		}
 		sender := e.self.Address
 		// Attribution also prevents a peer's "yes" from answering a bash approval.

@@ -26,6 +26,7 @@ import (
 // chat owns the application lifecycle for one session. Its model is an
 // interface; adapter selection and CLI flags stay in main.
 type chat struct {
+	taskFresh         bool // conclusions finalized only through the process+task lease fence
 	model             provider.Provider
 	backend, id, repo string
 	identity          *session.Identity
@@ -191,12 +192,16 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 		runner.Activity = c.ui.Activity.Set
 	}
 	err := runner.Run(tctx, msg)
-	if currentEcosystem != nil {
+	if currentEcosystem != nil && !c.taskFresh {
 		currentEcosystem.conclusion(c.model, err)
 	}
 	if tctx.Err() == context.Canceled {
 		c.ui.Notice("\n(stopped)")
-		err = nil
+		if c.taskFresh {
+			err = context.Canceled
+		} else {
+			err = nil
+		}
 	}
 	if err == nil && tctx.Err() == nil {
 		reply := ""

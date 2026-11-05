@@ -38,7 +38,14 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 		if err != nil {
 			return "", err
 		}
-		b, err := json.Marshal(a)
+		status, err := e.store.TaskStatus(ctx, a.ID)
+		if err != nil {
+			return "", err
+		}
+		b, err := json.Marshal(struct {
+			ecosystem.Agent
+			TaskStatus ecosystem.TaskStatus `json:"task_status"`
+		}{a, status})
 		return string(b), err
 	case "agents":
 		if len(args) != 1 {
@@ -74,16 +81,21 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 			return "", fmt.Errorf("stop scope must be agent or subtree")
 		}
 		return e.stop(ctx, args[1], scope)
+	case "assign":
+		return e.assignTask(ctx, args, cfg)
 	case "send":
 		return e.agentTransport(ctx, args, cfg)
 	case "spawn":
-		spawnArgs := args[1:]
-		if len(spawnArgs) > 0 && spawnArgs[0] == "--keep" {
-			spawnArgs = spawnArgs[1:]
+		spawn, err := parseWorkerSpawn(args)
+		if err != nil {
+			return "", err
 		}
-		if len(spawnArgs) != 2 || !agentName.MatchString(spawnArgs[0]) || spawnArgs[0] == "main" || strings.TrimSpace(spawnArgs[1]) == "" {
-			return "", fmt.Errorf("usage: kh spawn [--keep] <name> <task> (name cannot be main)")
+		if spawn.reuse {
+			if out, reused, err := e.reuseTask(ctx, spawn, cfg); err != nil || reused {
+				return out, err
+			}
 		}
+		spawnArgs := []string{spawn.name, spawn.task}
 		// Every path, including a CLI spawned by bash, uses this shared transaction.
 		reservation, err := e.store.Reserve(ctx, e.self.ID, spawnArgs[0], spawnArgs[1])
 		if err != nil {

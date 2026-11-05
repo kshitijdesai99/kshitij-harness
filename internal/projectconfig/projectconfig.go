@@ -48,6 +48,7 @@ type loader struct {
 	blocks []string
 	bytes  int
 	err    error
+	trace  *sourceTrace
 }
 
 // Load reads ancestors from filesystem root to cwd, with home configuration
@@ -58,6 +59,10 @@ type loader struct {
 // produce warnings. Invalid working directories and oversized binding guidance
 // are fatal errors rather than silently dropping instructions.
 func Load(cwd string) (*Config, error) {
+	return loadConfig(cwd, nil)
+}
+
+func loadConfig(cwd string, trace *sourceTrace) (*Config, error) {
 	absolute, err := filepath.Abs(cwd)
 	if err != nil {
 		return nil, err
@@ -74,7 +79,7 @@ func Load(cwd string) (*Config, error) {
 		return nil, fmt.Errorf("project config cwd is not a directory: %s", absolute)
 	}
 	c := &Config{Commands: map[string]string{}, CommandDirs: map[string]string{}, Servers: map[string]Server{}, commandPaths: map[string]string{}, commandRoots: map[string]string{}, assets: map[string]capabilityAsset{}}
-	l := &loader{config: c}
+	l := &loader{config: c, trace: trace}
 	var ancestors []string
 	for dir := absolute; ; dir = filepath.Dir(dir) {
 		ancestors = append(ancestors, dir)
@@ -135,7 +140,7 @@ func (l *loader) warn(path, message string) {
 
 // regular rejects symlinks and special files before opening them.
 func (l *loader) regular(path string) bool {
-	info, err := os.Lstat(path)
+	info, err := l.lstat(path)
 	if os.IsNotExist(err) {
 		return false
 	}
@@ -154,13 +159,19 @@ func (l *loader) read(path string) ([]byte, bool) {
 	if !l.regular(path) {
 		return nil, false
 	}
-	file, err := os.Open(path)
+	file, err := openRegularSource(path)
 	if err != nil {
+		if l.trace != nil {
+			l.trace.uncacheable = true
+		}
 		l.warn(path, err.Error())
 		return nil, false
 	}
 	defer file.Close()
 	data, err := io.ReadAll(io.LimitReader(file, maxFile+1))
+	if l.trace != nil {
+		l.trace.recordRead(path, data, err)
+	}
 	if err != nil {
 		l.warn(path, err.Error())
 		return nil, false
@@ -267,7 +278,7 @@ func (c *Config) Summary() string {
 }
 
 func (l *loader) directory(root, base string) {
-	info, err := os.Lstat(root)
+	info, err := l.lstat(root)
 	if os.IsNotExist(err) {
 		return
 	}
@@ -284,7 +295,7 @@ func (l *loader) directory(root, base string) {
 		l.settings(filepath.Join(root, name), base)
 	}
 	l.plugins(root, base)
-	_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+	_ = l.walkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			l.warn(path, err.Error())
 			return nil

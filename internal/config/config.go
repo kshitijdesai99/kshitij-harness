@@ -11,7 +11,8 @@ import (
 // AgentsConfig controls ecosystem admission. Only the root refreshes the shared
 // limit on user turns or resume; descendants never override it locally.
 type AgentsConfig struct {
-	MaxLive int `json:"max_live"`
+	MaxLive        int `json:"max_live"`
+	IdleTimeoutSec int `json:"idle_timeout_sec"`
 }
 
 type Config struct {
@@ -42,7 +43,7 @@ type Config struct {
 
 // Short and fixed on purpose: short = fast, fixed = cacheable.
 var Defaults = Config{
-	Agents:    AgentsConfig{MaxLive: 50},
+	Agents:    AgentsConfig{MaxLive: 50, IdleTimeoutSec: 60},
 	Provider:  "codex",
 	Model:     "gpt-6-luna",
 	Effort:    "medium",
@@ -104,6 +105,9 @@ func Load() (Config, error) {
 	}
 	if c.Agents.MaxLive < 1 {
 		return c, fmt.Errorf("%s: agents.max_live must be at least 1 (including the root)", path)
+	}
+	if c.Agents.IdleTimeoutSec < 0 {
+		return c, fmt.Errorf("%s: agents.idle_timeout_sec must be nonnegative", path)
 	}
 	return c, nil
 }

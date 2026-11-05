@@ -10,6 +10,14 @@ Introduced **2026-10-30** · commit `752f184`.
 - At each ancestor, plain `CLAUDE.md` then `AGENTS.md` entry points are loaded before dot-directory configuration. More specific locations override less specific ones. Within one location, the order is `.claude`, `.agent`, then `.agents`, so `.agents` wins matching definitions. The singular `.agent` directory remains supported.
 - Startup discovery, settings, and the capability catalog are loaded at launch. **Restart kh to refresh startup configuration**; resuming a saved session does not reload an already-running process. Explicit capability loads reread the indexed file. For another existing target, use the directory-scoped tools below; these do not change startup settings, slash commands, or MCP connections.
 
+## Assignment foundations
+
+Task assignment resolves an inert project foundation: the applicable binding guidance and capability catalog, identified by an opaque source digest and schema version. A process-local cache holds at most 32 directory snapshots and returns independent copies of mutable configuration. Separate worker processes can compare foundation identifiers; they do **not** physically share cached configuration or provider history. No cache files are written, and server credentials are not persisted by this cache.
+
+Every resolution validates filesystem dependencies, including content changes that preserve file size and timestamps, additions, deletions, and symlink changes. A validated hit avoids reparsing and rebuilding the catalog, not validation I/O. Changes invalidate the entry; configuration that keeps changing during discovery fails explicitly instead of supplying a stale snapshot. Supporting asset bodies remain lazy and are reread through ordinary capability loading.
+
+The cache contains project context, not task closures, execution permissions, or conversation state. A fresh task still needs its own provider instructions and applicable guidance. A foundation identifier is not authorization to execute discovered scripts or start MCP connections. Assignment-boundary resolution does not turn ordinary running chats into live startup-configuration reloaders; the restart rule above still applies to their startup settings and connections.
+
 ## Target workspaces
 
 Filesystem access is unrestricted by kh, subject to OS permissions. Before working in another repository or folder, inspect its applicable guidance and capabilities rather than applying the launch folder's rules globally.
@@ -147,12 +155,14 @@ This is a supported subset of filesystem configuration and local plugin content,
 | 2026-11-01 | Replaced auto-mode per-server startup trust chatter and tool-count notice with one server-status summary; manual trust, OAuth consent, errors and per-call policy remain unchanged. | Current change |
 | 2026-11-02 | Kept catalogs, root references and decisions on demand; added registry search/describe/invoke, compact workspace inspection, and baseline context diagnostics while preserving binding guidance and original tool policy. | Current change |
 | 2026-11-03 | Made hosted web activation discoverable without eagerly adding its schema to fresh CLI requests. | Current change |
+| 2026-11-05 | Added bounded process-local assignment foundations with source-content validation and independent configuration snapshots. | Current change |
 
 ## Inspect
 
 - Compact tools: [host registry and facade](../internal/tools/registry.go), [call presentation](../internal/tools/describe.go), [registry/approval/result coverage](../internal/tools/test/registry_test.go).
 - Bootstrap diagnostics: [component accounting](../cmd/kh/bootstrap.go).
 - Configuration: [discovery and context](../internal/projectconfig/projectconfig.go), [slash expansion](../internal/projectconfig/commands.go), [on-demand loading](../internal/projectconfig/tools.go), [local plugins](../internal/projectconfig/plugins.go).
+- Assignment foundations: [cache and source validation](../internal/projectconfig/foundation.go), [invalidation/isolation coverage](../internal/projectconfig/test/foundation_test.go).
 - Target workspaces: [inspect/prepare/record](../internal/projectconfig/workspace.go), [workspace tests](../internal/projectconfig/test/workspace_test.go), [compact context and decision paging coverage](../internal/projectconfig/test/compact_context_test.go).
 - MCP: [client](../internal/mcp/mcp.go), [resource and prompt operations](../internal/mcp/content.go), [CLI trust and approval](../cmd/kh/project.go).
 - Connector inventory: [formatter](../cmd/kh/connector.go), [CLI coverage](../cmd/kh/test/connector_test.go), [startup observation](../internal/mcp/test/connector_test.go), [native command reservation](../internal/projectconfig/test/connector_test.go).

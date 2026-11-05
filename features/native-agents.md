@@ -7,14 +7,25 @@ Introduced **2026-09-29** · commit `277c243` (tmux sub-agent commands).
 ## Current behavior
 
 - The root session is a fixed manager. Descendants start as workers and can change their own role with `set_role` (`role: manager` or `worker`). Only managers can `spawn`; promotion enables recursive delegation without creating another capacity allowance.
-- `spawn` takes `name` and `task`, returns without waiting for task completion, and opens a named tmux pane. Use `keep: true` for follow-up work. Descendants show the full assignment in a distinct [startup task banner](terminal-feedback.md#assigned-task-startup-banner) before model/tool work; it remains in scrollback, not pinned.
+- `spawn` takes `name` and either `task` or a structured `handoff`, and returns without waiting for completion. Ordinary spawning opens a named tmux pane; `reuse: true` first tries a compatible idle reusable worker, otherwise launches one. If assigning a selected idle worker fails, the error is returned without launching a replacement. Reuse retains the existing worker's name and address, so use the returned address rather than assuming the requested name identifies a newly created worker. Use `keep: true` with a plain task for a continuing interactive conversation instead; `keep` cannot be combined with `reuse` or a structured `handoff`. Descendants show the full assignment in a distinct [startup task banner](terminal-feedback.md#assigned-task-startup-banner) before model/tool work; it remains in scrollback, not pinned.
+- `assign` takes `address` and a structured `handoff` to begin a **fresh task** on an idle reusable worker. Only the worker's parent manager can assign it. A new task gets a new provider/chat state rather than continuing the worker's previous conversation; see [eligibility and retirement](worker-lifecycle.md#task-fresh-reuse).
 - `list` discovers the ecosystem directory; `stats` reports shared live-session, manager/worker and capacity counts. Use returned stable `kh:<id>` addresses for coordination. Short `kh:<name>` aliases resolve within the current ecosystem, not across unrelated roots.
-- Any participant can `send` a single-line message to another agent in the same ecosystem, regardless of ownership branch or role.
+- Any participant can `send` a single-line message to another agent in the same ecosystem, regardless of ownership branch or role. This is same-task steering or coordination, **not** a fresh assignment or conversation reset.
 - `inspect` returns safe shared details, a first-line task summary capped at 280 runes, and bounded conclusions. `peek` is an alias for that safe view, not a capture of private pane output or full conversation history.
 - `stop` takes an `address` and optional `scope: agent` (default) or `subtree`. See [lifecycle and capacity](worker-lifecycle.md) for stop accounting and safeguards.
 - Workers share project files, not isolated worktrees. There is no dependency scheduler; assign independent files or coordinate overlapping edits explicitly.
 - Peer messages are attributed and displayed distinctly from human input; they are not human approval responses and [do not submit or modify the user's draft](input.md#peer-messages-and-drafts). Workers retrieve shared memory without learning delegated prompts as user instructions; see [learning-origin filtering](learning-origin.md).
 - All ecosystem pane/tab names show a [live descendant count and role](terminal-feedback.md#live-descendant-counts), including zero for leaf workers; see [worker lifecycle](worker-lifecycle.md) for successful/failed pane behavior, `keep`, and inherited policy.
+
+## Task handoffs
+
+Pass a `handoff` object to `agents` `spawn` or `assign`. The CLI equivalents are `kh spawn --reuse --handoff NAME 'HANDOFF_JSON'` and `kh assign ADDRESS 'HANDOFF_JSON'`; plain `kh spawn --reuse NAME TASK` wraps the task in a version-1 handoff for the current directory. Structured spawning requires the handoff directory to match the launch directory.
+
+A structured task handoff carries a complete objective, not the parent's conversation or a memory snapshot. The version-1 payload includes `task`, an existing canonical absolute `directory`, optional `scope`, `constraints`, `expected_output`, `foundation_id`, and `workflow`, plus `verification` with proposed `commands`, prior-evidence `references`, and optional `commit`, `branch`, and `upstream` identifiers. The directory and foundation identifier identify context, not authority; workers still inspect applicable [workspace guidance](project-configuration.md#target-workspaces).
+
+Handoffs reject invalid or oversized input rather than silently truncating it: the task is limited to 64 KiB, other strings and list items to 4 KiB each, each list to 32 items, and aggregate raw field text to 128 KiB. Directory aliases containing symlinks or unnormalized path components are rejected. The prompt serializes the payload as escaped JSON inside an explicit delegated-data boundary. References and proposed checks are not proof of current state or permission to execute, and no transcript, secret, or automatically copied memory belongs in the handoff.
+
+The normal workflow leaves `workflow` empty. The explicit `push_verified` workflow requires a full lowercase 40- or 64-hex commit ID, branch, upstream, and prior verification references; its live checks and failure boundaries belong to [verified Git push](shell.md#verified-git-push).
 
 ## Coordination diagram
 
@@ -38,6 +49,8 @@ The reported problem is a manager delegating investigation but then independentl
 
 ## Integrate and verify
 
+A handoff with `workflow: "push_verified"` uses the bounded [verified Git push](shell.md#verified-git-push) path without provider, memory-service or configured MCP startup. It is selected only explicitly; normal tasks still use the model/tool workflow.
+
 1. Inspect the project and divide work by ownership or independent concern.
 2. Give each worker a concrete outcome, scope, and verification requirement.
 3. Collect concise conclusions, exact references, checks and uncertainty; use targeted follow-ups before direct reads and resolve overlapping changes before integration.
@@ -57,9 +70,12 @@ The harness provides tools and visibility; the agent remains responsible for cho
 | 2026-10-31 | Added recursive roles, a shared registry/capacity budget, ecosystem discovery, safe inspection and stop controls. | Current change |
 | 2026-11-01 | Made manager execution delegation explicit for roots and promoted descendants, with universal role-conditional instructions and a native promotion reminder. | Current change |
 | 2026-11-03 | Extended manager delegation to substantial investigation and source/document exploration; prefer compact worker evidence over duplicate broad reads while retaining initial scoping and targeted verification. | Current change |
+| 2026-11-05 | Added bounded versioned handoffs, explicit fresh-task assignment and opt-in compatible idle-worker reuse without parent history or automatic memory copying. | Current change |
 
 ## Inspect
 
 [Agents tool](../internal/tools/agents.go) · [Coordinator](../cmd/kh/agents.go) · [Runtime wiring](../cmd/kh/ecosystem.go) · [Registry](../internal/ecosystem/registry.go) · [Tool tests](../internal/tools/test/agents_test.go) · [Instruction delivery tests](../cmd/kh/test/manager_policy_test.go)
+
+[Handoff contract](../internal/delegation/handoff.go) · [Handoff coverage](../internal/delegation/test/handoff_test.go)
 
 [Feature index](README.md)

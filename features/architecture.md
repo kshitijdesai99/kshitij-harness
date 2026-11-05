@@ -12,6 +12,7 @@ Use this map to find the owning package; linked feature pages explain behavior a
 | [`internal/agent`](../internal/agent/) | Model/tool turn orchestration | [Execution loop](execution.md) |
 | [`internal/backend`](../internal/backend/) | Provider construction and selection | [Provider state](provider-state.md) |
 | [`internal/config`](../internal/config/) | Defaults and persisted configuration | [Model settings](model-settings.md) |
+| [`internal/delegation`](../internal/delegation/) | Bounded task handoffs and verified-state Git push | [Native agents](native-agents.md#task-handoffs), [shell operations](shell.md#verified-git-push) |
 | [`internal/ecosystem`](../internal/ecosystem/) | Shared agent directory, transactional admission and process lifecycle | [Native agents](native-agents.md), [worker lifecycle](worker-lifecycle.md) |
 | [`internal/help`](../internal/help/) | Standalone help requests | [Help](help.md) |
 | [`internal/hybrid`](../internal/hybrid/) | Managed local retrieval services | [Hybrid runtime](hybrid-runtime.md) |
@@ -19,7 +20,7 @@ Use this map to find the owning package; linked feature pages explain behavior a
 | [`internal/learn`](../internal/learn/) | Background extraction and learning safeguards | [Learning queue](learning-queue.md), [origin protections](learning-origin.md) |
 | [`internal/memory`](../internal/memory/) | Versioned storage, retrieval, and reference bundles | [Knowledge store](knowledge-store.md), [hybrid retrieval](hybrid-retrieval.md), [portability](procedure-portability.md) |
 | [`internal/mcp`](../internal/mcp/) | Trusted external MCP connections and protocol calls | [Project configuration](project-configuration.md) |
-| [`internal/projectconfig`](../internal/projectconfig/) | Filesystem configuration discovery and capability references | [Project configuration](project-configuration.md) |
+| [`internal/projectconfig`](../internal/projectconfig/) | Filesystem configuration discovery, validated assignment foundations and capability references | [Project configuration](project-configuration.md) |
 | [`internal/provider`](../internal/provider/) | Provider contract and protocol adapters | [Provider state](provider-state.md), [connection recovery](connection-recovery.md) |
 | [`internal/repomap`](../internal/repomap/) | Repository context generation | [Repository map](repository-map.md) |
 | [`internal/session`](../internal/session/) | Saved session files and state | [Saved sessions](saved-sessions.md) |
@@ -43,6 +44,8 @@ The [execution loop](execution.md) runs tool batches concurrently and returns re
 [Coordination SVG](../diagrams/agent-coordination.svg): the root remains manager; descendants default to worker and may promote themselves to delegate. Parent links record ownership, not communication permissions. All participants discover and coordinate within the same ecosystem; one shared live-agent budget prevents recursive capacity multiplication. [Native agents](native-agents.md) owns the tool contract; [worker lifecycle](worker-lifecycle.md) owns capacity, stop and recovery behavior.
 
 The SQLite registry at `~/.kh/ecosystem.db` stores shared coordination state. The root initializes and refreshes the configured limit on genuine user turns and resume; descendants and peer messages cannot override it. Lower limits block new admission without killing existing agents.
+
+[Task handoffs](native-agents.md#task-handoffs) carry bounded objectives and evidence, not a parent transcript. [Project foundations](project-configuration.md#assignment-foundations) cache validated context within a process; matching identifiers across workers do not mean cross-process cached state or execution authority.
 
 Each agent retains its own provider conversation. Shared first-line task summaries (at most 280 runes) and bounded conclusions do not expose raw multiline task prompts or full histories. Project files and memory remain shared resources, so file ownership and verification are still explicit responsibilities.
 

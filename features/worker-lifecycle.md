@@ -10,6 +10,22 @@ Introduced **2026-09-29** · commit `277c243` (worker launch and auto-policy inh
 - Workers inherit active [model and effort](model-settings.md) and [command auto-approval policy](write-approvals.md). Filesystem access is unrestricted by kh, subject to OS permissions.
 - Shared files require [manager/peer coordination](native-agents.md#coordination-diagram); automatic pane closure is not proof that a worker’s changes are correct.
 
+## Task-fresh reuse
+
+Set `reuse: true` on native `spawn` to retain a task-fresh worker briefly after completion. This is opt-in: ordinary one-shot spawning and `keep` retain their existing behavior. `keep` continues an interactive conversation from a plain task; structured handoffs with `keep` are rejected. `reuse` waits for explicit fresh-task handoffs, and the two flags cannot be combined. Existing ordinary or kept workers are not silently converted into reusable workers.
+
+`spawn` with reuse first tries an eligible idle worker and otherwise launches a new reusable worker under normal capacity admission. Explicit `assign` targets a known reusable worker and fails if it is ineligible. Eligibility requires the same parent manager, worker role, idle state, no live descendants, no pending/running assignment, and matching directory, provider, model, effort and auto-approval policy. Reusing a process does not reuse its previous provider conversation, task-local history or loaded-tool state. Project context is refreshed through [assignment foundations](project-configuration.md#assignment-foundations).
+
+Configure retirement in `~/.kh/config.json`:
+
+```json
+{ "agents": { "idle_timeout_sec": 60 } }
+```
+
+The default is **60 seconds** of idle waiting after a task finishes, including a task error; **0 disables idle retirement**, and negative values are rejected. Idle workers still count toward the shared live-agent budget. Retirement first atomically marks an eligible idle process as stopping; it does not release its slot until exit is confirmed. A pending or running task cannot be retired by this idle path.
+
+Each assignment has an opaque lease ID and increasing generation. Reservation, claim and finish are transactional; completion is fenced by both the registered process identity and task lease/generation, independently of heartbeat updates. A late result from an earlier task cannot overwrite a later assignment. Assignment delivery uses a short terminal-control receipt for a bounded private payload file (mode `0600`), deleted when received; it does not send the full handoff through terminal keystrokes. If task delivery is unconfirmed after reservation, the lease stays reserved rather than being made available for duplicate execution; inspect or stop the worker before retrying. These safeguards do not isolate shared files or replace manager verification.
+
 ## Roles and shared capacity
 
 The [root remains manager](native-agents.md); descendants default to worker and can switch their own role. Every current manager follows the [delegation duties](native-agents.md#human-as-ceo-main-agent-as-manager), including handing existing execution tasks to workers on promotion. Workers execute their scope without needing to promote. These duties are operating instructions, not new registry permissions or tool bans. Role changes do not consume a new slot or multiply the limit. Parent links remain ownership metadata, not a restriction on cross-branch coordination. The [pane/tab label](terminal-feedback.md#live-descendant-counts) shows the current role and a live descendant count that follows these links independently of role.
@@ -44,9 +60,12 @@ Exact process identity is supported on **macOS and Linux**: macOS combines PID, 
 | 2026-10-31 | Removed directory grants and filesystem confinement; command approval remains inherited. | Current change |
 | 2026-10-31 | Added mutable descendant roles and one shared live-agent budget including the root. | Current change |
 | 2026-11-01 | Clarified execution handoff on manager promotion and retained orchestration when workers finish or capacity is full. | Current change |
+| 2026-11-05 | Added opt-in task-fresh idle reuse, configurable retirement, and process/generation-fenced task leases. | Current change |
 
 ## Inspect
 
 [Coordinator](../cmd/kh/agents.go) · [Runtime wiring](../cmd/kh/ecosystem.go) · [Registry lifecycle](../internal/ecosystem/lifecycle.go) · [Policy tests](../cmd/kh/test/auto_test.go)
+
+[Task leases](../internal/ecosystem/tasks.go) · [Task lease and retirement coverage](../internal/ecosystem/test/tasks_test.go) · [Assignment transport](../cmd/kh/worker_protocol.go) · [Fresh-task runtime](../cmd/kh/worker.go)
 
 [Feature index](README.md)

@@ -19,6 +19,11 @@ import (
 type Console struct {
 	Lines        <-chan string
 	lines        chan string
+	Assignments  <-chan []byte
+	assignments  chan []byte
+	generation   int64
+	taskEpoch    atomic.Uint64
+	resetEditor  func()
 	in           io.Reader
 	out, err     io.Writer
 	done         chan struct{}
@@ -39,6 +44,8 @@ func NewConsole(in io.Reader, out, err io.Writer) *Console {
 	lines := make(chan string, 16)
 	c := &Console{Lines: lines, lines: lines, in: in, out: out, err: err,
 		done: make(chan struct{}), approval: make(chan struct{}, 1), pastes: newPasteStore()}
+	c.assignments = make(chan []byte, 1)
+	c.Assignments = c.assignments
 	c.approval <- struct{}{}
 	return c
 }
@@ -157,6 +164,7 @@ func (c *Console) read() {
 	}()
 	c.mu.Lock()
 	c.rl, c.stdin = rl, stdin
+	c.resetEditor = func() { continuation.Store(false); rl.Operation.SetBuffer(""); rl.SetPrompt(prompt) }
 	c.mu.Unlock()
 	select {
 	case <-c.done:
@@ -173,8 +181,14 @@ func (c *Console) read() {
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
 	var draft []string
+	draftEpoch := c.taskEpoch.Load()
 	for {
 		line, err := rl.Readline()
+		if epoch := c.taskEpoch.Load(); epoch != draftEpoch {
+			draft = nil
+			rl.SetPrompt(prompt)
+			draftEpoch = epoch
+		}
 		if err == readline.ErrInterrupt {
 			draft = nil
 			continuation.Store(false)
@@ -243,12 +257,13 @@ func PeerMessage(message string) string {
 const peerPrefix = "\x1b]kh-peer;"
 
 func (c *Console) peerInput(in io.Reader) io.Reader {
-	return &peerReader{in: bufio.NewReader(in), deliver: c.deliver}
+	return &peerReader{in: bufio.NewReader(in), deliver: c.deliver, control: c.control}
 }
 
 type peerReader struct {
 	in      *bufio.Reader
 	deliver func(string) bool
+	control func([]byte) bool
 	pending []byte
 }
 
@@ -277,14 +292,14 @@ func (r *peerReader) Read(p []byte) (int, error) {
 			return n + 1, nil
 		}
 		sequence := []byte{b}
-		for len(sequence) < len(peerPrefix) && string(sequence) == peerPrefix[:len(sequence)] {
+		for len(sequence) < len(peerPrefix) && (string(sequence) == peerPrefix[:len(sequence)] || string(sequence) == taskPrefix[:len(sequence)]) {
 			b, err = r.in.ReadByte()
 			if err != nil {
 				break
 			}
 			sequence = append(sequence, b)
 		}
-		if string(sequence) != peerPrefix {
+		if string(sequence) != peerPrefix && string(sequence) != taskPrefix {
 			r.pending = sequence
 			break
 		}
@@ -306,7 +321,11 @@ func (r *peerReader) Read(p []byte) (int, error) {
 		if err != nil {
 			return 0, fmt.Errorf("invalid peer message: %w", err)
 		}
-		if !r.deliver(string(message)) {
+		if string(sequence) == taskPrefix {
+			if r.control != nil && !r.control(message) {
+				return 0, io.EOF
+			}
+		} else if !r.deliver(string(message)) {
 			return 0, io.EOF
 		}
 	}

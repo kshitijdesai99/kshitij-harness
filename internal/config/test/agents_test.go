@@ -11,7 +11,7 @@ import (
 func TestAgentsMaxLiveDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	cfg, err := config.Load()
-	if err != nil || cfg.Agents.MaxLive != 50 {
+	if err != nil || cfg.Agents.MaxLive != 50 || cfg.Agents.IdleTimeoutSec != 60 {
 		t.Fatalf("default capacity: %+v %v", cfg.Agents, err)
 	}
 	if err := config.Set("agents", map[string]int{"max_live": 3}); err != nil {
@@ -27,6 +27,8 @@ func TestAgentsMaxLiveDefaultsAndOverrides(t *testing.T) {
 		valid bool
 	}{
 		{`{"agents":{}}`, true},
+		{`{"agents":{"idle_timeout_sec":0}}`, true},
+		{`{"agents":{"idle_timeout_sec":-1}}`, false},
 		{`{"agents":{"max_live":0}}`, false},
 		{`{"agents":{"max_live":-1}}`, false},
 		{`{"agents":{"max_live":"3"}}`, false},

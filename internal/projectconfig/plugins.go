@@ -18,10 +18,10 @@ var pluginName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 // marketplace names, downloads packages, or executes installation hooks.
 func (l *loader) plugins(root, base string) {
 	dir := filepath.Join(root, "plugins")
-	if _, err := os.Lstat(dir); os.IsNotExist(err) {
+	if _, err := l.lstat(dir); os.IsNotExist(err) {
 		return
 	}
-	if err := safeAssetPath(dir, root); err != nil {
+	if err := l.safePath(dir, root); err != nil {
 		l.warn(dir, "unsafe plugin directory")
 		return
 	}
@@ -29,7 +29,7 @@ func (l *loader) plugins(root, base string) {
 	valid := true
 	for _, name := range []string{"settings.json", "settings.local.json"} {
 		path := filepath.Join(root, name)
-		if _, err := os.Lstat(path); os.IsNotExist(err) {
+		if _, err := l.lstat(path); os.IsNotExist(err) {
 			continue
 		}
 		data, ok := l.read(path)
@@ -58,7 +58,7 @@ func (l *loader) plugins(root, base string) {
 		return
 	}
 	seen := map[string]bool{}
-	entries, err := os.ReadDir(dir)
+	entries, err := l.readDir(dir)
 	if err != nil {
 		l.warn(dir, "cannot read plugin directory")
 		return
@@ -68,7 +68,7 @@ func (l *loader) plugins(root, base string) {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
-		if _, err := os.Lstat(filepath.Join(path, ".claude-plugin", "plugin.json")); err == nil {
+		if _, err := l.lstat(filepath.Join(path, ".claude-plugin", "plugin.json")); err == nil {
 			l.pluginBundle(path, dir, "", enabled, seen)
 		}
 	}
@@ -149,12 +149,12 @@ func (l *loader) pluginBundle(root, boundary, identity string, enabled map[strin
 	if seen[root] {
 		return
 	}
-	if err := safeAssetPath(root, boundary); err != nil {
+	if err := l.safePath(root, boundary); err != nil {
 		l.warn(root, "unsafe plugin install path")
 		return
 	}
 	manifest := filepath.Join(root, ".claude-plugin", "plugin.json")
-	if err := safeAssetPath(manifest, boundary); err != nil {
+	if err := l.safePath(manifest, boundary); err != nil {
 		l.warn(manifest, "unsafe plugin manifest path")
 		return
 	}
@@ -221,10 +221,10 @@ func (l *loader) pluginBundle(root, boundary, identity string, enabled map[strin
 	for _, paths := range components {
 		for _, rel := range paths {
 			path := filepath.Join(root, rel)
-			if _, err := os.Lstat(path); os.IsNotExist(err) {
+			if _, err := l.lstat(path); os.IsNotExist(err) {
 				continue
 			}
-			if err := safeAssetPath(path, boundary); err != nil {
+			if err := l.safePath(path, boundary); err != nil {
 				l.warn(path, "unsafe plugin component path; bundle skipped")
 				return
 			}
@@ -232,7 +232,7 @@ func (l *loader) pluginBundle(root, boundary, identity string, enabled map[strin
 	}
 	if mcpPath != "" {
 		path := filepath.Join(root, mcpPath)
-		if err := safeAssetPath(path, boundary); err != nil {
+		if err := l.safePath(path, boundary); err != nil {
 			l.warn(path, "unsafe plugin MCP path; bundle skipped")
 			return
 		}
@@ -260,7 +260,7 @@ func (l *loader) pluginBundle(root, boundary, identity string, enabled map[strin
 // inert on-demand references, not global instructions. Hooks are never indexed.
 func (l *loader) pluginComponent(root, boundary, path, kind, namespace string) {
 	count := 0
-	_ = filepath.WalkDir(path, func(current string, entry fs.DirEntry, err error) error {
+	_ = l.walkDir(path, func(current string, entry fs.DirEntry, err error) error {
 		if os.IsNotExist(err) {
 			return nil
 		}
@@ -279,7 +279,7 @@ func (l *loader) pluginComponent(root, boundary, path, kind, namespace string) {
 			}
 			return nil
 		}
-		if err := safeAssetPath(current, boundary); err != nil {
+		if err := l.safePath(current, boundary); err != nil {
 			l.warn(current, "unsafe plugin component skipped")
 			if entry.IsDir() {
 				return fs.SkipDir
@@ -324,10 +324,10 @@ func (l *loader) pluginComponent(root, boundary, path, kind, namespace string) {
 }
 
 func (l *loader) pluginMCPFile(path, root, boundary, namespace string) {
-	if _, err := os.Lstat(path); os.IsNotExist(err) {
+	if _, err := l.lstat(path); os.IsNotExist(err) {
 		return
 	}
-	if err := safeAssetPath(path, boundary); err != nil {
+	if err := l.safePath(path, boundary); err != nil {
 		l.warn(path, "unsafe plugin MCP file")
 		return
 	}

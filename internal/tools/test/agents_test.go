@@ -83,7 +83,7 @@ func TestNativeAgentsRejectInvalidRequests(t *testing.T) {
 func TestNativeAgentsEcosystemSchema(t *testing.T) {
 	tool := tools.Agents(nil)
 	for field, want := range map[string][]string{
-		"action": {"spawn", "send", "list", "set_role", "stats", "inspect", "peek", "stop"},
+		"action": {"spawn", "assign", "send", "list", "set_role", "stats", "inspect", "peek", "stop"},
 		"role":   {"manager", "worker"},
 		"scope":  {"agent", "subtree"},
 	} {

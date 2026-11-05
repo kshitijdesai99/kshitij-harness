@@ -244,7 +244,8 @@ func decisionEntry(args workspaceArgs) (string, error) {
 }
 
 func inspectWorkspace(ctx context.Context, directory, root, path string, args workspaceArgs) (string, error) {
-	c, err := Load(directory)
+	snapshot, err := Resolve(ctx, directory)
+	c := snapshot.Config
 	if err != nil {
 		return "", err
 	}
