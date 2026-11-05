@@ -16,6 +16,12 @@ Keep one home for each capability's usage, limitations, evidence, and history. T
 
 Runtime knowledge and procedures remain in the database; documentation is not a second memory store or executable skills library.
 
+## Repository decisions
+
+Keep meaningful decisions with the owning feature's current behavior and dated evolution, not in a parallel `.agents/decisions.md` ledger. Before recording, inspect that page's convention. Use `workspace record` with an explicit root-relative `decision_path` (for example, `features/project-configuration.md`); for documentation ownership itself, use `features/CONTRIBUTING.md`. Use the same explicit path when inspecting decisions: the generic tool default is not this repository's convention.
+
+Retain the date, status, rationale, affected areas, verification and outstanding work, concisely integrated with the page's existing sections. Mark superseded decisions without presenting obsolete behavior as current. Do not duplicate verification logs, transient delivery/restart state or facts already owned elsewhere; link to the owning page. Runtime lessons still belong in the database.
+
 ## New features
 
 1. Create a descriptive, stable filename, such as `steering.md`. Document a user-recognizable capability, not every implementation change.
@@ -43,3 +49,7 @@ Where practical, explain complex architecture, relationships, data flow, or life
 ## Verification
 
 Check source/history claims, local links/anchors, index/page date agreement, and the pending diff for duplication or unnecessary complexity. Distinguish representative test coverage from fresh passing tests or manual verification. Report checks actually performed. Proposed functionality belongs in problem/feature-request tracking, not among implemented capabilities.
+
+## Maintenance history
+
+**2026-11-06 — Implemented:** superseded the separate decision-ledger convention because feature pages already own behavior and history. Removed the ledger, updated [agent guidance](../AGENTS.md) and [workspace usage](project-configuration.md#target-workspaces), and preserved unique [CLI-fixture isolation rationale](development.md#build-and-test) and the [undelivered issue-recording scope](native-agents.md#duplicate-manager-exploration); other `.agents` guidance, configuration and fixtures remain unchanged. See the [release note](../release-notes/2026-11-06.md). Source comparison verified the migration and explicit `decision_path` support. Local links/anchors and diff whitespace checks passed; application tests were not needed for this documentation-only change. No runtime change or restart is required.

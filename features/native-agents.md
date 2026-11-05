@@ -47,6 +47,8 @@ These role-conditional duties are supplied in universal runtime instructions to 
 
 The reported problem is a manager delegating investigation but then independently rereading broad source/document sets, duplicating worker effort and expanding the manager's context. The instruction-level fix is to consume compact worker evidence first and reserve direct reads for initial scoping or a specific evidence gap, conflict or verification need. Root/resume instructions, the native promotion reminder, the discoverable tool contract and repository guidance carry this policy. Regression tests check instruction delivery and the bounded-read exceptions, not deterministic model compliance; no hard read blocking or automatic scheduler is added.
 
+The 2026-11-03 fix did not deliver central harness problem/feature recording: discovery then found no applicable local issue-recording operation, and external Jira/Cekura tools were not substitutes. It was left as separate outstanding work, not an implemented capability or a reason to write directly to the memory database.
+
 ## Integrate and verify
 
 A handoff with `workflow: "push_verified"` uses the bounded [verified Git push](shell.md#verified-git-push) path without provider, memory-service or configured MCP startup. It is selected only explicitly; normal tasks still use the model/tool workflow.

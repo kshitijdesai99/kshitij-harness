@@ -21,6 +21,8 @@ All `*_test.go` files belong in existing `test/` subpackages, not production pac
 
 CLI fixtures must provide explicit non-terminal stdin, such as `strings.NewReader("")`, and set `KH_AUTO_REBUILD=0` unless testing rebuild behavior. See [mode fixtures](../cmd/kh/test/mode_test.go) and [rebuild tests](../cmd/kh/test/rebuild_test.go).
 
+The CLI package's [TestMain and isolation helper](../cmd/kh/test/cli_isolation_test.go) clear ambient `KH_ECOSYSTEM_ID`, `KH_ECOSYSTEM_AGENT_ID` and `KH_ECOSYSTEM_TOKEN`: a verifier's ecosystem identity is not an admission ticket for fixture processes. Intentional ecosystem tests set their own identity afterward. Isolate both HOME and cwd where project discovery must not read real ancestor configuration; keep production admission checks intact. This test-only isolation was added on 2026-10-31 after inherited identity reproduced fixture startup failures.
+
 When a shell runner's foreground timeout is shorter than the check, run it in the background, capture output and exit status, and poll to completion. A runner timeout alone does not prove a test failure.
 
 ## Integrate and report
