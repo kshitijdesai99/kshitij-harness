@@ -65,6 +65,13 @@ func (r Renderer) Statistics(text string) {
 	fmt.Fprintln(r.Err, Color(r.Err, LightOrange, text))
 }
 
+// Task prints a one-time assignment in scrollback, not a pinned header.
+// Keep the full literal task: newlines are preserved and the terminal wraps it.
+func (r Renderer) Task(name, text string) {
+	r.FlushReply()
+	fmt.Fprint(r.Out, Color(r.Out, AssignedTask, "ASSIGNED TASK — "+name+"\n"+text+"\n\n"))
+}
+
 func (r Renderer) Query(text string) {
 	r.FlushReply()
 	fmt.Fprintln(r.Out, colorQuery(r.Out, text, "> "))

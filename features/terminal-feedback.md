@@ -8,6 +8,12 @@ Introduced **2026-10-01** · commit `c00bc3d` (query/response colors; activity i
 
 Terminal feedback includes activity indicators, distinct commentary/tool/peer styling, and clickable URLs. Plain output and `NO_COLOR` are supported. Presentation depends on terminal capabilities; these signals are not a durable event trace or an aggregate monitoring dashboard.
 
+## Assigned task startup banner
+
+Descendants with an initial task print **ASSIGNED TASK — agent name** and the full assignment once, before activity setup, project/MCP startup notices, and model/tool work. The label and task use explicit bold cyan, distinct from ordinary queries and replies. Original newlines are preserved; long text wraps naturally in the terminal rather than being truncated to the registry's task summary. Redirected output, `NO_COLOR`, and `TERM=dumb` retain readable plain text without ANSI styling.
+
+This is a startup scrollback banner, **not a pinned header**: later output can scroll it out of view. Both default headless workers and interactive `keep` descendants get it; interactive descendants do not echo a duplicate initial query. Ordinary root task display is unchanged. Launcher auto-rebuild and earlier session/memory setup can precede the banner.
+
 ## Live descendant counts
 
 Inside tmux, every ecosystem agent's pane label shows `name (N - M)` for a manager or `name (N - W)` for a worker, for example `main (5 - M)` or `tests (0 - W)`. N counts **all live descendants**, including managers, not just direct children or worker-role agents, and excludes the agent itself. The count follows current ownership links independently of role: a manager demoted to worker can still have descendants. All ecosystem panes show zero and their role when they have no live descendants, including leaf workers.
@@ -30,10 +36,12 @@ On normal shutdown, kh restores the activity label's unsuffixed name and attempt
 | 2026-10-16 | Unified tool and peer-message styling. | `7cf70cf` |
 | 2026-10-16 | Made chat URLs clickable. | `cf2024c` |
 | 2026-10-31 | Added idle-refreshing pane/tab suffixes counting all live descendants, excluding self, then role labels (`N - M`/`N - W`) for every ecosystem pane including leaf workers. | Current change |
+| 2026-11-05 | Added a full, bold-cyan assigned-task startup banner for descendants, before model/tool work, without pinning or duplicate query output. | Current change |
 
 ## Inspect
 
 - [Renderer](../internal/terminal/render.go), [activity](../internal/terminal/activity.go), and [colors](../internal/terminal/color.go)
+- [Startup banner ordering tests](../cmd/kh/test/task_banner_test.go)
 - [Color tests](../internal/terminal/test/color_test.go) and [activity tests](../internal/terminal/test/activity_test.go)
 - Live-count [registry query](../internal/ecosystem/registry.go) and [runtime refresh/tmux display](../cmd/kh/ecosystem_titles.go)
 - Descendant-count [registry tests](../internal/ecosystem/test/live_descendants_test.go) and [title tests](../internal/terminal/test/live_descendants_test.go)

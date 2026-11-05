@@ -227,6 +227,11 @@ func main() {
 	defer console.Close()
 	stdout, stderr := console.Stdout(), console.Stderr()
 	ui := terminal.NewRenderer(stdout, stderr)
+	task := strings.Join(args, " ")
+	assignedTask := eco.self.ParentID != "" && task != ""
+	if assignedTask {
+		ui.Task(eco.self.Name, task)
+	}
 	activityName := eco.self.Name
 	if activityName == "" {
 		activityName = "kh"
@@ -351,7 +356,6 @@ func main() {
 	turn := func(msg string) error { return c.turn(ctx, msg) }
 
 	setAgentState("waiting")
-	task := strings.Join(args, " ")
 	if task != "" && !interactive {
 		err := turn(task)
 		// Failed one-shot panes may remain visible, but never retain a live
@@ -363,7 +367,9 @@ func main() {
 	model, effort := p.Use("", "")
 	fmt.Fprintf(stderr, "kh chat, session %s (%s, %s). Type while it works to steer. Ctrl-C stops a task, Ctrl-D quits, /help for commands.\n", *id, model, effort)
 	if task != "" {
-		ui.Query(task)
+		if !assignedTask {
+			ui.Query(task)
+		}
 		if err := turn(task); err != nil {
 			fmt.Fprintln(stderr, "error:", err)
 		}

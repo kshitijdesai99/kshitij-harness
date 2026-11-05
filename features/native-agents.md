@@ -7,7 +7,7 @@ Introduced **2026-09-29** · commit `277c243` (tmux sub-agent commands).
 ## Current behavior
 
 - The root session is a fixed manager. Descendants start as workers and can change their own role with `set_role` (`role: manager` or `worker`). Only managers can `spawn`; promotion enables recursive delegation without creating another capacity allowance.
-- `spawn` takes `name` and `task`, returns without waiting for task completion, and opens a named tmux pane. Use `keep: true` for follow-up work.
+- `spawn` takes `name` and `task`, returns without waiting for task completion, and opens a named tmux pane. Use `keep: true` for follow-up work. Descendants show the full assignment in a distinct [startup task banner](terminal-feedback.md#assigned-task-startup-banner) before model/tool work; it remains in scrollback, not pinned.
 - `list` discovers the ecosystem directory; `stats` reports shared live-session, manager/worker and capacity counts. Use returned stable `kh:<id>` addresses for coordination. Short `kh:<name>` aliases resolve within the current ecosystem, not across unrelated roots.
 - Any participant can `send` a single-line message to another agent in the same ecosystem, regardless of ownership branch or role.
 - `inspect` returns safe shared details, a first-line task summary capped at 280 runes, and bounded conclusions. `peek` is an alias for that safe view, not a capture of private pane output or full conversation history.

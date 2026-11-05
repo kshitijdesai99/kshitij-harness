@@ -10,12 +10,13 @@ import (
 )
 
 const (
-	Muted       = "\033[90m"
-	LightOrange = "\033[38;5;215m"
-	Query       = "\033[36m"
-	PeerQuery   = "\033[38;5;214m"
-	Response    = "\033[32m"
-	Reset       = "\033[0m"
+	Muted        = "\033[90m"
+	LightOrange  = "\033[38;5;215m"
+	Query        = "\033[36m"
+	AssignedTask = "\033[1;36m"
+	PeerQuery    = "\033[38;5;214m"
+	Response     = "\033[32m"
+	Reset        = "\033[0m"
 )
 
 // colorQuery also handles newline-joined steering/approval messages on replay.
