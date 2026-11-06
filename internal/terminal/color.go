@@ -12,7 +12,7 @@ import (
 const (
 	Muted        = "\033[90m"
 	LightOrange  = "\033[38;5;215m"
-	Harness      = "\033[38;5;143m" // muted yellow, never bold
+	Harness      = Muted            // routine harness output, never bold
 	WorkerResult = "\033[38;5;137m" // subdued amber/brown
 	Query        = "\033[36m"
 	AssignedTask = "\033[1;36m"

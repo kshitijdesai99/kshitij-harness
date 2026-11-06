@@ -194,12 +194,12 @@ try:
    assert '\n    edit first.txt\n    edit second.txt\n' in text,repr(text)
   assert text.index('A second line.')<text.index('$ checking files')<text.index('Final '),repr(text)
   if not sys.argv[3] and sys.argv[2]!='dumb':
-   assert '\x1b[38;5;143m    Checking files.' in raw,repr(raw)
-   assert '\x1b[38;5;143m    $ checking files\n    second action line\n\x1b[0m' in raw,repr(raw)
-   assert '\x1b[38;5;143m    $ live command\n    continued command\n\x1b[0m' in raw,repr(raw)
-   assert '\x1b[38;5;143m    edit first.txt\n\x1b[0m' in raw and '\x1b[38;5;143m    edit second.txt\n\x1b[0m' in raw,repr(raw)
-   assert '\x1b[38;5;143m(ttft 1s, total 2s, 10 in)\x1b[0m' in raw,repr(raw)
-   assert '\x1b[38;5;143mordinary notice\x1b[0m' in raw,repr(raw)
+   assert '\x1b[90m    Checking files.' in raw,repr(raw)
+   assert '\x1b[90m    $ checking files\n    second action line\n\x1b[0m' in raw,repr(raw)
+   assert '\x1b[90m    $ live command\n    continued command\n\x1b[0m' in raw,repr(raw)
+   assert '\x1b[90m    edit first.txt\n\x1b[0m' in raw and '\x1b[90m    edit second.txt\n\x1b[0m' in raw,repr(raw)
+   assert '\x1b[90m(ttft 1s, total 2s, 10 in)\x1b[0m' in raw,repr(raw)
+   assert '\x1b[90mordinary notice\x1b[0m' in raw,repr(raw)
   assert text.index('Checking')<text.index('Final answer' if sys.argv[2]!='dumb' else 'Final **answer**')<text.index('(ttft'),repr(text)
  elif sys.argv[4]=='forgery':
   assert not links and 'https://good.example' in text,repr(raw)

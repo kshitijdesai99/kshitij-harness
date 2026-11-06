@@ -90,7 +90,7 @@ try:
  assert task in buf,buf
  if sys.argv[2]=='color':
   assert b'\x1b[1;36m'+task+b'\x1b[0m' in buf,buf
-  assert b'\x1b[38;5;143mroutine harness\x1b[0m' in buf,buf
+  assert b'\x1b[90mroutine harness\x1b[0m' in buf,buf
   assert b'\x1b[38;5;215mwarning diagnostic\x1b[0m' in buf,buf
   assert b'\x1b[38;5;137mWORKER RESULT ' in buf and b'(task task-1) [truncated]\r\nfirst result\r\nsecond result\r\n\r\n\x1b[0m' in buf,buf
   for color,text in expected:
