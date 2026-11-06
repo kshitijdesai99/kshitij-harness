@@ -203,7 +203,7 @@ def submit(text):
     expect(b'INPUT_JSON:'+json.dumps(text,ensure_ascii=False).encode()+b'\r\n')
 try:
     expect(b'\x1b[?2004h')
-    expect(b'\x1b[36m> ')
+    expect(b'\x1b[34m> ')
     # Shift+Enter (both protocols) and Ctrl-J continue without a turn.
     for key in [b'\x1b[13;2u',b'\x1b[27;2;13~',b'\x1b[13;66u',b'\x1b[13;130u',b'\x1b[57414;2u',b'\x0a']:
         os.write(master,b'first  '+key)

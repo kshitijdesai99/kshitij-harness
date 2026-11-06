@@ -275,7 +275,10 @@ func (s *Store) CreateRoot(ctx context.Context, o RootOptions) (Agent, error) {
 	}
 	return result, nil
 }
-func (s *Store) Reserve(ctx context.Context, parentID, name, task string) (Reservation, error) {
+func (s *Store) Reserve(ctx context.Context, parentID, name, task string, displayTask ...string) (Reservation, error) {
+	if err := validateDisplayTask(displayTask); err != nil {
+		return Reservation{}, err
+	}
 	if !validName(name) {
 		return Reservation{}, errors.New("invalid agent name")
 	}
@@ -306,6 +309,9 @@ func (s *Store) Reserve(ctx context.Context, parentID, name, task string) (Reser
 		}
 		_, err = c.ExecContext(ctx, `INSERT INTO agents(id,ecosystem_id,parent_id,name,role,state,task,token,launcher_pid,launcher_token,heartbeat,created) VALUES(?,?,?,?,'worker','reserved',?,?,?,?,?,?)`, id, p.EcosystemID, parentID, name, taskSummary(task), token, owner.PID, owner.StartToken, now, now)
 		if err != nil {
+			return err
+		}
+		if err = saveDisplayTask(ctx, c, id, "launch", "", 0, displayTask); err != nil {
 			return err
 		}
 		result, err = get(ctx, c, id)
@@ -387,7 +393,7 @@ func (s *Store) Claim(ctx context.Context, id, token string, p ProcessIdentity, 
 	return result, nil
 }
 func (s *Store) CancelReservation(ctx context.Context, id, token string) error {
-	return changed(s.db.ExecContext(ctx, "UPDATE agents SET state='cancelled' WHERE id=? AND token=? AND state='reserved'", id, token))
+	return s.rollbackLaunchDisplay(ctx, id, token, "UPDATE agents SET state='cancelled' WHERE id=? AND token=? AND state='reserved'")
 }
 
 // FailLaunch only releases a launch if the caller proved no child was created.
@@ -396,7 +402,7 @@ func (s *Store) FailLaunch(ctx context.Context, id, token string, noChild bool) 
 	if !noChild {
 		return errors.New("launch outcome unknown; capacity retained")
 	}
-	return changed(s.db.ExecContext(ctx, "UPDATE agents SET state='failed' WHERE id=? AND token=? AND state IN ('starting','stopping') AND pid=0 AND pane_id=''", id, token))
+	return s.rollbackLaunchDisplay(ctx, id, token, "UPDATE agents SET state='failed' WHERE id=? AND token=? AND state IN ('starting','stopping') AND pid=0 AND pane_id=''")
 }
 func (s *Store) SetRole(ctx context.Context, selfID string, role Role) error {
 	if role != Manager && role != Worker {

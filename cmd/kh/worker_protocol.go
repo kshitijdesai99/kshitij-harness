@@ -224,7 +224,7 @@ func (e *ecosystemRuntime) assignTask(ctx context.Context, args []string, cfg co
 	if compatibility != workerCompatibility(h.Directory, cfg) {
 		return "", fmt.Errorf("worker configuration/directory differs; spawn a compatible worker")
 	}
-	lease, err := e.store.ReserveTask(ctx, e.self.ID, a.ID, h.Task)
+	lease, err := e.store.ReserveTask(ctx, e.self.ID, a.ID, h.Task, h.Task)
 	if err != nil {
 		return "", err
 	}

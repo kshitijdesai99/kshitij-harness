@@ -21,7 +21,11 @@ Introduced **2026-09-29** · commit `277c243` (tmux sub-agent commands).
 
 The parent terminal observes an append-only result feed for its **direct children**, separate from the mutable latest conclusion returned by `inspect`. Task ID and generation identify reusable-worker completions; ordinary descendant turns use a stable publication ID. Retrying a publication does not create another result, while later tasks can publish identical text independently. Reassignment cannot overwrite an older feed entry before the parent reads it.
 
-Published model conclusions contain only the latest assistant text, not conversation transcripts or tool history. They are bounded to 16,000 UTF-8 bytes with an ellipsis and truncation metadata. Failures publish a failure conclusion instead of reusing stale assistant text. Empty or whitespace-only sanitized conclusions are explicitly labeled `[no final conclusion]`; the sanitized body is preserved. The terminal sanitizes control sequences and labels the [worker-result block](terminal-feedback.md#subdued-harness-output), without generating a model summary.
+Each new result displays an always-visible **Task + Result** pair in the manager terminal, with no collapse control or new navigation. The task is the exact validated explicit task, captured separately with a 64 KiB bound and immutable for its lease/generation; legacy workers retain their immutable original launch assignment. Older records without that task display `Original task unavailable`, never a reconstruction from a task summary or private handoff. Terminal control sequences are sanitized for display.
+
+`DisplayResultsAfter` is the presentation-only read API; its `Task *string` distinguishes a missing original task from an available one. Existing `Result`, `ResultsAfter`, and `agents inspect` retain their conclusion and safe-metadata contracts: they do not expose this task body or private worker context.
+
+Published model conclusions contain only the latest assistant text, not conversation transcripts or tool history. They are bounded to 16,000 UTF-8 bytes with an ellipsis and truncation metadata. Failures publish a failure conclusion instead of reusing stale assistant text. Empty or whitespace-only sanitized conclusions are explicitly labeled `[no final conclusion]`; the sanitized body is preserved. The terminal emits the task and labeled [worker-result block](terminal-feedback.md#subdued-harness-output) together in one atomic, draft-safe write, without generating a model summary.
 
 At process startup the parent captures the feed's high-water mark, then polls for later publications independently of model turns, steering, archival and human input. A live observer advances its cursor after displaying each result, including while idle. Registry read failures retain the cursor for a later retry. This is once-per-live-process display, **not historical replay or crash-atomic exactly-once delivery**: restarting or resuming intentionally skips existing publications. It does not inject a new model turn or automatically add the conclusion to model context; use `inspect` and explicit messages for coordination.
 
@@ -82,12 +86,15 @@ The harness provides tools and visibility; the agent remains responsible for cho
 | 2026-11-03 | Extended manager delegation to substantial investigation and source/document exploration; prefer compact worker evidence over duplicate broad reads while retaining initial scoping and targeted verification. | Current change |
 | 2026-11-05 | Added bounded versioned handoffs, explicit fresh-task assignment and opt-in compatible idle-worker reuse without parent history or automatic memory copying. | Current change |
 | 2026-11-06 | Added bounded direct-child result publications and a live parent-terminal observer, without transcript sharing, historical replay or automatic model-context injection. | Current change |
+| 2026-11-06 | Paired each visible result with its immutable original task through a presentation-only API, keeping coordination APIs conclusion-only. | Current change |
 
 ## Inspect
 
 [Agents tool](../internal/tools/agents.go) · [Coordinator](../cmd/kh/agents.go) · [Runtime wiring](../cmd/kh/ecosystem.go) · [Registry](../internal/ecosystem/registry.go) · [Tool tests](../internal/tools/test/agents_test.go) · [Instruction delivery tests](../cmd/kh/test/manager_policy_test.go)
 
 [Result storage](../internal/ecosystem/results.go) · [Live observer](../cmd/kh/ecosystem_results.go) · [Result-feed coverage](../internal/ecosystem/test/results_test.go) · [Idle/busy delivery and resume tests](../cmd/kh/test/completion_observer_test.go) · [Result renderer tests](../internal/terminal/test/agent_result_test.go)
+
+[Assignment pairing](../internal/ecosystem/display.go) · [Immutable task capture tests](../internal/ecosystem/test/display_test.go) · [Paired renderer tests](../internal/terminal/test/agent_task_result_test.go)
 
 [Handoff contract](../internal/delegation/handoff.go) · [Handoff coverage](../internal/delegation/test/handoff_test.go)
 
@@ -99,3 +106,10 @@ The harness provides tools and visibility; the agent remains responsible for cho
 - Rationale: An append-only result feed preserves completions across worker reuse instead of polling an overwritten latest conclusion. A console-lifetime observer provides visibility without steering the model or replaying historical results.
 - Affected: internal/ecosystem/results.go, internal/ecosystem/tasks.go, cmd/kh/ecosystem_results.go and publication wiring; see Visible worker results above.
 - Verification / outstanding: Final `KH_AUTO_REBUILD=0 go test ./... -count=1`, focused renderer/feed/CLI checks and preview build passed on 2026-11-06. Manual terminal inspection remains unrun; external review is paused and incomplete.
+
+## 2026-11-06 — Pair original tasks with visible worker results
+
+- Status: implemented
+- Rationale: Audit assignments against conclusions without extra navigation, model turns or private context exposure. Keep immutable explicit tasks separate from the conclusion-only coordination APIs; never reconstruct missing originals.
+- Affected: Result storage, presentation-only DisplayResultsAfter, parent observer and terminal paired renderer; current behavior and evolution above.
+- Verification / outstanding: Final `KH_AUTO_REBUILD=0 go test ./... -count=1` passed on 2026-11-06. Focused terminal/PTY tests (28.579s), completion-observer/startup-banner CLI tests (5.382s), ecosystem store tests (0.435s) and preview build passed. Manual visual inspection remains unrun; external review is paused and incomplete.

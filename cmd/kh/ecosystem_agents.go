@@ -97,7 +97,7 @@ func agentOperation(ctx context.Context, args []string, cfg config.Config) (stri
 		}
 		spawnArgs := []string{spawn.name, spawn.task}
 		// Every path, including a CLI spawned by bash, uses this shared transaction.
-		reservation, err := e.store.Reserve(ctx, e.self.ID, spawnArgs[0], spawnArgs[1])
+		reservation, err := e.store.Reserve(ctx, e.self.ID, spawnArgs[0], spawnArgs[1], spawn.task)
 		if err != nil {
 			return "", err
 		}

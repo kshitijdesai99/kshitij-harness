@@ -35,7 +35,7 @@ func (e *ecosystemRuntime) startResults(ctx context.Context, ui terminal.Rendere
 				return
 			case <-tick.C:
 				poll, stop := context.WithTimeout(ctx, 750*time.Millisecond)
-				results, err := e.store.ResultsAfter(poll, e.self.ID, e.resultSeq, 32)
+				results, err := e.store.DisplayResultsAfter(poll, e.self.ID, e.resultSeq, 32)
 				stop()
 				if err != nil {
 					continue
@@ -47,7 +47,7 @@ func (e *ecosystemRuntime) startResults(ctx context.Context, ui terminal.Rendere
 					if result.Seq <= e.resultSeq {
 						continue
 					}
-					ui.AgentResult(result.Name, result.TaskID, result.Conclusion, result.Truncated)
+					ui.AgentTaskResult(result.Name, result.TaskID, result.Task, result.Conclusion, result.Truncated)
 					e.resultSeq = result.Seq
 				}
 			}

@@ -73,7 +73,8 @@ func TestCompletionObserverIdleBusyAndResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reservation, err := store.Reserve(ctx, root.ID, "completion-fixture", "PRIVATE-TASK-SENTINEL")
+	task := "AUDIT-FIRST-LINE\n" + strings.Repeat("complete task detail ", 100) + "AUDIT-LAST-LINE"
+	reservation, err := store.Reserve(ctx, root.ID, "completion-fixture", "PRIVATE-TASK-SENTINEL", task)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,13 +85,20 @@ func TestCompletionObserverIdleBusyAndResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	publish := func(id, text string) {
+	if err := store.EnableReuse(ctx, child.ID, process); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := store.BeginInitialTask(ctx, child.ID, process, "PRIVATE-TASK-SENTINEL")
+	if err != nil {
+		t.Fatal(err)
+	}
+	publish := func(text string) {
 		t.Helper()
-		if err := store.PublishResult(ctx, child.ID, id, text); err != nil {
+		if err := store.FinishTask(ctx, child.ID, process, lease, text, ecosystem.TaskTimings{}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	publish("idle", "IDLE-COMPLETION-SENTINEL")
+	publish("IDLE-COMPLETION-SENTINEL")
 	wait("IDLE-COMPLETION-SENTINEL")
 	select {
 	case r := <-requests:
@@ -105,7 +113,19 @@ func TestCompletionObserverIdleBusyAndResume(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("provider not entered")
 	}
-	publish("busy", "BUSY-COMPLETION-SENTINEL")
+	busyTask := "REUSED-TASK-FIRST\nREUSED-TASK-LAST"
+	lease, err = store.ReserveTask(ctx, root.ID, child.ID, "PRIVATE-REUSED-SUMMARY", busyTask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A pending reassignment must not alter the already published pair.
+	if strings.Count(read(), task) != 1 || strings.Contains(read(), busyTask) {
+		t.Fatalf("pending task changed completed pair: %s", read())
+	}
+	if err := store.ClaimTask(ctx, child.ID, process, lease); err != nil {
+		t.Fatal(err)
+	}
+	publish("BUSY-COMPLETION-SENTINEL")
 	wait("BUSY-COMPLETION-SENTINEL")
 	close(release)
 	released = true
@@ -123,8 +143,16 @@ func TestCompletionObserverIdleBusyAndResume(t *testing.T) {
 			t.Fatalf("completion %q rendered %d times: %s", text, n, read())
 		}
 	}
-	if strings.Contains(read(), "PRIVATE-TASK-SENTINEL") {
-		t.Fatal("private task leaked to completion output")
+	for _, pair := range [][2]string{{task, "IDLE-COMPLETION-SENTINEL"}, {busyTask, "BUSY-COMPLETION-SENTINEL"}} {
+		out := read()
+		if strings.Count(out, pair[0]) != 1 || strings.Index(out, pair[0]) >= strings.Index(out, pair[1]) {
+			t.Fatalf("full task must render once before its result: %s", out)
+		}
+	}
+	for _, private := range []string{"PRIVATE-TASK-SENTINEL", "PRIVATE-REUSED-SUMMARY"} {
+		if strings.Contains(read(), private) {
+			t.Fatal("private summary leaked to completion output")
+		}
 	}
 	select {
 	case request := <-requests:

@@ -10,13 +10,13 @@ Terminal feedback includes activity indicators, distinct commentary/tool/peer st
 
 ## Subdued harness output
 
-Routine notices, actions, commentary, turn statistics, startup banners and peer text use subdued, non-bold tones rather than competing with the main reply. Harness text uses the existing muted gray (ANSI 90); worker-result blocks and peer messages retain subdued amber/brown (ANSI 137). Human input remains cyan, assigned-task banners remain bold cyan, and final replies retain their [Markdown styling and two-column inset](markdown.md). Warnings and approval prompts retain a brighter diagnostic tone.
+Routine notices, actions, commentary, turn statistics, startup banners and peer text use subdued, non-bold tones rather than competing with the main reply. Harness text uses the existing muted gray (ANSI 90); worker-result blocks and peer messages retain subdued amber/brown (ANSI 137). Human input uses blue (ANSI 34) in live display and replay; assigned-task banners use bold green (ANSI 1;32), and final replies retain their [Markdown styling and two-column inset](markdown.md). Warnings and approval prompts retain a brighter diagnostic tone.
 
-New direct-child conclusions appear as **WORKER RESULT — name**, with task identity and a truncation label when applicable. The renderer writes the label and sanitized published conclusion together, without summarizing it or flushing an in-progress reply. It does not submit input or change the user's draft. See [result delivery and its limits](native-agents.md#visible-worker-results); this is not a transcript viewer.
+New direct-child conclusions appear as **WORKER RESULT — name**, with task identity and a truncation label when applicable. The renderer writes the original **Task** and **Result** together in one atomic, draft-safe block, always visible without collapse or navigation, without summarizing it or flushing an in-progress reply. It does not submit input or change the user's draft. See [result delivery and its limits](native-agents.md#visible-worker-results); this is not a transcript viewer.
 
 ## Assigned task startup banner
 
-Descendants with an initial task print **ASSIGNED TASK — agent name** and the full assignment once, before activity setup, project/MCP startup notices, and model/tool work. The label and task use explicit bold cyan, distinct from ordinary queries and replies. Original newlines are preserved; long text wraps naturally in the terminal rather than being truncated to the registry's task summary. Redirected output, `NO_COLOR`, and `TERM=dumb` retain readable plain text without ANSI styling.
+Descendants with an initial task print **ASSIGNED TASK — agent name** and the full assignment once, before activity setup, project/MCP startup notices, and model/tool work. The label and task use explicit bold green (ANSI 1;32), distinct from blue human queries and ordinary replies. Original newlines are preserved; long text wraps naturally in the terminal rather than being truncated to the registry's task summary. Redirected output, `NO_COLOR`, and `TERM=dumb` retain readable plain text without ANSI styling.
 
 This is a startup scrollback banner, **not a pinned header**: later output can scroll it out of view. Both default headless workers and interactive `keep` descendants get it; interactive descendants do not echo a duplicate initial query. Ordinary root task display is unchanged. Launcher auto-rebuild and earlier session/memory setup can precede the banner.
 
@@ -45,11 +45,12 @@ On normal shutdown, kh restores the activity label's unsuffixed name and attempt
 | 2026-11-05 | Added a full, bold-cyan assigned-task startup banner for descendants, before model/tool work, without pinning or duplicate query output. | Current change |
 | 2026-11-06 | Subdued routine harness output and added distinct worker-result blocks while preserving reply, input and diagnostic styling. | Current change |
 | 2026-11-06 | Restored routine harness output to muted gray, superseding its yellow selection while retaining amber/brown for worker results and peer messages. | Current change |
+| 2026-11-06 | Superseded cyan queries/assigned-task banners with blue human queries (live and replay) and bold-green assignments; paired original Task + Result output. | Current change |
 
 ## Inspect
 
 - [Renderer](../internal/terminal/render.go), [activity](../internal/terminal/activity.go), and [colors](../internal/terminal/color.go)
-- [Startup banner ordering tests](../cmd/kh/test/task_banner_test.go)
+- [Startup banner ordering tests](../cmd/kh/test/task_banner_test.go) and [paired Task + Result renderer tests](../internal/terminal/test/agent_task_result_test.go)
 - [Color tests](../internal/terminal/test/color_test.go) and [activity tests](../internal/terminal/test/activity_test.go)
 - Live-count [registry query](../internal/ecosystem/registry.go) and [runtime refresh/tmux display](../cmd/kh/ecosystem_titles.go)
 - Descendant-count [registry tests](../internal/ecosystem/test/live_descendants_test.go) and [title tests](../internal/terminal/test/live_descendants_test.go)
@@ -70,3 +71,10 @@ On normal shutdown, kh restores the activity label's unsuffixed name and attempt
 - Rationale: Supersedes the routine yellow selection above with existing muted gray (ANSI 90) so harness text recedes behind replies; other styling is unchanged.
 - Affected: terminal palette and color assertions; current behavior, evolution and release note.
 - Verification / outstanding: Terminal package tests, focused assigned-task banner and completion-observer CLI tests, preview build and diff whitespace check passed. Full repository suite was not rerun; manual visual inspection remains unrun and external review remains paused.
+
+## 2026-11-06 — Distinguish blue human queries from bold-green assignments
+
+- Status: implemented
+- Rationale: Supersedes the prior cyan query and bold-cyan assigned-task choices while preserving that history. Blue human queries use ANSI 34 in live output and replay; AssignedTask uses ANSI 1;32. Harness gray, result/peer amber, response inset and diagnostic styles remain unchanged.
+- Affected: Terminal palette, query replay and assigned-task presentation; current behavior and evolution above.
+- Verification / outstanding: Final full Go suite, focused terminal/PTY and completion-observer/startup-banner CLI tests, ecosystem store tests and preview build passed on 2026-11-06; see [Task + Result verification](native-agents.md#2026-11-06--pair-original-tasks-with-visible-worker-results). Manual visual inspection remains unrun; external review is paused and incomplete.

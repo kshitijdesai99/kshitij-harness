@@ -55,6 +55,8 @@ func TestQueryColorProcess(t *testing.T) {
 	r.Notice("routine harness")
 	r.Warning("warning diagnostic")
 	r.AgentResult("worker", "task-1", "first result\nsecond result", true)
+	pairedTask := "paired task line\nsecond task line"
+	r.AgentTaskResult("paired", "task-2", &pairedTask, "paired conclusion", false)
 	r.Query("user query")
 	r.Query("[from kh:worker] peer message")
 	// Queued and approval-held messages are joined before entering history.
@@ -85,11 +87,12 @@ try:
   buf+=data
  p.wait(timeout=3)
  assert p.returncode==0,(p.returncode,buf)
- expected=[(b'36',b'> user query'),(b'38;5;137',b'> [from kh:worker] peer message'),(b'36',b'> user steering\r\n'),(b'38;5;137',b'[from kh:worker] queued peer\r\n'),(b'36',b'more user steering'),(b'38;5;137',b'> [from kh:worker] peer steering\r\n'),(b'36',b'user followup'),(b'36',b'> mention [from kh:worker] in a user query')]
+ expected=[(b'34',b'> user query'),(b'38;5;137',b'> [from kh:worker] peer message'),(b'34',b'> user steering\r\n'),(b'38;5;137',b'[from kh:worker] queued peer\r\n'),(b'34',b'more user steering'),(b'38;5;137',b'> [from kh:worker] peer steering\r\n'),(b'34',b'user followup'),(b'34',b'> mention [from kh:worker] in a user query')]
  task=b'ASSIGNED TASK \xe2\x80\x94 worker\r\nfirst task line\r\n'+b'long task '*100+b'TASK-END\r\n\r\n'
  assert task in buf,buf
  if sys.argv[2]=='color':
-  assert b'\x1b[1;36m'+task+b'\x1b[0m' in buf,buf
+  assert b'\x1b[1;32m'+task+b'\x1b[0m' in buf,buf
+  assert b'\x1b[1;32mASSIGNED TASK \xe2\x80\x94 paired (task task-2)\r\npaired task line\r\nsecond task line\r\n\r\n\x1b[0m\x1b[38;5;137mWORKER RESULT \xe2\x80\x94 paired (task task-2)\r\npaired conclusion\r\n\r\n\x1b[0m' in buf,buf
   assert b'\x1b[90mroutine harness\x1b[0m' in buf,buf
   assert b'\x1b[38;5;215mwarning diagnostic\x1b[0m' in buf,buf
   assert b'\x1b[38;5;137mWORKER RESULT ' in buf and b'(task task-1) [truncated]\r\nfirst result\r\nsecond result\r\n\r\n\x1b[0m' in buf,buf

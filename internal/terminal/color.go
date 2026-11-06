@@ -14,8 +14,8 @@ const (
 	LightOrange  = "\033[38;5;215m"
 	Harness      = Muted            // routine harness output, never bold
 	WorkerResult = "\033[38;5;137m" // subdued amber/brown
-	Query        = "\033[36m"
-	AssignedTask = "\033[1;36m"
+	Query        = "\033[34m"
+	AssignedTask = "\033[1;32m"
 	PeerQuery    = "\033[38;5;137m"
 	Response     = "\033[32m"
 	Reset        = "\033[0m"

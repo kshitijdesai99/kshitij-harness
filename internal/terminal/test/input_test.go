@@ -159,7 +159,7 @@ def ready():
     # Results and the next prompt come from different goroutines. Observe the
     # empty next prompt even if it printed before the result, then check raw
     # mode so an early CR cannot be line-discipline translated into Ctrl-J.
-    prompt=b'\x1b[36m> \x1b[0m\x1b[36m\x1b[0m \x08'
+    prompt=b'\x1b[34m> \x1b[0m\x1b[34m\x1b[0m \x08'
     end=time.monotonic()+3
     while transcript.count(prompt)<=ready_count or termios.tcgetattr(master)[3]&termios.ICANON:
         if time.monotonic()>end: raise AssertionError(('editor not ready',buf))
@@ -170,10 +170,10 @@ def send(data,result):
     expect(b'INPUT:'+result+b'\r\n')
     ready()
 try:
-    expect(b'\x1b[36m> ')
+    expect(b'\x1b[34m> ')
     ready()
     os.write(master,b'first\r')
-    expect(b'\x1b[36mfirst\x1b[0m')
+    expect(b'\x1b[34mfirst\x1b[0m')
     expect(b'INPUT:first\r\n')
     ready()
     os.write(master,b'[from kh:worker] peer coordination\r')
@@ -181,7 +181,7 @@ try:
     expect(b'INPUT:[from kh:worker] peer coordination\r\n')
     ready()
     os.write(master,b'second\r')
-    expect(b'\x1b[36msecond\x1b[0m')
+    expect(b'\x1b[34msecond\x1b[0m')
     expect(b'INPUT:second\r\n')
     ready()
     send(b'\x1b[A\r',b'second')

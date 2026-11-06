@@ -25,7 +25,11 @@ func (s *Store) initResults() error {
  agent_id TEXT NOT NULL, name TEXT NOT NULL, task_id TEXT NOT NULL,
  generation INTEGER NOT NULL, conclusion TEXT NOT NULL, truncated INTEGER NOT NULL,
  UNIQUE(agent_id,task_id,generation));
- CREATE INDEX IF NOT EXISTS agent_results_parent ON agent_results(ecosystem_id,parent_id,seq);`)
+ CREATE INDEX IF NOT EXISTS agent_results_parent ON agent_results(ecosystem_id,parent_id,seq);
+ CREATE TABLE IF NOT EXISTS agent_display_tasks (
+ agent_id TEXT NOT NULL, kind TEXT NOT NULL, task_id TEXT NOT NULL,
+ generation INTEGER NOT NULL, task TEXT NOT NULL, result_seq INTEGER UNIQUE,
+ PRIMARY KEY(agent_id,kind,task_id,generation));`)
 	return err
 }
 
@@ -83,6 +87,9 @@ func (s *Store) PublishResult(ctx context.Context, agentID, publicationID, concl
 		}
 		if inserted == 0 {
 			return nil
+		}
+		if _, err = c.ExecContext(ctx, `INSERT INTO agent_display_tasks(agent_id,kind,task_id,generation,task,result_seq) SELECT agent_id,'publication',?,1,task,(SELECT seq FROM agent_results WHERE agent_id=? AND task_id=? AND generation=1) FROM agent_display_tasks WHERE agent_id=? AND kind='launch'`, publicationID, agentID, publicationID, agentID); err != nil {
+			return err
 		}
 		return changed(c.ExecContext(ctx, `UPDATE agents SET conclusion=? WHERE id=?`, conclusion, agentID))
 	})

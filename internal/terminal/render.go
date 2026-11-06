@@ -90,6 +90,26 @@ func (r Renderer) Action(text string) {
 // AgentResult prints one labelled block without touching the active reply.
 // A single coordinated write preserves an editor draft while results arrive.
 func (r Renderer) AgentResult(name, taskID, conclusion string, truncated bool) {
+	fmt.Fprint(r.Out, Color(r.Out, WorkerResult, agentResultBlock(name, taskID, conclusion, truncated)))
+}
+
+// AgentTaskResult appends the full assignment and result in one coordinated write,
+// without flushing a pending assistant reply or disturbing the editor draft.
+func (r Renderer) AgentTaskResult(name, taskID string, task *string, conclusion string, truncated bool) {
+	identity := strings.ReplaceAll(cleanReply(name), "\n", " ")
+	if taskID != "" {
+		identity += " (task " + strings.ReplaceAll(cleanReply(taskID), "\n", " ") + ")"
+	}
+	body := "Original task unavailable"
+	if task != nil {
+		body = cleanReply(*task)
+	}
+	assignment := "ASSIGNED TASK — " + identity + "\n" + body + "\n\n"
+	block := Color(r.Out, AssignedTask, assignment) + Color(r.Out, WorkerResult, agentResultBlock(name, taskID, conclusion, truncated))
+	fmt.Fprint(r.Out, block)
+}
+
+func agentResultBlock(name, taskID, conclusion string, truncated bool) string {
 	label := "WORKER RESULT — " + strings.ReplaceAll(cleanReply(name), "\n", " ")
 	if taskID != "" {
 		label += " (task " + strings.ReplaceAll(cleanReply(taskID), "\n", " ") + ")"
@@ -101,8 +121,7 @@ func (r Renderer) AgentResult(name, taskID, conclusion string, truncated bool) {
 	if strings.TrimSpace(body) == "" {
 		label += " [no final conclusion]"
 	}
-	block := label + "\n" + body + "\n\n"
-	fmt.Fprint(r.Out, Color(r.Out, WorkerResult, block))
+	return label + "\n" + body + "\n\n"
 }
 
 // Warning keeps actionable diagnostics distinct from routine harness notices.

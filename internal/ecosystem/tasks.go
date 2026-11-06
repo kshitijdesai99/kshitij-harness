@@ -113,6 +113,9 @@ func (s *Store) BeginInitialTask(ctx context.Context, id string, p ProcessIdenti
 		if err != nil {
 			return err
 		}
+		if _, err = c.ExecContext(ctx, `INSERT INTO agent_display_tasks(agent_id,kind,task_id,generation,task) SELECT agent_id,'lease',?,1,task FROM agent_display_tasks WHERE agent_id=? AND kind='launch'`, lease.ID, id); err != nil {
+			return err
+		}
 		return changed(c.ExecContext(ctx, `UPDATE agents SET task=?,conclusion='',state='running' WHERE id=?`, taskSummary(summary), id))
 	})
 	if err != nil {
@@ -120,7 +123,10 @@ func (s *Store) BeginInitialTask(ctx context.Context, id string, p ProcessIdenti
 	}
 	return lease, nil
 }
-func (s *Store) ReserveTask(ctx context.Context, actorID, targetID, summary string) (TaskLease, error) {
+func (s *Store) ReserveTask(ctx context.Context, actorID, targetID, summary string, displayTask ...string) (TaskLease, error) {
+	if err := validateDisplayTask(displayTask); err != nil {
+		return TaskLease{}, err
+	}
 	var lease TaskLease
 	err := s.write(ctx, func(c *sql.Conn) error {
 		actor, err := get(ctx, c, actorID)
@@ -155,6 +161,9 @@ func (s *Store) ReserveTask(ctx context.Context, actorID, targetID, summary stri
 		if err = changed(c.ExecContext(ctx, `UPDATE agent_tasks SET lease_id=?,generation=?,status='pending',startup_ms=0,context_ms=0,execution_ms=0,report_ms=0 WHERE agent_id=?`, lease.ID, lease.Generation, targetID)); err != nil {
 			return err
 		}
+		if err = saveDisplayTask(ctx, c, targetID, "lease", lease.ID, lease.Generation, displayTask); err != nil {
+			return err
+		}
 		return changed(c.ExecContext(ctx, `UPDATE agents SET task=?,conclusion='',state='running' WHERE id=?`, taskSummary(summary), targetID))
 	})
 	if err != nil {
@@ -185,6 +194,9 @@ func (s *Store) CancelTaskReservation(ctx context.Context, actorID, targetID str
 			return ErrState
 		}
 		if err := changed(c.ExecContext(ctx, `UPDATE agent_tasks SET status='completed' WHERE agent_id=? AND lease_id=? AND generation=? AND status='pending'`, targetID, l.ID, l.Generation)); err != nil {
+			return err
+		}
+		if _, err = c.ExecContext(ctx, `DELETE FROM agent_display_tasks WHERE agent_id=? AND kind='lease' AND task_id=? AND generation=? AND result_seq IS NULL`, targetID, l.ID, l.Generation); err != nil {
 			return err
 		}
 		return changed(c.ExecContext(ctx, `UPDATE agents SET state='idle',conclusion='Task assignment cancelled before acceptance' WHERE id=?`, targetID))
@@ -226,6 +238,9 @@ func (s *Store) FinishTask(ctx context.Context, id string, p ProcessIdentity, l 
 			return err
 		}
 		if err = appendResult(ctx, c, a, l.ID, l.Generation, conclusion, truncated); err != nil {
+			return err
+		}
+		if _, err = c.ExecContext(ctx, `UPDATE agent_display_tasks SET result_seq=(SELECT seq FROM agent_results WHERE agent_id=? AND task_id=? AND generation=?) WHERE agent_id=? AND kind='lease' AND task_id=? AND generation=? AND result_seq IS NULL`, id, l.ID, l.Generation, id, l.ID, l.Generation); err != nil {
 			return err
 		}
 		return changed(c.ExecContext(ctx, `UPDATE agents SET state='idle',conclusion=?,heartbeat=? WHERE id=?`, conclusion, time.Now().UnixNano(), id))

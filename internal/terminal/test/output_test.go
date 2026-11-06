@@ -53,7 +53,10 @@ func TestOutputProcess(t *testing.T) {
 		func() { r.Notice("STOPPED") }, // must flush stdout before stderr
 		func() { r.Action("checking files") },
 		func() { r.Reply("**held reply**") },
-		func() { r.AgentResult("worker", "task-1", "result one\nresult two", false) },
+		func() {
+			task := "full original task\nsecond task line"
+			r.AgentTaskResult("worker", "task-1", &task, "result one\nresult two", false)
+		},
 		r.FlushReply,
 	}
 	for i, step := range steps {
@@ -172,7 +175,8 @@ try:
  assert not os.path.exists(root+'/line-0'),'output accidentally submitted draft'
  assert command(5)==b'','pending reply must remain buffered'
  result=command(6)
- refresh(result,b'WORKER RESULT',prompt,draft)
+ refresh(result,b'ASSIGNED TASK',prompt,draft)
+ assert b'full original task\r\nsecond task line\r\n\r\nWORKER RESULT' in result,repr(result)
  assert b'result one\r\nresult two' in result and b'held reply' not in result,repr(result)
  refresh(command(7),b'held reply',prompt,draft)
  # Cursor position must survive every stdout/stderr refresh, not just the text.
