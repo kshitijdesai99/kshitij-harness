@@ -139,6 +139,8 @@ func (r *markdownReply) render() {
 	width := max(1, SessionWidth(terminalFile(r.out)))
 	if r.commentary {
 		width = max(1, width-4)
+	} else {
+		width -= 2 * replyPadding(width)
 	}
 	noColor := os.Getenv("NO_COLOR") != ""
 	if r.renderer == nil || r.width != width || r.noColor != noColor {
@@ -153,31 +155,45 @@ func (r *markdownReply) render() {
 	}
 	if r.renderer != nil {
 		if rendered, err := r.renderer.Render(ReadableMathMarkdown(cleanReply(source))); err == nil {
-			r.present(safeRenderedReply(rendered, noColor || r.commentary, r.linkID))
+			rendered = safeRenderedReply(rendered, noColor || r.commentary, r.linkID)
+			if !r.commentary {
+				// Code blocks and unbroken words can exceed Glamour's wrap width.
+				// Wrap, never truncate, while preserving styling and hyperlinks.
+				rendered = ansi.Hardwrap(rendered, width, true)
+			}
+			r.present(rendered)
 			return
 		}
 	}
 	r.present(cleanReply(source))
 }
 
-// Four spaces provide a stable tab-width indent without terminal tab stops.
+// Tiny terminals prioritize content over padding.
+func replyPadding(width int) int {
+	return min(2, max(0, (width-1)/2))
+}
+
+// Commentary retains its four-space indent; final replies get up to two display
+// columns on the left, with matching right padding reserved by the render width.
 func (r *markdownReply) present(text string) {
-	if r.commentary {
-		var indented strings.Builder
-		for _, part := range strings.SplitAfter(text, "\n") {
-			if part == "" {
-				continue
-			}
-			if r.lineStart && part != "\n" {
-				indented.WriteString("    ")
-			}
-			indented.WriteString(part)
-			r.lineStart = strings.HasSuffix(part, "\n")
-		}
-		text = Color(r.out, Muted, indented.String())
+	indent := "    "
+	if !r.commentary {
+		indent = strings.Repeat(" ", replyPadding(SessionWidth(terminalFile(r.out))))
 	}
-	if !r.commentary && text != "" {
-		r.lineStart = strings.HasSuffix(text, "\n")
+	var indented strings.Builder
+	for _, part := range strings.SplitAfter(text, "\n") {
+		if part == "" {
+			continue
+		}
+		if r.lineStart && part != "\n" {
+			indented.WriteString(indent)
+		}
+		indented.WriteString(part)
+		r.lineStart = strings.HasSuffix(part, "\n")
+	}
+	text = indented.String()
+	if r.commentary {
+		text = Color(r.out, Muted, text)
 	}
 	fmt.Fprint(r.out, text)
 }

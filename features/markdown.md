@@ -8,6 +8,8 @@ Introduced **2026-10-05** · commit `51c87c7`.
 
 Capable interactive terminals render whole replies as Markdown, including readable math. Buffered replies flush at completion, failure, and cancellation so document-wide structures are not split into unrelated chunks. Explicit styles avoid terminal-background queries that could consume user input. Coordinated [console output](input.md#output-while-composing) preserves terminal detection, color, and width while restoring unfinished drafts around reply presentation. Plain output remains available when terminal rendering is unavailable; this is terminal presentation, not a general graphical document viewer. A [scoped reflow patch](../third_party/reflow/README.md) counts hyphen breakpoint widths before Glamour's second wrapping pass, preventing artificial one-word rows without joining source lines or removing inline styling.
 
+Final assistant replies have two display columns of left padding and reserve two on the right by wrapping to the remaining width, both live and during saved-session replay. Width is measured when each reply is rendered; widths of three or four columns use one column per side, and narrower terminals omit padding to leave room for content. Long code lines and unbroken words wrap without truncation. Prompts, tool output, and the existing four-space commentary layout are unchanged. Redirected output and `TERM=dumb` retain plain output.
+
 ## Evolution
 
 | Date | Change | Commit |
@@ -16,6 +18,13 @@ Capable interactive terminals render whole replies as Markdown, including readab
 | 2026-10-16 | Distinguished commentary and turn statistics visually. | `efde4fb` |
 | 2026-10-16 | Unified tool progress presentation. | `7cf70cf` |
 | 2026-10-29 | Counted hyphen breakpoint widths to prevent spurious one-word rows during Markdown wrapping. | `a6799ed` |
+| 2026-11-06 | Selected two-column left/right final-reply padding with width-aware wrapping for live replies and replay. | This commit |
+
+## Presentation decision
+
+**2026-11-06 — Superseded trial:** the uncommitted one-column inset was replaced by the approved two-column inset before delivery; it was not a committed default.
+
+**2026-11-06 — Implemented:** use the approved two-column inset for breathing room through the shared live/replay renderer, without changing prompts, tools or commentary. Narrow widths reduce symmetric padding to preserve content. The [renderer](../internal/terminal/markdown.go), linked PTY/screen tests below, and [release note](../release-notes/2026-11-06.md) cover the change. Focused Markdown/styled-wrap tests passed (4.106s); `go test ./internal/terminal/... -count=1` passed (27.929s), covering resize, content preservation, styles/hyperlinks, cancellation and plain output. A temporary CLI build, changed-doc local link target checks and `git diff --check` passed. Full repository tests and manual visual preview remain unrun.
 
 ## Inspect
 

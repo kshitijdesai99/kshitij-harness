@@ -44,6 +44,20 @@ func TestMarkdownProcess(t *testing.T) {
 		return
 	}
 	r := terminal.NewRenderer(os.Stdout, os.Stdout)
+	if os.Getenv("KH_MARKDOWN_SCENARIO") == "resize" {
+		for _, width := range []string{"42", "8", "5", "4", "3", "2", "1", "2", "3", "4", "5", "8", "24", "42"} {
+			cmd := exec.Command("stty", "cols", width)
+			cmd.Stdin = os.Stdout
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("resize: %v %s", err, out)
+			}
+			fmt.Println("WIDTH=" + width)
+			r.Reply("abcdefghijklmno\n\n```text\n01234567890123456789\n```\n")
+			r.FlushReply()
+			fmt.Println("END_WIDTH")
+		}
+		return
+	}
 	source := "# Heading\n\nA **bold** word and *italic*.\n\n1. one\n\n1. two\n\n[Docs][ref]\n\n[ref]: https://example.com\n\nMath: $x^2 + \\alpha$ and $a*b*c$. Unsupported: \\(\\unknown{x}\\).\n\n```text\n$x^2$\n\ncode stays\n```\n\n| Name | Value |\n| --- | --- |\n| Ada | 42 |\n\n"
 	switch os.Getenv("KH_MARKDOWN_SCENARIO") {
 	case "security":
@@ -114,6 +128,8 @@ func TestMarkdownTTY(t *testing.T) {
 		{"forgery", "xterm", "", "forgery"},
 		{"negative", "xterm", "1", "negative"},
 		{"width", "xterm", "1", "width"},
+		{"resize", "xterm", "1", "resize"},
+		{"resize-color", "xterm", "", "resize"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -144,6 +160,17 @@ try:
  assert '\x1b' not in text and '\x07' not in text,repr(raw)
  if sys.argv[3] or sys.argv[2]=='dumb':assert '\x1b' not in unlinked,repr(raw)
  assert sum(bool(link) for link in links)==links.count(''),repr(links)
+ if sys.argv[4]=='resize':
+  for width,body in re.findall(r'WIDTH=(\d+)\n(.*?)END_WIDTH',text,re.S):
+   width=int(width)
+   padding=min(2,max(0,(width-1)//2))
+   lines=body.splitlines()
+   assert all(len(line)<=width-padding for line in lines),(width,repr(body))
+   assert all(not line.strip() or line.startswith(' '*padding) for line in lines),(width,repr(body))
+   joined=''.join(body.split())
+   assert 'abcdefghijklmno' in joined and '01234567890123456789' in joined,(width,repr(body))
+  assert [int(w) for w in re.findall(r'WIDTH=(\d+)',text)]==[42,8,5,4,3,2,1,2,3,4,5,8,24,42],repr(text)
+  sys.exit(0)
  assert 'partial' in text and text.index('partial')<text.index('STOPPED')<text.index('Next response'),repr(text)
  if sys.argv[2]!='dumb':
   assert text.startswith('BEFORE_FLUSH\n'),repr(text)
@@ -161,7 +188,7 @@ try:
    assert 'Checking **files**.\n\nA second line.\n$ checking files\nsecond action line\n$ live command\ncontinued command\nedit first.txt\nedit second.txt\nFinal **answer**.' in text,repr(text)
   else:
    assert '    Checking files.' in text and '    A second line.' in text,repr(text)
-   assert '\nFinal answer.' in text,repr(text)
+   assert '\n  Final answer.' in text,repr(text)
    assert '\n    $ checking files\n    second action line\n' in text,repr(text)
    assert '\n    $ live command\n    continued command\n' in text,repr(text)
    assert '\n    edit first.txt\n    edit second.txt\n' in text,repr(text)
@@ -198,7 +225,7 @@ try:
  elif sys.argv[4]=='width':
   body=text.split('BEFORE_FLUSH\n',1)[1].split('AFTER_FLUSH',1)[0]
   assert 'αβγ' in body,repr(body)
-  assert all(len(line)<=42 for line in body.splitlines()),repr(body)
+  assert all(not line.strip() or (line.startswith('  ') and len(line)<=40) for line in body.splitlines()),repr(body)
  print(text)
 finally:
  if p.poll() is None:p.kill();p.wait()

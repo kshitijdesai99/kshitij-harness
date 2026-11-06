@@ -151,11 +151,12 @@ while screen and not screen[-1]:screen.pop()
 wire=[s.rstrip() for s in plain.replace('\r\n','\n').split('\n')]
 while wire and not wire[-1]:wire.pop()
 assert screen==wire,('terminal autowrapped emitted lines',screen,wire,repr(raw))
+assert all(not line or (line.startswith('  ') and cellwidth(line)<=width-2) for line in screen),('reply padding lost',screen,repr(raw))
 if expected=='DOCUMENT_BLOCKS':
  text='\n'.join(screen)
  for value in ['Heading','First paragraph.','Second paragraph.','1. one','2. two','Docs https://example.com/docs','*literal*','code stays','Ada','42','│']:
   assert value in text,(value,screen,repr(raw))
- assert 'First paragraph.\n\nSecond paragraph.' in text,('paragraph boundary lost',screen)
+ assert 'First paragraph.\n\n  Second paragraph.' in text,('paragraph boundary lost',screen)
  literal=next(i for i,line in enumerate(screen) if '*literal*' in line)
  code=next(i for i,line in enumerate(screen) if 'code stays' in line)
  assert code>literal+1,('code blank line lost',screen)
@@ -164,5 +165,5 @@ else:
  assert ' '.join(' '.join(screen).split())==' '.join(expected.split()),('paragraph text changed',screen,expected,repr(raw))
  for a,b in zip(screen,screen[1:]):
   next_word=b.split()[0]
-  assert cellwidth(a)+1+cellwidth(next_word)>width,('premature paragraph break',width,screen,repr(raw))
+  assert cellwidth(a)+1+cellwidth(next_word)>width-2,('premature paragraph break',width,screen,repr(raw))
 `
