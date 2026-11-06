@@ -17,6 +17,14 @@ Introduced **2026-09-29** · commit `277c243` (tmux sub-agent commands).
 - Peer messages are attributed and displayed distinctly from human input; they are not human approval responses and [do not submit or modify the user's draft](input.md#peer-messages-and-drafts). Workers retrieve shared memory without learning delegated prompts as user instructions; see [learning-origin filtering](learning-origin.md).
 - All ecosystem pane/tab names show a [live descendant count and role](terminal-feedback.md#live-descendant-counts), including zero for leaf workers; see [worker lifecycle](worker-lifecycle.md) for successful/failed pane behavior, `keep`, and inherited policy.
 
+## Visible worker results
+
+The parent terminal observes an append-only result feed for its **direct children**, separate from the mutable latest conclusion returned by `inspect`. Task ID and generation identify reusable-worker completions; ordinary descendant turns use a stable publication ID. Retrying a publication does not create another result, while later tasks can publish identical text independently. Reassignment cannot overwrite an older feed entry before the parent reads it.
+
+Published model conclusions contain only the latest assistant text, not conversation transcripts or tool history. They are bounded to 16,000 UTF-8 bytes with an ellipsis and truncation metadata. Failures publish a failure conclusion instead of reusing stale assistant text. Empty or whitespace-only sanitized conclusions are explicitly labeled `[no final conclusion]`; the sanitized body is preserved. The terminal sanitizes control sequences and labels the [worker-result block](terminal-feedback.md#subdued-harness-output), without generating a model summary.
+
+At process startup the parent captures the feed's high-water mark, then polls for later publications independently of model turns, steering, archival and human input. A live observer advances its cursor after displaying each result, including while idle. Registry read failures retain the cursor for a later retry. This is once-per-live-process display, **not historical replay or crash-atomic exactly-once delivery**: restarting or resuming intentionally skips existing publications. It does not inject a new model turn or automatically add the conclusion to model context; use `inspect` and explicit messages for coordination.
+
 ## Task handoffs
 
 Pass a `handoff` object to `agents` `spawn` or `assign`. The CLI equivalents are `kh spawn --reuse --handoff NAME 'HANDOFF_JSON'` and `kh assign ADDRESS 'HANDOFF_JSON'`; plain `kh spawn --reuse NAME TASK` wraps the task in a version-1 handoff for the current directory. Structured spawning requires the handoff directory to match the launch directory.
@@ -73,11 +81,21 @@ The harness provides tools and visibility; the agent remains responsible for cho
 | 2026-11-01 | Made manager execution delegation explicit for roots and promoted descendants, with universal role-conditional instructions and a native promotion reminder. | Current change |
 | 2026-11-03 | Extended manager delegation to substantial investigation and source/document exploration; prefer compact worker evidence over duplicate broad reads while retaining initial scoping and targeted verification. | Current change |
 | 2026-11-05 | Added bounded versioned handoffs, explicit fresh-task assignment and opt-in compatible idle-worker reuse without parent history or automatic memory copying. | Current change |
+| 2026-11-06 | Added bounded direct-child result publications and a live parent-terminal observer, without transcript sharing, historical replay or automatic model-context injection. | Current change |
 
 ## Inspect
 
 [Agents tool](../internal/tools/agents.go) · [Coordinator](../cmd/kh/agents.go) · [Runtime wiring](../cmd/kh/ecosystem.go) · [Registry](../internal/ecosystem/registry.go) · [Tool tests](../internal/tools/test/agents_test.go) · [Instruction delivery tests](../cmd/kh/test/manager_policy_test.go)
 
+[Result storage](../internal/ecosystem/results.go) · [Live observer](../cmd/kh/ecosystem_results.go) · [Result-feed coverage](../internal/ecosystem/test/results_test.go) · [Idle/busy delivery and resume tests](../cmd/kh/test/completion_observer_test.go) · [Result renderer tests](../internal/terminal/test/agent_result_test.go)
+
 [Handoff contract](../internal/delegation/handoff.go) · [Handoff coverage](../internal/delegation/test/handoff_test.go)
 
 [Feature index](README.md)
+
+## 2026-11-06 — Observe bounded direct-child results without transcript or model-turn injection
+
+- Status: implemented
+- Rationale: An append-only result feed preserves completions across worker reuse instead of polling an overwritten latest conclusion. A console-lifetime observer provides visibility without steering the model or replaying historical results.
+- Affected: internal/ecosystem/results.go, internal/ecosystem/tasks.go, cmd/kh/ecosystem_results.go and publication wiring; see Visible worker results above.
+- Verification / outstanding: Final `KH_AUTO_REBUILD=0 go test ./... -count=1`, focused renderer/feed/CLI checks and preview build passed on 2026-11-06. Manual terminal inspection remains unrun; external review is paused and incomplete.

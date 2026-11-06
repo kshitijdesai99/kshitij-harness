@@ -32,6 +32,8 @@ func runTaskWorker(ctx context.Context, cfg, fromFile config.Config, h delegatio
 	console := terminal.NewConsole(os.Stdin, os.Stdout, os.Stderr)
 	defer console.Close()
 	ui := terminal.NewRenderer(console.Stdout(), console.Stderr())
+	e.stopResults = e.startResults(ctx, ui)
+	defer e.stopResults()
 	ui.Activity = terminal.NewActivity(os.Stdout, e.self.Name)
 	defer ui.Activity.Close()
 	console.SetActivity(ui.Activity)
@@ -130,7 +132,7 @@ func runTaskWorker(ctx context.Context, cfg, fromFile config.Config, h delegatio
 		reportStart = time.Now()
 		if taskErr != nil {
 			conclusion = "Failed: " + taskErr.Error()
-			ui.Notice(conclusion)
+			ui.Warning(conclusion)
 		}
 		ui.FlushReply()
 		timing.ReportMS = time.Since(reportStart).Milliseconds()
@@ -176,19 +178,19 @@ func runTaskWorker(ctx context.Context, cfg, fromFile config.Config, h delegatio
 			case raw := <-console.Assignments:
 				next, err := receiveWorkerAssignment(e.self.ID, raw)
 				if err != nil {
-					ui.Notice("invalid task assignment")
+					ui.Warning("invalid task assignment")
 					continue
 				}
 				if err := next.Handoff.Validate(); err != nil {
-					ui.Notice(err.Error())
+					ui.Warning(err.Error())
 					continue
 				}
 				if next.Handoff.Directory != cwd {
-					ui.Notice("assignment directory differs from worker")
+					ui.Warning("assignment directory differs from worker")
 					continue
 				}
 				if err := e.store.ClaimTask(ctx, e.self.ID, e.process, next.Lease); err != nil {
-					ui.Notice("stale task assignment rejected")
+					ui.Warning("stale task assignment rejected")
 					continue
 				}
 				if timer != nil {

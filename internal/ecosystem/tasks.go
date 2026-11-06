@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"strings"
 	"time"
 )
 
@@ -208,9 +207,7 @@ func (s *Store) ClaimTask(ctx context.Context, id string, p ProcessIdentity, l T
 	})
 }
 func (s *Store) FinishTask(ctx context.Context, id string, p ProcessIdentity, l TaskLease, conclusion string, t TaskTimings) error {
-	if len(conclusion) > 16000 {
-		conclusion = strings.ToValidUTF8(conclusion[:16000], "") + "…"
-	}
+	conclusion, truncated := boundConclusion(conclusion)
 	if t.StartupMS < 0 || t.ContextMS < 0 || t.ExecutionMS < 0 || t.ReportMS < 0 {
 		return errors.New("negative task timing")
 	}
@@ -226,6 +223,9 @@ func (s *Store) FinishTask(ctx context.Context, id string, p ProcessIdentity, l 
 			return ErrState
 		}
 		if err = changed(c.ExecContext(ctx, `UPDATE agent_tasks SET status='completed',startup_ms=?,context_ms=?,execution_ms=?,report_ms=? WHERE agent_id=? AND lease_id=? AND generation=? AND status='running'`, t.StartupMS, t.ContextMS, t.ExecutionMS, t.ReportMS, id, l.ID, l.Generation)); err != nil {
+			return err
+		}
+		if err = appendResult(ctx, c, a, l.ID, l.Generation, conclusion, truncated); err != nil {
 			return err
 		}
 		return changed(c.ExecContext(ctx, `UPDATE agents SET state='idle',conclusion=?,heartbeat=? WHERE id=?`, conclusion, time.Now().UnixNano(), id))

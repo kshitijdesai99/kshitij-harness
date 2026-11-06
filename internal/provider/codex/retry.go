@@ -156,7 +156,12 @@ func (c *Client) requestWithRetry(ctx context.Context, body []byte, access, acco
 		if remaining <= 0 {
 			return nil, fmt.Errorf("codex: connection recovery exhausted after %s: %w", retryFor, err)
 		}
-		c.out.Notice(fmt.Sprintf("(model connection interrupted: %v; retry %d in %s, Ctrl-C to stop)", err, attempt, min(delay, remaining).Round(time.Millisecond)))
+		message := fmt.Sprintf("(model connection interrupted: %v; retry %d in %s, Ctrl-C to stop)", err, attempt, min(delay, remaining).Round(time.Millisecond))
+		if warnings, ok := c.out.(interface{ Warning(string) }); ok {
+			warnings.Warning(message)
+		} else {
+			c.out.Notice(message)
+		}
 		timer := time.NewTimer(min(delay, remaining))
 		select {
 		case <-ctx.Done():

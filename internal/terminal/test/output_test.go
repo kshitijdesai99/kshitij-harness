@@ -52,6 +52,9 @@ func TestOutputProcess(t *testing.T) {
 		func() { r.Reply("**partial**") },
 		func() { r.Notice("STOPPED") }, // must flush stdout before stderr
 		func() { r.Action("checking files") },
+		func() { r.Reply("**held reply**") },
+		func() { r.AgentResult("worker", "task-1", "result one\nresult two", false) },
+		r.FlushReply,
 	}
 	for i, step := range steps {
 		deadline := time.Now().Add(10 * time.Second)
@@ -167,6 +170,11 @@ try:
  refresh(action,b'checking files',prompt,draft)
  assert b'    checking files' in action,'stderr terminal metadata lost through wrapper'
  assert not os.path.exists(root+'/line-0'),'output accidentally submitted draft'
+ assert command(5)==b'','pending reply must remain buffered'
+ result=command(6)
+ refresh(result,b'WORKER RESULT',prompt,draft)
+ assert b'result one\r\nresult two' in result and b'held reply' not in result,repr(result)
+ refresh(command(7),b'held reply',prompt,draft)
  # Cursor position must survive every stdout/stderr refresh, not just the text.
  os.write(m,b'!\r')
  wait(lambda:os.path.exists(root+'/line-0'))

@@ -243,7 +243,7 @@ func main() {
 		// Give queued hooks time to finish so a one-shot task's lesson is kept.
 		defer func() {
 			for _, n := range learner.Close(30 * time.Second) {
-				fmt.Fprintln(os.Stderr, terminal.Color(os.Stderr, terminal.Muted, "(memory) "+n))
+				fmt.Fprintln(os.Stderr, terminal.Color(os.Stderr, terminal.Harness, "(memory) "+n))
 			}
 		}()
 	}
@@ -251,6 +251,8 @@ func main() {
 	defer console.Close()
 	stdout, stderr := console.Stdout(), console.Stderr()
 	ui := terminal.NewRenderer(stdout, stderr)
+	eco.stopResults = eco.startResults(ctx, ui)
+	defer eco.stopResults()
 	task := strings.Join(args, " ")
 	assignedTask := eco.self.ParentID != "" && task != ""
 	if assignedTask {
@@ -306,7 +308,7 @@ func main() {
 	bootstrap.resumed = resuming
 	ui.Notice(bootstrap.awareness())
 	if warning := bootstrap.warning(); warning != "" {
-		ui.Notice(warning)
+		ui.Warning(warning)
 	}
 	p, err := backend.New(chatConfig, repoMap, exposed, ui)
 	exit(err)
@@ -321,9 +323,9 @@ func main() {
 	if resuming {
 		exit(p.Load(saved.State))
 		if interactive {
-			fmt.Fprintf(stdout, "--- session %s ---\n", *id)
+			fmt.Fprintln(stdout, terminal.Color(stdout, terminal.Harness, fmt.Sprintf("--- session %s ---", *id)))
 			p.Replay(terminal.NewRenderer(stdout, stdout))
-			fmt.Fprintln(stdout, "---")
+			fmt.Fprintln(stdout, terminal.Color(stdout, terminal.Harness, "---"))
 		}
 	}
 
@@ -361,7 +363,7 @@ func main() {
 			fmt.Fprintln(stderr, strings.TrimPrefix(line, "/")+":", err)
 		} else {
 			// Do not flush or interrupt the original session's streaming reply.
-			fmt.Fprintln(stderr, terminal.Color(stderr, terminal.Muted, "("+out+")"))
+			fmt.Fprintln(stderr, terminal.Color(stderr, terminal.Harness, "("+out+")"))
 		}
 		return true
 	})
@@ -380,7 +382,7 @@ func main() {
 		return
 	}
 	model, effort := p.Use("", "")
-	fmt.Fprintf(stderr, "kh chat, session %s (%s, %s). Type while it works to steer. Ctrl-C stops a task, Ctrl-D quits, /help for commands.\n", *id, model, effort)
+	fmt.Fprintln(stderr, terminal.Color(stderr, terminal.Harness, fmt.Sprintf("kh chat, session %s (%s, %s). Type while it works to steer. Ctrl-C stops a task, Ctrl-D quits, /help for commands.", *id, model, effort)))
 	if task != "" {
 		if !assignedTask {
 			ui.Query(task)
@@ -527,7 +529,7 @@ func (c *chat) command(ctx context.Context, line string) {
 		fmt.Fprintln(stdout, "/compact   summarize context and save the session\n/fork   open the last completed conversation in a pane on the right, without steering\n/new   open a fresh session in a pane on the right, without steering\n/model [id]   show or switch the model, for all sessions\n/effort [low|medium|high]   show or switch thinking effort, for all sessions\n/image [path]   attach a clipboard image (macOS) or a local image for your next message\n/auto [on|off]   persist automatic command execution approval\n/memory hybrid on|off   enable local hybrid retrieval or keyword-only memory\n/memory explain   show the last retrieval’s full candidate IDs and scores\n/project diagnostics   show startup configuration diagnostics\n/connector   list session MCP startup snapshot and exposed service hints")
 		return
 	}
-	fmt.Fprintln(stdout, terminal.Color(stdout, terminal.Muted, fmt.Sprintf("(model %s, effort %s)", model, effort)))
+	fmt.Fprintln(stdout, terminal.Color(stdout, terminal.Harness, fmt.Sprintf("(model %s, effort %s)", model, effort)))
 }
 
 // Keep bash-invoked kh subcommands on the session's active permission policy.
@@ -545,6 +547,9 @@ func applyAuto(policy *tools.ApprovalPolicy, enabled bool) {
 func exit(err error) {
 	if err != nil {
 		if currentEcosystem != nil {
+			if currentEcosystem.stopResults != nil {
+				currentEcosystem.stopResults()
+			}
 			if currentEcosystem.stopTitles != nil {
 				currentEcosystem.stopTitles()
 			}

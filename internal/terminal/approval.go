@@ -61,7 +61,7 @@ func (c *Console) answerApproval(ctx context.Context, prompt string) (bool, erro
 		if err := c.approvalError(ctx); err != nil {
 			return false, err
 		}
-		fmt.Fprint(c.Stderr(), prompt)
+		fmt.Fprint(c.Stderr(), Color(c.Stderr(), LightOrange, prompt))
 		select {
 		case <-ctx.Done():
 			return false, ctx.Err()

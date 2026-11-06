@@ -8,6 +8,12 @@ Introduced **2026-10-01** · commit `c00bc3d` (query/response colors; activity i
 
 Terminal feedback includes activity indicators, distinct commentary/tool/peer styling, and clickable URLs. Plain output and `NO_COLOR` are supported. Presentation depends on terminal capabilities; these signals are not a durable event trace or an aggregate monitoring dashboard.
 
+## Subdued harness output
+
+Routine notices, actions, commentary, turn statistics, startup banners and peer text use subdued, non-bold tones rather than competing with the main reply. Harness text uses muted yellow (ANSI 143); worker-result blocks and peer messages use amber/brown (ANSI 137). Human input remains cyan, assigned-task banners remain bold cyan, and final replies retain their [Markdown styling and two-column inset](markdown.md). Warnings and approval prompts retain a brighter diagnostic tone.
+
+New direct-child conclusions appear as **WORKER RESULT — name**, with task identity and a truncation label when applicable. The renderer writes the label and sanitized published conclusion together, without summarizing it or flushing an in-progress reply. It does not submit input or change the user's draft. See [result delivery and its limits](native-agents.md#visible-worker-results); this is not a transcript viewer.
+
 ## Assigned task startup banner
 
 Descendants with an initial task print **ASSIGNED TASK — agent name** and the full assignment once, before activity setup, project/MCP startup notices, and model/tool work. The label and task use explicit bold cyan, distinct from ordinary queries and replies. Original newlines are preserved; long text wraps naturally in the terminal rather than being truncated to the registry's task summary. Redirected output, `NO_COLOR`, and `TERM=dumb` retain readable plain text without ANSI styling.
@@ -37,6 +43,7 @@ On normal shutdown, kh restores the activity label's unsuffixed name and attempt
 | 2026-10-16 | Made chat URLs clickable. | `cf2024c` |
 | 2026-10-31 | Added idle-refreshing pane/tab suffixes counting all live descendants, excluding self, then role labels (`N - M`/`N - W`) for every ecosystem pane including leaf workers. | Current change |
 | 2026-11-05 | Added a full, bold-cyan assigned-task startup banner for descendants, before model/tool work, without pinning or duplicate query output. | Current change |
+| 2026-11-06 | Subdued routine harness output and added distinct worker-result blocks while preserving reply, input and diagnostic styling. | Current change |
 
 ## Inspect
 
@@ -48,3 +55,10 @@ On normal shutdown, kh restores the activity label's unsuffixed name and attempt
 - [Presentation and context](architecture.md#presentation-and-context)
 
 [Feature index](README.md)
+
+## 2026-11-06 — Subdue routine harness output and distinguish worker results
+
+- Status: implemented
+- Rationale: Reduce competition with primary replies while keeping human input, assignments and actionable diagnostics distinct; worker conclusions need a labeled, non-summary presentation.
+- Affected: internal/terminal/color.go, internal/terminal/render.go, internal/terminal/markdown.go; current behavior documented above.
+- Verification / outstanding: Final full Go suite, focused renderer/feed/CLI checks and preview build passed on 2026-11-06; see [result-delivery verification](native-agents.md#2026-11-06--observe-bounded-direct-child-results-without-transcript-or-model-turn-injection). Manual visual inspection remains unrun; external review is paused and incomplete.

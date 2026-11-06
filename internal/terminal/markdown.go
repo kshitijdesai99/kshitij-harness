@@ -193,7 +193,7 @@ func (r *markdownReply) present(text string) {
 	}
 	text = indented.String()
 	if r.commentary {
-		text = Color(r.out, Muted, text)
+		text = Color(r.out, Harness, text)
 	}
 	fmt.Fprint(r.out, text)
 }

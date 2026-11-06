@@ -177,7 +177,7 @@ try:
     expect(b'INPUT:first\r\n')
     ready()
     os.write(master,b'[from kh:worker] peer coordination\r')
-    expect(b'\x1b[38;5;214m[from kh:worker] peer coordination\x1b[0m')
+    expect(b'\x1b[38;5;137m[from kh:worker] peer coordination\x1b[0m')
     expect(b'INPUT:[from kh:worker] peer coordination\r\n')
     ready()
     os.write(master,b'second\r')

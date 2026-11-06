@@ -135,7 +135,11 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 			relevant, trace, err := c.memory.RecallWithTrace(ctx, c.repo, query, memory.Seen(state), c.budget)
 			elapsed := time.Since(retrievalStart).Round(time.Millisecond)
 			c.lastMemoryDiagnostic = fmt.Sprintf("%s (%s)", trace.Diagnostic(err), elapsed)
-			c.ui.Notice(fmt.Sprintf("%s (%s)", trace.Summary(err), elapsed))
+			if err != nil {
+				c.ui.Warning(fmt.Sprintf("%s (%s)", trace.Summary(err), elapsed))
+			} else {
+				c.ui.Notice(fmt.Sprintf("%s (%s)", trace.Summary(nil), elapsed))
+			}
 			if err != nil {
 				return fmt.Errorf("retrieve memory: %w", err)
 			}
@@ -191,9 +195,11 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 	if c.ui.Activity != nil {
 		runner.Activity = c.ui.Activity.Set
 	}
+	// Allocate once before this actual turn; retries retain the same publication.
+	publicationID := session.New()
 	err := runner.Run(tctx, msg)
 	if currentEcosystem != nil && !c.taskFresh {
-		currentEcosystem.conclusion(c.model, err)
+		currentEcosystem.conclusion(publicationID, c.model, err)
 	}
 	if tctx.Err() == context.Canceled {
 		c.ui.Notice("\n(stopped)")
@@ -239,7 +245,7 @@ func (c *chat) showMemory() {
 		return
 	}
 	for _, n := range c.learn.Notices() {
-		c.ui.Notice(terminal.Color(c.ui.Err, terminal.Muted, "(memory) "+n))
+		c.ui.Notice("(memory) " + n)
 	}
 }
 

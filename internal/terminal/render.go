@@ -50,7 +50,7 @@ func (r Renderer) Commentary(text string) {
 		r.reply.write(text, true)
 		return
 	}
-	fmt.Fprint(r.Out, text)
+	fmt.Fprint(r.Out, Color(r.Out, Harness, text))
 }
 
 // Progress updates titles without streaming private operations into the chat.
@@ -62,7 +62,7 @@ func (r Renderer) Progress(phase string) {
 
 func (r Renderer) Statistics(text string) {
 	r.FlushReply()
-	fmt.Fprintln(r.Err, Color(r.Err, LightOrange, text))
+	fmt.Fprintln(r.Err, Color(r.Err, Harness, text))
 }
 
 // Task prints a one-time assignment in scrollback, not a pinned header.
@@ -84,9 +84,34 @@ func (r Renderer) Action(text string) {
 		progress.present(cleanReply(text) + "\n")
 		return
 	}
-	fmt.Fprintln(r.Err, text)
+	fmt.Fprintln(r.Err, Color(r.Err, Harness, text))
 }
+
+// AgentResult prints one labelled block without touching the active reply.
+// A single coordinated write preserves an editor draft while results arrive.
+func (r Renderer) AgentResult(name, taskID, conclusion string, truncated bool) {
+	label := "WORKER RESULT — " + strings.ReplaceAll(cleanReply(name), "\n", " ")
+	if taskID != "" {
+		label += " (task " + strings.ReplaceAll(cleanReply(taskID), "\n", " ") + ")"
+	}
+	if truncated {
+		label += " [truncated]"
+	}
+	body := cleanReply(conclusion)
+	if strings.TrimSpace(body) == "" {
+		label += " [no final conclusion]"
+	}
+	block := label + "\n" + body + "\n\n"
+	fmt.Fprint(r.Out, Color(r.Out, WorkerResult, block))
+}
+
+// Warning keeps actionable diagnostics distinct from routine harness notices.
+func (r Renderer) Warning(text string) {
+	r.FlushReply()
+	fmt.Fprintln(r.Err, Color(r.Err, LightOrange, text))
+}
+
 func (r Renderer) Notice(text string) {
 	r.FlushReply()
-	fmt.Fprintln(r.Err, Color(r.Err, Muted, text))
+	fmt.Fprintln(r.Err, Color(r.Err, Harness, text))
 }

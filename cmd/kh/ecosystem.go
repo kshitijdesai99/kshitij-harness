@@ -26,6 +26,8 @@ type ecosystemRuntime struct {
 	process       ecosystem.ProcessIdentity
 	configuredMax int
 	stopTitles    func()
+	stopResults   func()
+	resultSeq     int64
 }
 
 var currentEcosystem *ecosystemRuntime
@@ -198,6 +200,9 @@ func startEcosystem(ctx context.Context, cfg config.Config, conversation string,
 	}
 	e.export()
 	e.configuredMax = cfg.Agents.MaxLive
+	if err := e.captureResultWatermark(ctx); err != nil {
+		return nil, err
+	}
 	currentEcosystem = e
 	ok = true
 	return e, nil
@@ -313,6 +318,9 @@ func claimInheritedStartup(ctx context.Context) error {
 	// even if publishing pane metadata fails before normal chat setup.
 	currentEcosystem = e
 	ok = true
+	if err := e.captureResultWatermark(ctx); err != nil {
+		return err
+	}
 	if err := e.publishPane(ctx); err != nil {
 		return err
 	}
@@ -457,7 +465,7 @@ func (e *ecosystemRuntime) stop(ctx context.Context, address, scope string) (str
 	return fmt.Sprintf("stop requested for %d agent(s)", len(targets)), errors.Join(errs...)
 }
 
-func (e *ecosystemRuntime) conclusion(model provider.Provider, err error) {
+func (e *ecosystemRuntime) conclusion(publicationID string, model provider.Provider, err error) {
 	// Root replies belong to the private user conversation, not to a delegated
 	// task. Promoted descendants still publish their bounded task results.
 	if e.self.ParentID == "" {
@@ -471,10 +479,7 @@ func (e *ecosystemRuntime) conclusion(model provider.Provider, err error) {
 	} else if r, ok := model.(provider.LastResponder); ok {
 		text = r.LastResponse()
 	}
-	if len(text) > 16000 {
-		text = strings.ToValidUTF8(text[:16000], "") + "…"
-	}
-	if text != "" {
-		_ = e.store.PublishConclusion(context.Background(), e.self.ID, text)
-	}
+	publish, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = e.store.PublishResult(publish, e.self.ID, publicationID, text)
 }
