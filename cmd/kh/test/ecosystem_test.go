@@ -344,7 +344,7 @@ func newEcosystemProviderRequests(t *testing.T, script func(int) *projectCLICall
 	for key, value := range map[string]string{
 		"KH_AUTO_REBUILD": "0", "KH_AUTO": "", "KH_PROVIDER": "codex", "KH_MODEL": "", "KH_EFFORT": "",
 		"KH_PARENT": "", "KH_AGENT": "", "TMUX": "", "TMUX_PANE": "", "HTTPS_PROXY": proxy, "HTTP_PROXY": proxy,
-		"ALL_PROXY": "", "NO_PROXY": "", "SSL_CERT_FILE": filepath.Join(home, "fixture-ca.pem"), "SSL_CERT_DIR": home,
+		"ALL_PROXY": "", "NO_PROXY": "", "SSL_CERT_FILE": projectCLIProxyCA(home, proxy), "SSL_CERT_DIR": filepath.Dir(projectCLIProxyCA(home, proxy)),
 		"GODEBUG": "x509sslcertoverrideplatform=1",
 	} {
 		t.Setenv(key, value)

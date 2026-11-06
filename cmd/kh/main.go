@@ -136,6 +136,9 @@ func main() {
 		case "spawn", "assign", "send", "peek", "inspect", "agents", "stats", "set_role", "stop":
 			exit(agentCommand(args, cfg))
 			return
+		case "plugins":
+			exit(pluginCommand(ctx, args[1:]))
+			return
 		case "memory":
 			exit(memoryCommand(args[1:], cfg))
 			return
@@ -296,6 +299,17 @@ func main() {
 			return hostedWeb.EnableWebSearch()
 		}))
 	}
+	hooks, err := newPluginLifecycle(project, cwd, *id, eco.self.ParentID == "" && os.Getenv("KH_PARENT") == "", ui.Warning)
+	exit(err)
+	if hooks != nil {
+		if resuming {
+			hooks.input.Source = "resume"
+		}
+		hooks.pending = hooks.run(ctx, "SessionStart", "", "", nil, false)
+		activePluginHooks = hooks
+		defer hooks.end()
+		ts = pluginTools(hooks, ts, console, policy)
+	}
 	ts = eco.decorateTools(ts)
 	registry, err := tools.NewRegistry(ts)
 	exit(err)
@@ -350,7 +364,7 @@ func main() {
 		observed.SetEventObserver(func(ev provider.Event) error { return archive.Append(session.ArchiveRecord{Event: ev}) })
 	}
 	exportModel(p, cfg.Provider)
-	c := chat{archive: archive, model: p, backend: cfg.Provider, id: *id, repo: repoScope, project: project, connectors: connectors, identity: saved.Identity,
+	c := chat{hooks: hooks, archive: archive, model: p, backend: cfg.Provider, id: *id, repo: repoScope, project: project, connectors: connectors, identity: saved.Identity,
 		memory: db, memoryActive: memoryActive, learn: learner, input: console, ui: ui, tools: dispatch, bootstrap: bootstrap, logicalCall: registry.LogicalCall, seen: fromFile, policy: policy,
 		budget: memory.Budget{SummaryChars: cfg.SummaryMaxTokens * 4, TopInstructions: cfg.TopInstructions, TopGotchas: cfg.TopGotchas,
 			TopKnowledge: cfg.TopKnowledge, TotalChars: cfg.MemoryMaxTokens * 4}}
@@ -546,6 +560,7 @@ func applyAuto(policy *tools.ApprovalPolicy, enabled bool) {
 
 func exit(err error) {
 	if err != nil {
+		activePluginHooks.end()
 		if currentEcosystem != nil {
 			if currentEcosystem.stopResults != nil {
 				currentEcosystem.stopResults()

@@ -76,9 +76,21 @@ type Provider interface {
 // An empty most-recent assistant message returns empty, not an older reply.
 type LastResponder interface{ LastResponse() string }
 
+// LastStepResponder reports only the most recent successful terminal Step's
+// assistant text. Empty, failed, cancelled and tool-only steps return empty,
+// never a prior response from session history.
+type LastStepResponder interface{ LastStepResponse() string }
+
 // Optional capabilities let adapters reject unsupported features explicitly.
 type ImageAttacher interface{ AttachImage(string) }
 type MemorySetter interface{ SetMemory(string) }
+
+// ContextSetter stages non-user reference context for the next Step, including
+// an empty-user continuation. Like supplied user/results, consumed context is
+// retained on failure while partial replies are discarded. An empty string
+// clears pending context; unconsumed context is not saved. It must not be
+// projected as an actual user message or durable memory.
+type ContextSetter interface{ SetContext(string) }
 
 // OnDemandWebSearch lets the application defer an available hosted capability
 // until explicit activation. Activation changes the next request, not history.

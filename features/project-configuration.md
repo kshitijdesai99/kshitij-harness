@@ -92,7 +92,59 @@ Plugin commands and skills are namespaced: a bundle named `demo` exposes `/demo:
 
 Direct bundles load unless disabled by `enabledPlugins` in that configuration directory's settings, using a plugin name or `name@marketplace` key; local settings override settings. Version-2 `plugins/installed_plugins.json` records require an explicitly enabled qualified key and an absolute `installPath` under that same configuration directory's `plugins/` tree. User-scoped records are accepted; project/local records must match the declaring project directory.
 
-This reads existing local bundles only: kh does not resolve marketplaces, download, install, or update plugins. Hooks are not loaded or executed, and unsupported manifest fields do not gain runtime behavior.
+This reads existing local bundles only: kh does not resolve marketplaces, download, install, or update plugins. Unsupported manifest fields do not gain runtime behavior. The explicit executable exception is the bounded [plugin hook subset](#plugin-hooks) below; loading a command, skill, script, or other Markdown reference remains inert.
+
+## Plugin hooks
+
+Plugin hooks are a generic, bounded compatibility subset, not a full Claude Code runtime. Ordinary inert plugin references can load by default; executable hook discovery requires explicit `enabledPlugins` enablement. Neither discovery nor enablement authorizes execution. Hook execution needs separate explicit plugin trust. Trust applies to executable plugin code, not to arbitrary instructions found in its Markdown or hook output.
+
+Hooks default to `hooks/hooks.json`. The manifest's `hooks` field can instead contain an inline hook map, a `./relative.json` path, or an array of such paths confined to the bundle. Files can wrap event maps in `{"hooks": {...}}`; each event contains matcher groups with a `hooks` array of `type: "command"` declarations. A `command` without `args` is explicitly a `/bin/sh -c` command; `command` with `args`, or the alternative nonempty `argv` array, is direct execution. Optional `env`, `timeout` in seconds, and `requiresNode` are supported. Unknown command fields, unsupported events and unsafe paths are diagnosed and skipped. This executable JSON subset does not turn Markdown into shell code.
+
+List current plugin identities and grant or revoke a specific identity explicitly:
+
+```bash
+kh plugins list
+kh plugins trust TRUST_ID
+kh plugins revoke TRUST_ID
+```
+
+The grant is stored in `~/.kh/plugin-trust.json`, separately from `enabledPlugins`. Use the full fingerprint shown by `list`; it covers the plugin root, plugin identity, and normalized hook definitions. Changing those definitions invalidates the old grant. `revoke` also accepts an old identity. There is no environment or auto-mode override for hook trust. Review and trust the new identity rather than assuming prior enablement or auto approval covers it. Restart the chat to use changed startup declarations or trust grants.
+
+**Review a plugin before trusting it.** Hook commands run with the current user's permissions and can change project files, install or alter Git hooks, launch detached processes, invoke an external recorder, or sync data to another service. Hook timeouts bound how long kh waits; they are not containment and cannot undo file changes or reliably stop detached descendants. Trusting hooks is distinct from MCP trust and ordinary tool-call approval.
+
+### Runtime bounds
+
+Hooks receive JSON on stdin, including `hook_event_name`, `session_id`, `cwd`, `transcript_path` and `stop_hook_active`; event-specific fields include `prompt`, `source`, `tool_name` and `tool_input`. The compatibility environment supplies `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PROJECT_DIR`, `CLAUDE_SESSION_ID`, `CLAUDE_CODE_SESSION_ID` and an isolated `CLAUDE_CONFIG_DIR`. Approved plugin-related shell work uses the same session environment; this is not permission to run a command without normal approval.
+
+Each hook defaults to **five seconds** and accepts a positive timeout of at most **30 seconds**; longer declarations are diagnosed and skipped. Stdout and stderr each have a 64 KiB limit. Exceeding output limits cancels the command; invalid JSON, nonzero exits and timeouts become diagnostics rather than permission changes or automatic retries. Hook output is untrusted context, never a replacement system prompt or execution authority.
+
+### Lifecycle and transcript boundary
+
+Hooks run only in user-facing root chats with a matching trust grant, not delegated workers. The five supported events are:
+
+| Event | Boundary |
+|---|---|
+| `SessionStart` | Once at startup, with `source` distinguishing `startup` and `resume`. |
+| `UserPromptSubmit` | Each nonempty actual user message, including initial, steering and queued input, before provider execution. |
+| `PreToolUse` | Supported native edits after preflight and required approval, before mutation; Claude-compatible `Edit`, `Write` and `MultiEdit` labels support matchers. |
+| `Stop` | After a completed assistant response; may request one bounded continuation, not an unbounded self-prompt loop. |
+| `SessionEnd` | Best-effort shutdown with a separate five-second budget; abrupt termination cannot guarantee delivery. |
+
+The continuation carries `stop_hook_active` so it cannot request another continuation, and its model/tool work has a two-minute deadline. Actual steering or queued user input ends that continuation boundary and restores the caller's cancellation context. Unsupported Claude events or response features do not acquire runtime behavior.
+
+Hooks consume a separate private, Claude-compatible conversation projection, not the resumable provider history or the richer [conversation archive](saved-sessions.md#conversation-archive). It lives under `~/.kh/plugin-transcripts/config/projects/<escaped-cwd>/<session-id>.jsonl`; `CLAUDE_CONFIG_DIR` points to that isolated `config` directory, not `~/.claude`. Directories are `0700` and files `0600`, not encrypted. Treat the text as private before copying or syncing it.
+
+Its conversation content is actual user input and completed assistant replies. It excludes delegated task prompts and peer messages; workers do not turn their assignments into user-hook events. Compaction does not rewrite this projection, and plugin edits to it do not rewrite provider history. Stable receipt IDs avoid duplicate appends; messages are limited to 1 MiB and the projection to 64 MiB. This is not a backfill of old provider history or a replacement recovery format.
+
+### Cogit
+
+Cogit is one consumer of this generic subset, not a built-in recorder or a claim of complete Claude plugin compatibility. It requires **Node.js 22.13 or newer** in the hook process's environment. Review its executable hooks and external recording/sync behavior before granting trust. Cogit's session-inspection and edit instructions use kh's explicit adaptation rather than assuming Claude's provider transcript format or tools:
+
+- A `Stop` request for `/cogit:record` loads the recording skill as reference context for the one bounded continuation; it does not execute the slash text as a shell command.
+- For Cogit's `session show` operation, use an explicit Bash tool call with the plugin CLI and arguments from the loaded skill. It receives the isolated session environment and remains subject to normal command approval. This is not a new `kh session show` command.
+- Translate Claude-style file-writing instructions to native `edit`: a new file uses `{"path":"...","old":"","new":"..."}`; an existing file needs its exact old text. Native edits complete their usual preflight and approval before `PreToolUse` runs. Creates map to `Write`, single replacements to `Edit`, and batches to `MultiEdit` per affected path.
+
+Markdown commands and skills remain references: kh does not add shell expansion or an executable Markdown runner. In particular, `!`-backtick snippets in a skill stay inert; use an explicit approved tool call instead.
 
 ## MCP and safety
 
@@ -142,7 +194,7 @@ Native OAuth requires an authorization server advertising S256 PKCE and supporti
 
 MCP does not support sampling or legacy SSE transport. HTTP supports POST response streams, not GET streams or resumption. Startup discovery times out after 15 seconds per attempt, excluding the separate OAuth browser step above; calls after 60 seconds. OAuth metadata/token requests have a 10-second HTTP timeout and 1 MiB JSON response limit. List operations follow pagination with bounded page, entry, and response sizes; incomplete lists fail rather than silently dropping entries. Large content output is bounded with a truncation marker.
 
-This is a supported subset of filesystem configuration and local plugin content, not a complete Claude Code runtime. Unsupported hooks, permissions, and other unsupported settings produce diagnostics; they are not silently executed or treated as kh authorization. Assets are indexed rather than launched. Restart after editing startup settings or declarations used by startup; directory-scoped inspection can read another target without restarting.
+This is a supported subset of filesystem configuration and local plugin content, not a complete Claude Code runtime. Hooks outside the [supported plugin subset](#plugin-hooks), permissions, and other unsupported settings produce diagnostics; they are not silently executed or treated as kh authorization. Assets are indexed rather than launched. Restart after editing startup settings or declarations used by startup; directory-scoped inspection can read another target without restarting.
 
 ## Evolution
 
@@ -156,12 +208,14 @@ This is a supported subset of filesystem configuration and local plugin content,
 | 2026-11-02 | Kept catalogs, root references and decisions on demand; added registry search/describe/invoke, compact workspace inspection, and baseline context diagnostics while preserving binding guidance and original tool policy. | Current change |
 | 2026-11-03 | Made hosted web activation discoverable without eagerly adding its schema to fresh CLI requests. | Current change |
 | 2026-11-05 | Added bounded process-local assignment foundations with source-content validation and independent configuration snapshots. | Current change |
+| 2026-11-07 | Added explicitly enabled and separately trusted plugin command hooks, private root-user/completed-assistant projection, and a bounded Cogit recording adaptation without executable Markdown. | Working tree (uncommitted) |
 
 ## Inspect
 
 - Compact tools: [host registry and facade](../internal/tools/registry.go), [call presentation](../internal/tools/describe.go), [registry/approval/result coverage](../internal/tools/test/registry_test.go).
 - Bootstrap diagnostics: [component accounting](../cmd/kh/bootstrap.go).
 - Configuration: [discovery and context](../internal/projectconfig/projectconfig.go), [slash expansion](../internal/projectconfig/commands.go), [on-demand loading](../internal/projectconfig/tools.go), [local plugins](../internal/projectconfig/plugins.go).
+- Plugin hooks: [inert discovery](../internal/projectconfig/hooks.go), [fingerprinted trust grants](../internal/projectconfig/hooktrust.go), [discovery and trust tests](../internal/projectconfig/test/hooks_test.go), [bounded runner](../internal/pluginhooks/runner.go), [private projection](../internal/pluginhooks/transcript.go), [CLI lifecycle and trust commands](../cmd/kh/plugin_hooks.go).
 - Assignment foundations: [cache and source validation](../internal/projectconfig/foundation.go), [invalidation/isolation coverage](../internal/projectconfig/test/foundation_test.go).
 - Target workspaces: [inspect/prepare/record](../internal/projectconfig/workspace.go), [workspace tests](../internal/projectconfig/test/workspace_test.go), [compact context and decision paging coverage](../internal/projectconfig/test/compact_context_test.go).
 - MCP: [client](../internal/mcp/mcp.go), [resource and prompt operations](../internal/mcp/content.go), [CLI trust and approval](../cmd/kh/project.go).
@@ -170,3 +224,11 @@ This is a supported subset of filesystem configuration and local plugin content,
 - Representative coverage: [configuration](../internal/projectconfig/test/projectconfig_test.go), [lazy loading](../internal/projectconfig/test/lazy_test.go), [plugins](../internal/projectconfig/test/plugins_test.go), [MCP content](../internal/mcp/test/content_test.go), [CLI integration](../cmd/kh/test/project_config_test.go), [OAuth protocol](../internal/mcp/test/oauth_test.go), [OAuth CLI](../cmd/kh/test/mcp_oauth_test.go).
 
 [Feature index](README.md)
+
+
+## 2026-11-07 — Bounded plugin hooks with explicit trust and isolated conversation projection
+
+- Status: implemented
+- Rationale: Support generic local plugin command hooks and Cogit recording without claiming full Claude parity or executing Markdown. Explicit enabledPlugins discovery and fingerprinted execution trust remain separate; hook timeouts are latency bounds, not containment. Supersedes the former no-plugin-hook-runtime limitation above.
+- Affected: Plugin discovery/trust, bounded hook runner, root-chat lifecycle, approved edit/tool adaptation and private projection; current usage in this page, saved-session cross-reference, feature index and release-notes/2026-11-07.md.
+- Verification / outstanding: 2026-11-07: Compared documented CLI, five events, trust identity, isolated transcript path/environment, and five-second default/30-second maximum against current source and owning-worker contracts. Checked 118 local links/anchors across four changed documentation files and scoped git diff --check successfully. Documentation worker did not run application tests; runtime/integration suites and end-to-end Cogit verification remain outstanding.

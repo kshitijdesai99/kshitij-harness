@@ -26,6 +26,7 @@ import (
 // chat owns the application lifecycle for one session. Its model is an
 // interface; adapter selection and CLI flags stay in main.
 type chat struct {
+	hooks             *pluginLifecycle
 	taskFresh         bool // conclusions finalized only through the process+task lease fence
 	model             provider.Provider
 	backend, id, repo string
@@ -122,7 +123,10 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 		c.recentContext = origin.Context(c.recentContext)
 		c.reloadMemory(ctx)
 		currentQuery = query
-		if c.learn != nil {
+		var messageOrigin learn.RunOrigin
+		messageOrigin.Observe(query)
+		actualUser := messageOrigin.Eligible() && (c.identity == nil || c.identity.Role != "subagent") && os.Getenv("KH_PARENT") == ""
+		if c.learn != nil && actualUser {
 			c.learn.MessageAt(query, recent, time.Now())
 		}
 		if setter, ok := c.model.(provider.MemorySetter); ok {
@@ -146,9 +150,20 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 			c.lastMemoryBytes = len(relevant)
 			setter.SetMemory(relevant)
 		}
+		if actualUser && c.hooks != nil {
+			if err := c.hooks.user(ctx, query); err != nil {
+				return err
+			}
+			if c.hooks.pending != "" {
+				setter, ok := c.model.(provider.ContextSetter)
+				if !ok {
+					return fmt.Errorf("provider does not support plugin hook context")
+				}
+				setter.SetContext(c.hooks.pending)
+				c.hooks.pending = ""
+			}
+		}
 		if c.archive != nil {
-			var messageOrigin learn.RunOrigin
-			messageOrigin.Observe(query)
 			source := "user"
 			if !messageOrigin.Eligible() {
 				source = "peer"
@@ -162,6 +177,37 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 	var steps []learn.Step
 	runner := agent.Runner{Model: c.model, Tools: c.tools, Input: c.input.Lines,
 		Held: c.input.Held, Notice: c.ui.Notice, BeforeMessage: beforeMessage,
+		Completed: func(ctx context.Context, active bool) (bool, error) {
+			if c.hooks == nil || !origin.Eligible() {
+				return false, nil
+			}
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			reply := ""
+			if r, ok := c.model.(provider.LastStepResponder); ok {
+				reply = r.LastStepResponse()
+			}
+			if reply == "" {
+				return false, nil
+			}
+			if err := c.hooks.transcript.AppendAssistant(session.New(), reply, time.Now()); err != nil {
+				return false, err
+			}
+			extra := c.hooks.run(ctx, "Stop", "", "", nil, active)
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			if active || extra == "" {
+				return false, nil
+			}
+			setter, ok := c.model.(provider.ContextSetter)
+			if !ok {
+				return false, fmt.Errorf("provider does not support plugin Stop continuation context")
+			}
+			setter.SetContext(c.hooks.continuation(extra))
+			return true, nil
+		},
 		AfterTools: func(calls []provider.Call, results []provider.Result) error {
 			if c.archive == nil {
 				return nil
@@ -211,8 +257,8 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 	}
 	if err == nil && tctx.Err() == nil {
 		reply := ""
-		if r, ok := c.model.(provider.LastResponder); ok {
-			reply = r.LastResponse()
+		if r, ok := c.model.(provider.LastStepResponder); ok {
+			reply = r.LastStepResponse()
 		}
 		// Tools and replies span message boundaries. A clean follow-up cannot
 		// relabel evidence from a peer-coordinated run for durable learning.

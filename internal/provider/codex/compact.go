@@ -44,7 +44,7 @@ func (c *Client) Compact(ctx context.Context) error {
 	copy := *c
 	copy.observe, copy.observeErr = nil, nil // synthetic summary is not conversation evidence
 	copy.input = append([]map[string]any(nil), c.input...)
-	copy.tools, copy.image, copy.memory = nil, "", ""
+	copy.tools, copy.image, copy.memory, copy.context = nil, "", "", ""
 	copy.toolChoice = "none"
 	// The backend needs a matching hosted-search declaration to accept prior
 	// web_search_call items. Retain only that schema, never operational tools;

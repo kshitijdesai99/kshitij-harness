@@ -11,6 +11,7 @@ Introduced **2026-09-28** · commit `3354dc0`.
 - `kh -r` resumes the newest creation ID; `kh -s ID` selects one. Latest does not mean most recently saved.
 - Provider-owned history is saved after turns as `<session-id>.json` under `~/.kh/sessions`, scoped to the working folder with symlinks resolved. A separate [JSONL conversation archive](#conversation-archive) records new interactions without replacing that resumable snapshot.
 - Resume replays history in a new chat process; it does not [reattach a running tmux chat](tmux-chats.md). Failed partial replies are not completed checkpoints.
+- Trusted [plugin hooks](project-configuration.md#plugin-hooks) use their own private Claude-compatible projection of actual users and completed assistant replies, not this resumable provider snapshot or the richer archive below. Editing that projection does not rewrite provider history.
 - The [memory database](knowledge-store.md) is separate from saved conversation history. See [provider-owned state](provider-state.md) for history ownership and [compaction](compaction.md) for summarizing working context.
 
 ## Conversation archive

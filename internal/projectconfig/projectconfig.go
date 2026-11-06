@@ -20,6 +20,7 @@ type Config struct {
 	Commands    map[string]string
 	CommandDirs map[string]string
 	Servers     map[string]Server
+	Hooks       []Hook // Inert declarations; callers must enforce explicit plugin trust.
 	Warnings    []string
 
 	commandPaths map[string]string

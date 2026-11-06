@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"kh/internal/image"
 	"kh/internal/provider"
@@ -40,6 +41,11 @@ type Runner struct {
 	// ExpandMessage resolves user-invoked project commands after the user hook.
 	// It runs for initial, steering, and queued input, never tool-result steps.
 	ExpandMessage func(string) string
+	// Completed runs only after a successful terminal model step. It may stage
+	// non-user context and request one continuation; active fences recursion.
+	Completed func(context.Context, bool) (bool, error)
+	// ContinuationTimeout bounds the model/tool continuation, default two minutes.
+	ContinuationTimeout time.Duration
 }
 
 // Run executes one task. Steering interrupts a reply, but lets running tools
@@ -48,7 +54,16 @@ func (r Runner) Run(ctx context.Context, task string) error {
 	p, ts, steer := r.Model, r.Tools, r.Input
 	user, results := task, []provider.Result(nil)
 	messagePending := user != ""
+	stopHookActive := false
+	baseContext := ctx
+	var continuationCancel context.CancelFunc
 	defer func() {
+		if continuationCancel != nil {
+			continuationCancel()
+		}
+		if setter, ok := p.(provider.ContextSetter); ok {
+			setter.SetContext("") // discard context staged before a cancelled Step
+		}
 		if messagePending {
 			// A pre-Step hook can fail after staging an image or memory. Do
 			// not attach that abandoned input to an unrelated later message.
@@ -69,6 +84,14 @@ func (r Runner) Run(ctx context.Context, task string) error {
 		_, _ = p.Step(flush, "", results)
 	}()
 	for {
+		if user != "" && continuationCancel != nil {
+			// Actual steering/queued input begins a user turn, not another
+			// recursive Stop continuation. Restore the caller's cancellation.
+			continuationCancel()
+			continuationCancel = nil
+			ctx = baseContext
+			stopHookActive = false
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -103,6 +126,28 @@ func (r Runner) Run(ctx context.Context, task string) error {
 			continue
 		}
 		if len(calls) == 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if r.Completed != nil {
+				again, err := r.Completed(ctx, stopHookActive)
+				if err != nil {
+					return err
+				}
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if again && !stopHookActive {
+					stopHookActive = true
+					timeout := r.ContinuationTimeout
+					if timeout <= 0 {
+						timeout = 2 * time.Minute
+					}
+					ctx, continuationCancel = context.WithTimeout(baseContext, timeout)
+					user = "" // continuation context is not an actual user message
+					continue
+				}
+			}
 			return nil
 		}
 		if r.Activity != nil {

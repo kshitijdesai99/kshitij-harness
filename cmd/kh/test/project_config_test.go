@@ -150,6 +150,7 @@ func projectCLIProxy(t *testing.T, home string, invokeTool bool) (string, <-chan
 // projectCLICall drives an actual CLI tool loop using synthetic provider replies.
 type projectCLICall struct {
 	Name, Arguments string
+	Empty           bool // successful terminal response with no assistant message
 }
 
 func projectCLIProxyScript(t *testing.T, home string, call func(int) *projectCLICall) (string, <-chan projectCLIRequest) {
@@ -177,8 +178,10 @@ func projectCLIProxyScript(t *testing.T, home string, call func(int) *projectCLI
 		requests <- body
 		w.Header().Set("Content-Type", "text/event-stream")
 		if next := call(step); next != nil {
-			event, _ := json.Marshal(map[string]any{"type": "response.output_item.done", "item": map[string]any{"type": "function_call", "call_id": fmt.Sprintf("cli-call-%d", step), "name": next.Name, "arguments": next.Arguments}})
-			fmt.Fprintf(w, "data: %s\n", event)
+			if !next.Empty {
+				event, _ := json.Marshal(map[string]any{"type": "response.output_item.done", "item": map[string]any{"type": "function_call", "call_id": fmt.Sprintf("cli-call-%d", step), "name": next.Name, "arguments": next.Arguments}})
+				fmt.Fprintf(w, "data: %s\n", event)
+			}
 		} else {
 			fmt.Fprintln(w, `data: {"type":"response.output_text.delta","delta":"PROJECT-CLI-DONE"}`)
 			fmt.Fprintln(w, `data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"PROJECT-CLI-DONE"}]}}`)
@@ -198,7 +201,6 @@ func projectCLIProxyScript(t *testing.T, home string, call func(int) *projectCLI
 	server.TLS = &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}}
 	server.StartTLS()
 	t.Cleanup(server.Close)
-	projectCLIWrite(t, filepath.Join(home, "fixture-ca.pem"), string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})))
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodConnect || r.Host != "chatgpt.com:443" {
 			http.Error(w, "fixture blocks external requests", 403)
@@ -222,9 +224,16 @@ func projectCLIProxyScript(t *testing.T, home string, call func(int) *projectCLI
 		io.Copy(client, upstream)
 	}))
 	t.Cleanup(proxy.Close)
+	projectCLIWrite(t, projectCLIProxyCA(home, proxy.URL), string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})))
 	claims := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(`{"exp":%d,"https://api.openai.com/auth":{"chatgpt_account_id":"fixture"}}`, time.Now().Add(time.Hour).Unix())))
 	projectCLIWrite(t, filepath.Join(home, ".kh", "codex.json"), `{"access_token":"fixture.`+claims+`.signature","refresh_token":"fixture-not-a-secret"}`)
 	return proxy.URL, requests
+}
+
+// Each live proxy keeps its own trust root, even when several share one HOME.
+func projectCLIProxyCA(home, proxy string) string {
+	endpoint := strings.NewReplacer(":", "-", "/", "-").Replace(proxy)
+	return filepath.Join(home, "fixture-proxies", endpoint, "ca.pem")
 }
 
 func projectCLIWrite(t *testing.T, path, body string) {
@@ -264,7 +273,7 @@ func TestProjectConfigCLI(t *testing.T) {
 		defer cancel()
 		cmd := exec.CommandContext(ctx, binary, args...)
 		cmd.Dir = cwd
-		cmd.Env = append(os.Environ(), "HOME="+home, "KH_AUTO_REBUILD=0", "KH_AUTO=", "KH_PROVIDER=", "KH_MODEL=", "KH_EFFORT=", "KH_PARENT=", "KH_AGENT=", "TMUX=", "TMUX_PANE=", "HTTPS_PROXY="+proxy, "HTTP_PROXY="+proxy, "ALL_PROXY=", "NO_PROXY=", "SSL_CERT_FILE="+filepath.Join(home, "fixture-ca.pem"), "SSL_CERT_DIR="+home, "GODEBUG=x509sslcertoverrideplatform=1")
+		cmd.Env = append(os.Environ(), "HOME="+home, "KH_AUTO_REBUILD=0", "KH_AUTO=", "KH_PROVIDER=", "KH_MODEL=", "KH_EFFORT=", "KH_PARENT=", "KH_AGENT=", "TMUX=", "TMUX_PANE=", "HTTPS_PROXY="+proxy, "HTTP_PROXY="+proxy, "ALL_PROXY=", "NO_PROXY=", "SSL_CERT_FILE="+projectCLIProxyCA(home, proxy), "SSL_CERT_DIR="+filepath.Dir(projectCLIProxyCA(home, proxy)), "GODEBUG=x509sslcertoverrideplatform=1")
 		cmd.Stdin = strings.NewReader(input)
 		out, err := cmd.CombinedOutput()
 		if err != nil {

@@ -234,7 +234,7 @@ func TestWarmWorkerDeniedPushAndStructuredKeepRejected(t *testing.T) {
 func TestWarmWorkerFreshHistoryGuidanceAndDelegatedInput(t *testing.T) {
 	f := newWarmCLIFixture(t, 30)
 	proxy, requests := projectCLIProxyScript(t, os.Getenv("HOME"), func(int) *projectCLICall { return nil })
-	for key, value := range map[string]string{"KH_PROVIDER": "codex", "HTTPS_PROXY": proxy, "HTTP_PROXY": proxy, "ALL_PROXY": "", "NO_PROXY": "", "SSL_CERT_FILE": filepath.Join(os.Getenv("HOME"), "fixture-ca.pem"), "SSL_CERT_DIR": os.Getenv("HOME"), "GODEBUG": "x509sslcertoverrideplatform=1"} {
+	for key, value := range map[string]string{"KH_PROVIDER": "codex", "HTTPS_PROXY": proxy, "HTTP_PROXY": proxy, "ALL_PROXY": "", "NO_PROXY": "", "SSL_CERT_FILE": projectCLIProxyCA(os.Getenv("HOME"), proxy), "SSL_CERT_DIR": filepath.Dir(projectCLIProxyCA(os.Getenv("HOME"), proxy)), "GODEBUG": "x509sslcertoverrideplatform=1"} {
 		t.Setenv(key, value)
 	}
 	// The private tmux server predates these variables; publish the synthetic

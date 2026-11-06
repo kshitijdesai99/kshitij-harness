@@ -125,6 +125,7 @@ func editWithOutput(ctx context.Context, input json.RawMessage, action func(stri
 		}
 	}()
 
+	operations := make([]EditOperation, 0, len(changes))
 	// Preflight never creates directories or files. Retain each existing file's
 	// opened descriptor so a replaced pathname cannot redirect its later write.
 	for i, change := range changes {
@@ -155,6 +156,7 @@ func editWithOutput(ctx context.Context, input json.RawMessage, action func(stri
 				files = append(files, staged)
 			}
 		}
+		operations = append(operations, EditOperation{Path: filepath.Join(root.Name(), rel), Old: change.Old, New: change.New})
 		if change.Old == "" {
 			staged.text = change.New
 			continue
@@ -173,6 +175,15 @@ func editWithOutput(ctx context.Context, input json.RawMessage, action func(stri
 	}
 	if err := ctx.Err(); err != nil {
 		return "", err
+	}
+
+	if hook, ok := ctx.Value(editHookKey{}).(EditHook); ok {
+		if err := hook(ctx, operations, batch); err != nil {
+			return "", err
+		}
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 	}
 
 	var completed []string

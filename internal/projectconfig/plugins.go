@@ -1,4 +1,4 @@
-// Local plugin bundles contribute inert capabilities, never installers or hooks.
+// Local plugin bundles contribute inert capabilities and hook declarations, never installers.
 package projectconfig
 
 import (
@@ -168,6 +168,7 @@ func (l *loader) pluginBundle(root, boundary, identity string, enabled map[strin
 		Skills   json.RawMessage `json:"skills"`
 		Rules    json.RawMessage `json:"rules"`
 		MCP      json.RawMessage `json:"mcpServers"`
+		Hooks    json.RawMessage `json:"hooks"`
 	}
 	if json.Unmarshal(data, &m) != nil || !pluginName.MatchString(m.Name) {
 		l.warn(manifest, "invalid plugin manifest/name")
@@ -238,6 +239,25 @@ func (l *loader) pluginBundle(root, boundary, identity string, enabled map[strin
 		}
 	}
 	seen[root] = true
+	// Ordinary plugin references remain discoverable by default, but executable
+	// hook declarations require an explicit enabled flag, separate from trust.
+	hookIdentity := identity
+	if hookIdentity == "" {
+		keys := make([]string, 0, len(enabled))
+		for key := range enabled {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			if enabled[key] && strings.Split(key, "@")[0] == m.Name {
+				hookIdentity = key
+				break
+			}
+		}
+	}
+	if hookIdentity != "" && enabled[hookIdentity] {
+		l.pluginHooks(root, hookIdentity, m.Hooks)
+	}
 	for _, kind := range []string{"commands", "skills", "rules"} {
 		for _, rel := range components[kind] {
 			l.pluginComponent(root, boundary, filepath.Join(root, rel), kind, m.Name)

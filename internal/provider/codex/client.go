@@ -32,26 +32,28 @@ const (
 )
 
 type Client struct {
-	out          provider.Output
-	observe      func(provider.Event) error
-	observeErr   error
-	attemptID    string
-	model        string
-	effort       string
-	rules        string // always today's config, so rule changes reach old sessions
-	repoMap      string // frozen per session: it changes often and would miss the cache
-	memory       string // memory message for the next user message; saved with it, so it is sent once
-	image        string // data URL attached to the next user message; retained if the request fails
-	tools        []map[string]any
-	webAvailable bool
-	webActive    *atomic.Bool     // shared pointer keeps Compact's private copy lock-free
-	toolChoice   string           // empty means auto; compaction uses none to prohibit new tools
-	input        []map[string]any // full history; the server stores nothing (store: false)
-	session      string
-	stats        provider.Stats
-	start        time.Time     // when the current turn's user message was sent
-	window       int           // context limit of c.model: 0 = not looked up, -1 = unknown
-	idleTimeout  time.Duration // bounds silent headers/streams, not total reasoning time
+	out              provider.Output
+	observe          func(provider.Event) error
+	observeErr       error
+	attemptID        string
+	model            string
+	effort           string
+	rules            string // always today's config, so rule changes reach old sessions
+	repoMap          string // frozen per session: it changes often and would miss the cache
+	memory           string // memory message for the next user message; saved with it, so it is sent once
+	context          string // non-user reference context for the next Step, including empty-user continuations
+	lastStepResponse string // completed terminal text only, never restored from history
+	image            string // data URL attached to the next user message; retained if the request fails
+	tools            []map[string]any
+	webAvailable     bool
+	webActive        *atomic.Bool     // shared pointer keeps Compact's private copy lock-free
+	toolChoice       string           // empty means auto; compaction uses none to prohibit new tools
+	input            []map[string]any // full history; the server stores nothing (store: false)
+	session          string
+	stats            provider.Stats
+	start            time.Time     // when the current turn's user message was sent
+	window           int           // context limit of c.model: 0 = not looked up, -1 = unknown
+	idleTimeout      time.Duration // bounds silent headers/streams, not total reasoning time
 }
 
 func New(c config.Config, repoMap string, ts []tools.Tool, out provider.Output) *Client {
@@ -89,6 +91,7 @@ func New(c config.Config, repoMap string, ts []tools.Tool, out provider.Output) 
 }
 
 func (c *Client) Step(ctx context.Context, user string, results []provider.Result) (calls []provider.Call, err error) {
+	c.lastStepResponse = ""
 	c.observeErr = nil
 	if c.observe != nil {
 		defer func() {
@@ -113,6 +116,11 @@ func (c *Client) Step(ctx context.Context, user string, results []provider.Resul
 		}
 		c.input = append(c.input, map[string]any{"type": "function_call_output", "call_id": r.ID, "output": output})
 	}
+	if c.context != "" {
+		c.input = append(c.input, map[string]any{"type": "message", "role": "developer",
+			"content": []map[string]any{{"type": "input_text", "text": c.context}}})
+		c.context = ""
+	}
 	if user != "" {
 		// Memory goes just before the message it was retrieved for, so it
 		// cannot look like a newer request, and stays in history: the caller
@@ -136,8 +144,13 @@ func (c *Client) Step(ctx context.Context, user string, results []provider.Resul
 	defer func() {
 		if err != nil {
 			c.input = c.input[:n]
-		} else if user != "" {
-			c.image = ""
+		} else {
+			if user != "" {
+				c.image = ""
+			}
+			if ctx.Err() == nil && c.observeErr == nil && len(calls) == 0 {
+				c.lastStepResponse = terminalResponse(c.input[n:])
+			}
 		}
 	}()
 
@@ -206,6 +219,9 @@ func (c *Client) AttachImage(dataURL string) { c.image = dataURL }
 
 // SetMemory stages a memory message for the next user message.
 func (c *Client) SetMemory(text string) { c.memory = text }
+
+// SetContext stages reference context without inventing a user message.
+func (c *Client) SetContext(text string) { c.context = text }
 
 func (c *Client) instructions() string {
 	if c.repoMap == "" {
@@ -325,6 +341,10 @@ func (c *Client) Replay(out provider.Output) {
 		json.Unmarshal(b, &m)
 		switch m.Type {
 		case "message":
+			// Reference context is neither a typed query nor an assistant reply.
+			if m.Role == "developer" {
+				continue
+			}
 			for _, part := range m.Content {
 				if part.Type == "input_image" {
 					out.Action("[image attached]")
@@ -368,6 +388,31 @@ func (c *Client) LastResponse() string {
 		}
 		b, _ := json.Marshal(c.input[i])
 		if json.Unmarshal(b, &message) != nil || message.Type != "message" || message.Role != "assistant" {
+			continue
+		}
+		var parts []string
+		for _, part := range message.Content {
+			if part.Type == "output_text" || part.Type == "text" {
+				parts = append(parts, part.Text)
+			}
+		}
+		return strings.Join(parts, "\n")
+	}
+	return ""
+}
+
+// LastStepResponse cannot fall back to an older message when a provider accepts
+// an empty terminal completion (including a Stop continuation).
+func (c *Client) LastStepResponse() string { return c.lastStepResponse }
+
+func terminalResponse(input []map[string]any) string {
+	for i := len(input) - 1; i >= 0; i-- {
+		var message struct {
+			Type, Role, Phase string
+			Content           []struct{ Type, Text string }
+		}
+		b, _ := json.Marshal(input[i])
+		if json.Unmarshal(b, &message) != nil || message.Type != "message" || message.Role != "assistant" || message.Phase == "commentary" {
 			continue
 		}
 		var parts []string

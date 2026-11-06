@@ -141,6 +141,11 @@ func cloneConfig(c *Config) *Config {
 	out.Commands = cloneMap(c.Commands)
 	out.CommandDirs = cloneMap(c.CommandDirs)
 	out.Warnings = append([]string(nil), c.Warnings...)
+	out.Hooks = append([]Hook(nil), c.Hooks...)
+	for i := range out.Hooks {
+		out.Hooks[i].Args = append([]string(nil), c.Hooks[i].Args...)
+		out.Hooks[i].Env = cloneMap(c.Hooks[i].Env)
+	}
 	out.commandPaths = cloneMap(c.commandPaths)
 	out.commandRoots = cloneMap(c.commandRoots)
 	out.assets = cloneMap(c.assets)

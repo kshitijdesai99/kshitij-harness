@@ -82,6 +82,9 @@ func run(ctx context.Context, argv []string, timeout time.Duration, outputCap in
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	if env, ok := ctx.Value(bashEnvironmentKey{}).(map[string]string); ok {
+		cmd.Env = mergeBashEnvironment(env)
+	}
 	// Own process group, so a timeout kills everything the command started.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
