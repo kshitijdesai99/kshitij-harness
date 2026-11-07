@@ -20,6 +20,7 @@ func TestPluginLifecycleCLI(t *testing.T) {
 		t.Fatalf("build: %s %v", out, err)
 	}
 	home, cwd := t.TempDir(), t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	cwd, err := filepath.EvalSymlinks(cwd)
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +106,7 @@ func TestPluginLifecycleCLI(t *testing.T) {
 	if fmt.Sprint(events) != "[SessionStart UserPromptSubmit Stop Stop SessionEnd]" || fmt.Sprint(active) != "[false true]" {
 		t.Fatalf("events=%v active=%v", events, active)
 	}
-	paths, err := filepath.Glob(filepath.Join(home, ".kh", "plugin-transcripts", "config", "projects", "*", "*.jsonl"))
+	paths, err := filepath.Glob(filepath.Join(home, ".claude", "projects", "kh-plugin-*", "*.jsonl"))
 	if err != nil || len(paths) != 1 {
 		t.Fatalf("projection paths=%v %v", paths, err)
 	}
@@ -170,7 +171,7 @@ func TestPluginLifecycleCLI(t *testing.T) {
 	if strings.Count(string(raw), `"hook_event_name":"Stop"`) != 1 {
 		t.Fatalf("empty completion repeated Stop: %s", raw)
 	}
-	paths, _ = filepath.Glob(filepath.Join(home, ".kh", "plugin-transcripts", "config", "projects", "*", "*.jsonl"))
+	paths, _ = filepath.Glob(filepath.Join(home, ".claude", "projects", "kh-plugin-*", "*.jsonl"))
 	found := false
 	for _, path := range paths {
 		b, err := os.ReadFile(path)
@@ -215,7 +216,7 @@ func TestPluginLifecycleCLI(t *testing.T) {
 	if strings.Contains(string(raw), "UserPromptSubmit") || strings.Contains(string(raw), `"hook_event_name":"Stop"`) {
 		t.Fatalf("peer message hooks: %s", raw)
 	}
-	paths, _ = filepath.Glob(filepath.Join(home, ".kh", "plugin-transcripts", "config", "projects", "*", "*.jsonl"))
+	paths, _ = filepath.Glob(filepath.Join(home, ".claude", "projects", "kh-plugin-*", "*.jsonl"))
 	for _, path := range paths {
 		b, err := os.ReadFile(path)
 		if err != nil {

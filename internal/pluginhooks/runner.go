@@ -55,13 +55,13 @@ type Runner struct {
 // Environment returns the same compatibility environment used by hook commands.
 // Approved tools that invoke plugin CLIs should receive these values as well.
 func (r Runner) Environment(in Input, pluginRoot string) map[string]string {
-	dir := r.ConfigDir
-	if dir == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			dir = filepath.Join(home, ".kh", "plugin-transcripts", "config")
-		}
+	env := map[string]string{"CLAUDE_PLUGIN_ROOT": pluginRoot, "CLAUDE_PROJECT_DIR": in.Cwd, "CLAUDE_SESSION_ID": in.SessionID, "CLAUDE_CODE_SESSION_ID": in.SessionID}
+	// Preserve the caller's Claude configuration/authentication, including an
+	// unset CLAUDE_CONFIG_DIR. A transcript root is not a runtime config root.
+	if r.ConfigDir != "" {
+		env["CLAUDE_CONFIG_DIR"] = r.ConfigDir
 	}
-	return map[string]string{"CLAUDE_PLUGIN_ROOT": pluginRoot, "CLAUDE_PROJECT_DIR": in.Cwd, "CLAUDE_SESSION_ID": in.SessionID, "CLAUDE_CODE_SESSION_ID": in.SessionID, "CLAUDE_CONFIG_DIR": dir}
+	return env
 }
 
 // Run executes only the trusted declarations supplied by its caller. Failures

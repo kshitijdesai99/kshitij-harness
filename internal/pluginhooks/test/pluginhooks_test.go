@@ -187,7 +187,7 @@ func TestProjectionStablePrivateConcurrent(t *testing.T) {
 	if count != 21 {
 		t.Fatal(count)
 	}
-	for path, mode := range map[string]os.FileMode{a.Path(): 0600, filepath.Dir(a.Path()): 0700, config: 0700} {
+	for path, mode := range map[string]os.FileMode{a.Path(): 0600, filepath.Dir(a.Path()): 0700} {
 		info, err := os.Stat(path)
 		if err != nil || info.Mode().Perm() != mode {
 			t.Fatalf("%s mode %v err %v", path, info, err)

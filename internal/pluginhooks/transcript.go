@@ -20,20 +20,24 @@ import (
 // history or the kh conversation archive. Callers must supply only real root
 // user messages and completed assistant replies, never worker or peer input.
 type Transcript struct {
-	mu                              sync.Mutex
-	path, configDir, cwd, sessionID string
+	mu                                       sync.Mutex
+	path, configDir, project, cwd, sessionID string
 }
 
 func OpenTranscript(configDir, cwd, sessionID string) (*Transcript, error) {
 	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`).MatchString(sessionID) {
 		return nil, fmt.Errorf("invalid projection session ID")
 	}
+	migrate := configDir == ""
 	if configDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
+		configDir = os.Getenv("CLAUDE_CONFIG_DIR")
+		if configDir == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return nil, err
+			}
+			configDir = filepath.Join(home, ".claude")
 		}
-		configDir = filepath.Join(home, ".kh", "plugin-transcripts", "config")
 	}
 	var err error
 	configDir, err = filepath.Abs(configDir)
@@ -44,31 +48,135 @@ func OpenTranscript(configDir, cwd, sessionID string) (*Transcript, error) {
 	if err != nil {
 		return nil, err
 	}
-	project := regexp.MustCompile(`[^a-zA-Z0-9]`).ReplaceAllString(cwd, "-")
+	sum := sha256.Sum256([]byte(cwd))
+	project := fmt.Sprintf("kh-plugin-%x", sum[:])
 	dir := filepath.Join(configDir, "projects", project)
-	for _, p := range []string{configDir, filepath.Join(configDir, "projects"), dir} {
-		if err := os.MkdirAll(p, 0700); err != nil {
-			return nil, err
-		}
-		info, err := os.Lstat(p)
-		if err != nil {
-			return nil, err
-		}
-		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return nil, fmt.Errorf("unsafe projection directory")
-		}
-		if err := os.Chmod(p, 0700); err != nil {
-			return nil, err
-		}
+	fd, err := projectionDir(configDir, project, true)
+	if err != nil {
+		return nil, err
 	}
-	t := &Transcript{path: filepath.Join(dir, sessionID+".jsonl"), configDir: configDir, cwd: cwd, sessionID: sessionID}
+	unix.Close(fd)
+	t := &Transcript{path: filepath.Join(dir, sessionID+".jsonl"), configDir: configDir, project: project, cwd: cwd, sessionID: sessionID}
 	f, err := t.open()
 	if err != nil {
 		return nil, err
 	}
 	f.Close()
+	if migrate {
+		if err := t.migrateLegacy(); err != nil {
+			return nil, err
+		}
+	}
 	return t, nil
 }
+
+// projectionDir walks the shared config and projects directories using pinned
+// descriptors. Only kh's own namespace is chmodded; native Claude data is not.
+func projectionDir(config, project string, create bool) (int, error) {
+	if create {
+		if err := os.MkdirAll(config, 0700); err != nil {
+			return -1, err
+		}
+	}
+	fd, err := unix.Open(config, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return -1, err
+	}
+	for _, name := range []string{"projects", project} {
+		if create {
+			if err = unix.Mkdirat(fd, name, 0700); err != nil && err != unix.EEXIST {
+				unix.Close(fd)
+				return -1, err
+			}
+		}
+		next, openErr := unix.Openat(fd, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		unix.Close(fd)
+		if openErr != nil {
+			return -1, openErr
+		}
+		fd = next
+	}
+	if create {
+		if err := unix.Fchmod(fd, 0700); err != nil {
+			unix.Close(fd)
+			return -1, err
+		}
+	}
+	return fd, nil
+}
+
+// migrateLegacy preserves existing projection identities and timestamps without
+// moving or deleting the private original. Never merge over a published stream.
+func (t *Transcript) migrateLegacy() error {
+	target, err := t.open()
+	if err != nil {
+		return err
+	}
+	defer target.Close()
+	if err := unix.Flock(int(target.Fd()), unix.LOCK_EX); err != nil {
+		return err
+	}
+	defer unix.Flock(int(target.Fd()), unix.LOCK_UN)
+	info, err := target.Stat()
+	if err != nil || info.Size() != 0 {
+		return err
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	legacy := filepath.Join(home, ".kh", "plugin-transcripts", "config")
+	project := regexp.MustCompile(`[^a-zA-Z0-9]`).ReplaceAllString(t.cwd, "-")
+	dir, err := projectionDir(legacy, project, false)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer unix.Close(dir)
+	fd, err := unix.Openat(dir, t.sessionID+".jsonl", unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	source := os.NewFile(uintptr(fd), "legacy projection")
+	defer source.Close()
+	info, err = source.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return fmt.Errorf("unsafe legacy projection")
+	}
+	if err := unix.Flock(fd, unix.LOCK_SH); err != nil {
+		return err
+	}
+	defer unix.Flock(fd, unix.LOCK_UN)
+	data, err := io.ReadAll(io.LimitReader(source, 64*1024*1024+1))
+	if err != nil {
+		return err
+	}
+	if len(data) > 64*1024*1024 || (len(data) > 0 && data[len(data)-1] != '\n') {
+		return fmt.Errorf("invalid legacy projection size or termination")
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
+		if line == "" && len(data) == 0 {
+			break
+		}
+		var rec struct {
+			Type, UUID, SessionID, Cwd string
+		}
+		if json.Unmarshal([]byte(line), &rec) != nil || rec.UUID == "" || rec.SessionID != t.sessionID || rec.Cwd != t.cwd || (rec.Type != "user" && rec.Type != "assistant") {
+			return fmt.Errorf("invalid legacy projection record")
+		}
+	}
+	if n, err := target.Write(data); err != nil || n != len(data) {
+		_ = target.Truncate(0)
+		return fmt.Errorf("copy legacy projection: %w", io.ErrShortWrite)
+	}
+	return target.Sync()
+}
+
 func (t *Transcript) Path() string      { return t.path }
 func (t *Transcript) ConfigDir() string { return t.configDir }
 func (t *Transcript) AppendUser(id, text string, at time.Time) error {
@@ -78,7 +186,12 @@ func (t *Transcript) AppendAssistant(id, text string, at time.Time) error {
 	return t.append("assistant", id, text, at)
 }
 func (t *Transcript) open() (*os.File, error) {
-	fd, err := unix.Open(t.path, unix.O_RDWR|unix.O_CREAT|unix.O_APPEND|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0600)
+	dir, err := projectionDir(t.configDir, t.project, false)
+	if err != nil {
+		return nil, err
+	}
+	defer unix.Close(dir)
+	fd, err := unix.Openat(dir, t.sessionID+".jsonl", unix.O_RDWR|unix.O_CREAT|unix.O_APPEND|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0600)
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +200,11 @@ func (t *Transcript) open() (*os.File, error) {
 	if err != nil || !info.Mode().IsRegular() {
 		f.Close()
 		return nil, fmt.Errorf("unsafe projection file")
+	}
+	var stat unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil || stat.Nlink != 1 {
+		f.Close()
+		return nil, fmt.Errorf("unsafe projection hard link")
 	}
 	if err = f.Chmod(0600); err != nil {
 		f.Close()

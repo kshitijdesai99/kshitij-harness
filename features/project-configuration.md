@@ -114,7 +114,7 @@ The grant is stored in `~/.kh/plugin-trust.json`, separately from `enabledPlugin
 
 ### Runtime bounds
 
-Hooks receive JSON on stdin, including `hook_event_name`, `session_id`, `cwd`, `transcript_path` and `stop_hook_active`; event-specific fields include `prompt`, `source`, `tool_name` and `tool_input`. The compatibility environment supplies `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PROJECT_DIR`, `CLAUDE_SESSION_ID`, `CLAUDE_CODE_SESSION_ID` and an isolated `CLAUDE_CONFIG_DIR`. Approved plugin-related shell work uses the same session environment; this is not permission to run a command without normal approval.
+Hooks receive JSON on stdin, including `hook_event_name`, `session_id`, `cwd`, `transcript_path` and `stop_hook_active`; event-specific fields include `prompt`, `source`, `tool_name` and `tool_input`. The compatibility environment supplies `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PROJECT_DIR`, `CLAUDE_SESSION_ID` and `CLAUDE_CODE_SESSION_ID`. The caller's `CLAUDE_CONFIG_DIR` remains unchanged (including when unset), so external Claude recorders keep their normal configuration and authentication. Approved plugin-related shell work uses the same session environment; this is not permission to run a command without normal approval.
 
 Each hook defaults to **five seconds** and accepts a positive timeout of at most **30 seconds**; longer declarations are diagnosed and skipped. Stdout and stderr each have a 64 KiB limit. Exceeding output limits cancels the command; invalid JSON, nonzero exits and timeouts become diagnostics rather than permission changes or automatic retries. Hook output is untrusted context, never a replacement system prompt or execution authority.
 
@@ -132,7 +132,9 @@ Hooks run only in user-facing root chats with a matching trust grant, not delega
 
 The continuation carries `stop_hook_active` so it cannot request another continuation, and its model/tool work has a two-minute deadline. Actual steering or queued user input ends that continuation boundary and restores the caller's cancellation context. Unsupported Claude events or response features do not acquire runtime behavior.
 
-Hooks consume a separate private, Claude-compatible conversation projection, not the resumable provider history or the richer [conversation archive](saved-sessions.md#conversation-archive). It lives under `~/.kh/plugin-transcripts/config/projects/<escaped-cwd>/<session-id>.jsonl`; `CLAUDE_CONFIG_DIR` points to that isolated `config` directory, not `~/.claude`. Directories are `0700` and files `0600`, not encrypted. Treat the text as private before copying or syncing it.
+Hooks consume a separate private, Claude-compatible conversation projection, not the resumable provider history or the richer [conversation archive](saved-sessions.md#conversation-archive). It lives under `<claude-config>/projects/kh-plugin-<cwd-sha256>/<session-id>.jsonl`, using the caller's `CLAUDE_CONFIG_DIR` or `~/.claude` by default. The separate kh namespace allows Cogit's session-ID scanner to find the projection without redirecting a spawned Claude recorder away from its authenticated configuration or overwriting native Claude transcripts. The kh namespace is `0700` and its files `0600`; existing shared configuration/project directory permissions are not changed. These files are not encrypted. Treat the text as private before copying or syncing it.
+
+When reopening a session, kh copies a validated legacy projection from `~/.kh/plugin-transcripts/config/projects/<escaped-cwd>/<session-id>.jsonl` into an empty new projection, preserving record IDs and timestamps. It leaves the original intact and never merges over a nonempty published projection. No credentials are copied.
 
 Its conversation content is actual user input and completed assistant replies. It excludes delegated task prompts and peer messages; workers do not turn their assignments into user-hook events. Compaction does not rewrite this projection, and plugin edits to it do not rewrite provider history. Stable receipt IDs avoid duplicate appends; messages are limited to 1 MiB and the projection to 64 MiB. This is not a backfill of old provider history or a replacement recovery format.
 
@@ -209,6 +211,7 @@ This is a supported subset of filesystem configuration and local plugin content,
 | 2026-11-03 | Made hosted web activation discoverable without eagerly adding its schema to fresh CLI requests. | Current change |
 | 2026-11-05 | Added bounded process-local assignment foundations with source-content validation and independent configuration snapshots. | Current change |
 | 2026-11-07 | Added explicitly enabled and separately trusted plugin command hooks, private root-user/completed-assistant projection, and a bounded Cogit recording adaptation without executable Markdown. | Working tree (uncommitted) |
+| 2026-11-07 | Preserved external Claude authentication by publishing projections in a kh-only namespace under the actual Claude config; retained legacy projection history on reopen. | Working tree (uncommitted) |
 
 ## Inspect
 
@@ -228,7 +231,17 @@ This is a supported subset of filesystem configuration and local plugin content,
 
 ## 2026-11-07 — Bounded plugin hooks with explicit trust and isolated conversation projection
 
+The original isolated `CLAUDE_CONFIG_DIR` path/environment decision is superseded by the authentication-preserving projection decision below; the hook trust and conversation-content boundaries remain in force.
+
 - Status: implemented
 - Rationale: Support generic local plugin command hooks and Cogit recording without claiming full Claude parity or executing Markdown. Explicit enabledPlugins discovery and fingerprinted execution trust remain separate; hook timeouts are latency bounds, not containment. Supersedes the former no-plugin-hook-runtime limitation above.
 - Affected: Plugin discovery/trust, bounded hook runner, root-chat lifecycle, approved edit/tool adaptation and private projection; current usage in this page, saved-session cross-reference, feature index and release-notes/2026-11-07.md.
 - Verification / outstanding: 2026-11-07: Compared documented CLI, five events, trust identity, isolated transcript path/environment, and five-second default/30-second maximum against current source and owning-worker contracts. Checked 118 local links/anchors across four changed documentation files and scoped git diff --check successfully. Documentation worker did not run application tests; runtime/integration suites and end-to-end Cogit verification remain outstanding.
+
+
+## 2026-11-07 — Preserve Claude runtime authentication while publishing kh-only projections
+
+- Status: implemented
+- Rationale: Supersedes only the isolated CLAUDE_CONFIG_DIR projection path/environment in the earlier 2026-11-07 bounded-plugin-hooks decision. Actual Cogit side recording inherited that private unauthenticated config. Keep the caller's runtime configuration unchanged and publish transcripts in a kh-plugin-<cwd-sha256> project namespace under the actual Claude config, without copying credentials or changing recorder mode/cadence.
+- Affected: internal/pluginhooks runner and transcript storage/migration; projection and CLI lifecycle tests; owning guide and release-notes/2026-11-07.md.
+- Verification / outstanding: go test -race ./internal/pluginhooks/test ./internal/tools/test passed; go test ./cmd/kh/test -run '^TestPluginLifecycleCLI$' -count=1 passed; gofmt and git diff --check passed. Coverage includes inherited default/custom Claude config, child-process authentication sentinel and transcript scan, legacy byte/identity preservation and idempotence, shared-directory permissions, symlink replacement, hard links and cwd namespace collisions. Independent review, broader tests, and approved real Cogit side-recording verification remain outstanding; no installed process or user config/state was changed.
