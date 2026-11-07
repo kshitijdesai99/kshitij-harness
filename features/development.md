@@ -25,8 +25,22 @@ The CLI package's [TestMain and isolation helper](../cmd/kh/test/cli_isolation_t
 
 When a shell runner's foreground timeout is shorter than the check, run it in the background, capture output and exit status, and poll to completion. A runner timeout alone does not prove a test failure.
 
+## Before every commit
+
+Run these review gates automatically as part of repository development, without waiting for a user to invoke a skill or request the review. They apply to every commit, including documentation-only changes; they do not grant permission to commit or push.
+
+1. **Correctness and style:** independently review the complete intended diff for concrete bugs, regressions, unrelated changes, and convention violations. Verify findings before fixing them, then run the [checks appropriate to the change](#build-and-test).
+2. **Standalone generalization/overfitting review:** assign a separate reviewer before committing. Check for plugin-, vendor-, or task-specific assumptions and unnecessary special cases. Evaluate unrelated examples and add or verify representative coverage where behavior is affected, so success on the motivating example is not mistaken for a general solution. Remove confirmed overfitting and recheck affected behavior; preserve genuinely required domain rules. Do not replace a few cases with an overengineered framework or generic workflow layer.
+3. **Simplification and closure:** remove unnecessary duplication and complexity without speculative rewrites. Resolve confirmed findings and rerun affected checks; if the intended diff changes after review, review the changed scope again before committing. Report the generalization review explicitly alongside correctness, style, simplification, actual checks, and remaining uncertainty in the final verification evidence.
+
 ## Integrate and report
 
-Review the combined diff for unrelated changes, duplication, and unnecessary complexity. Verify findings before making speculative fixes, and report checks actually run plus remaining uncertainty. Follow [documentation maintenance](CONTRIBUTING.md) for behavior changes and [restart instructions](startup-rebuild.md#restart-onto-a-new-build) when a changed runtime needs restarting; rebuilding does not update a live process.
+Before pushing, independently review concrete bugs in the combined diff, verify fixes and tests, and remove unnecessary drift; pre-commit review does not replace this gate. When using verified-state push delegation, follow the existing [verified Git push contract](shell.md#verified-git-push) rather than substituting an ordinary push if its preconditions fail.
+
+Follow [documentation maintenance](CONTRIBUTING.md) for behavior changes and [restart instructions](startup-rebuild.md#restart-onto-a-new-build) when a changed runtime needs restarting; rebuilding does not update a live process.
+
+## Maintenance history
+
+**2026-11-07 — Implemented:** made [generalization review](#before-every-commit) an automatic pre-commit development convention rather than an optional skill, alongside correctness, style and simplification. This guide owns the gate; the existing [agent reading order](../AGENTS.md#reading-order) already points here. The separate pre-push gate remains in place. No hooks, scripts or generic workflow framework were introduced. Scoped diff and local links/anchors were checked, and `git diff --check` passed; application tests were not run for this documentation-only change. No runtime work is required.
 
 [Feature index](README.md)

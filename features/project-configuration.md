@@ -114,9 +114,9 @@ The grant is stored in `~/.kh/plugin-trust.json`, separately from `enabledPlugin
 
 ### Runtime bounds
 
-Hooks receive JSON on stdin, including `hook_event_name`, `session_id`, `cwd`, `transcript_path` and `stop_hook_active`; event-specific fields include `prompt`, `source`, `tool_name` and `tool_input`. The compatibility environment supplies `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PROJECT_DIR`, `CLAUDE_SESSION_ID` and `CLAUDE_CODE_SESSION_ID`. The caller's `CLAUDE_CONFIG_DIR` remains unchanged (including when unset), so external Claude recorders keep their normal configuration and authentication. Approved plugin-related shell work uses the same session environment; this is not permission to run a command without normal approval.
+Hooks receive JSON on stdin, including `hook_event_name`, `session_id`, `cwd`, `transcript_path` and `stop_hook_active`; event-specific fields include `prompt`, `source`, `tool_name` and `tool_input`. Each hook subprocess receives its own plugin's `CLAUDE_PLUGIN_ROOT`, plus `CLAUDE_PROJECT_DIR`, `CLAUDE_SESSION_ID` and `CLAUDE_CODE_SESSION_ID`. The caller's `CLAUDE_CONFIG_DIR` remains unchanged (including when unset), so external Claude recorders keep their normal configuration and authentication. Generic Bash receives the session/project variables with an empty `CLAUDE_PLUGIN_ROOT`, never a root selected from the trusted plugins. Explicit plugin tool calls must use the literal root returned by capability discovery/loading, or a command-local assignment. This is not permission to run a command without normal approval.
 
-Each hook defaults to **five seconds** and accepts a positive timeout of at most **30 seconds**; longer declarations are diagnosed and skipped. Stdout and stderr each have a 64 KiB limit. Exceeding output limits cancels the command; invalid JSON, nonzero exits and timeouts become diagnostics rather than permission changes or automatic retries. Hook output is untrusted context, never a replacement system prompt or execution authority.
+Each hook defaults to **five seconds** and accepts a positive timeout of at most **30 seconds**; longer declarations are diagnosed and skipped. Stdout and stderr each have a 64 KiB limit. Exceeding output limits cancels the command; invalid JSON, nonzero exits and timeouts become diagnostics rather than permission changes or automatic retries. Hook output is untrusted context, never a replacement system prompt or execution authority. `systemMessage` and both supported `additionalContext` fields use one JSON-quoted envelope with plugin/event provenance and fixed host framing. Lifecycle context stays in the existing non-user context container; `PreToolUse` uses the same envelope in the tool result. Payload text cannot grant approval or redefine the host framing.
 
 ### Lifecycle and transcript boundary
 
@@ -138,15 +138,13 @@ When reopening a session, kh copies a validated legacy projection from `~/.kh/pl
 
 Its conversation content is actual user input and completed assistant replies. It excludes delegated task prompts and peer messages; workers do not turn their assignments into user-hook events. Compaction does not rewrite this projection, and plugin edits to it do not rewrite provider history. Stable receipt IDs avoid duplicate appends; messages are limited to 1 MiB and the projection to 64 MiB. This is not a backfill of old provider history or a replacement recovery format.
 
-### Cogit
+### On-demand hook skills
 
-Cogit is one consumer of this generic subset, not a built-in recorder or a claim of complete Claude plugin compatibility. It requires **Node.js 22.13 or newer** in the hook process's environment. Review its executable hooks and external recording/sync behavior before granting trust. Cogit's session-inspection and edit instructions use kh's explicit adaptation rather than assuming Claude's provider transcript format or tools:
+Hook prose can refer to any plugin skill, for example “consider atlas-notes:archive before finishing.” The host does not parse a slash command, select a preferred plugin, or load a skill automatically. Fixed context framing directs the model to discover and load relevant skills through `project_capability`, then explicitly invoke normally approved tools. Skill names embedded in ordinary prose follow the same flow as slash-like names. Hook trust is not approval for a skill's suggested commands.
 
-- A `Stop` request for `/cogit:record` loads the recording skill as reference context for the one bounded continuation; it does not execute the slash text as a shell command.
-- For Cogit's `session show` operation, use an explicit Bash tool call with the plugin CLI and arguments from the loaded skill. It receives the isolated session environment and remains subject to normal command approval. This is not a new `kh session show` command.
-- Translate Claude-style file-writing instructions to native `edit`: a new file uses `{"path":"...","old":"","new":"..."}`; an existing file needs its exact old text. Native edits complete their usual preflight and approval before `PreToolUse` runs. Creates map to `Write`, single replacements to `Edit`, and batches to `MultiEdit` per affected path.
+Markdown commands and skills remain inert references: kh does not add shell expansion, inline `!`-backtick execution, or command inference. Use the loaded skill's literal plugin root for an explicit Bash command when needed. For Claude-style file-writing instructions, native `edit` creates a new file with `{"path":"...","old":"","new":"..."}`; an existing file requires exact old text. Native edits retain preflight and approval before `PreToolUse`, mapping creates to `Write`, single replacements to `Edit`, and batches to `MultiEdit` per affected path.
 
-Markdown commands and skills remain references: kh does not add shell expansion or an executable Markdown runner. In particular, `!`-backtick snippets in a skill stay inert; use an explicit approved tool call instead.
+Cogit is one consumer, not an engine dependency or built-in recorder. It requires **Node.js 22.13 or newer** in the hook environment. Its recording skill and session-inspection CLI use this same on-demand discovery and explicit-tool flow, not a Cogit-specific continuation adapter. Review its executable hooks and external recording/sync behavior before granting trust; no recorder configuration, cadence, or existing records are changed by the generic context flow.
 
 ## MCP and safety
 
@@ -210,8 +208,9 @@ This is a supported subset of filesystem configuration and local plugin content,
 | 2026-11-02 | Kept catalogs, root references and decisions on demand; added registry search/describe/invoke, compact workspace inspection, and baseline context diagnostics while preserving binding guidance and original tool policy. | Current change |
 | 2026-11-03 | Made hosted web activation discoverable without eagerly adding its schema to fresh CLI requests. | Current change |
 | 2026-11-05 | Added bounded process-local assignment foundations with source-content validation and independent configuration snapshots. | Current change |
-| 2026-11-07 | Added explicitly enabled and separately trusted plugin command hooks, private root-user/completed-assistant projection, and a bounded Cogit recording adaptation without executable Markdown. | Working tree (uncommitted) |
+| 2026-11-07 | Added explicitly enabled and separately trusted plugin command hooks and private root-user/completed-assistant projection; the initial Cogit-only continuation adaptation was superseded by the generic flow below. | Working tree (uncommitted) |
 | 2026-11-07 | Preserved external Claude authentication by publishing projections in a kh-only namespace under the actual Claude config; retained legacy projection history on reopen. | Working tree (uncommitted) |
+| 2026-11-07 | Removed plugin-identity-dependent continuation/root selection; hook output now uses JSON-quoted provenance and generic on-demand skill discovery with explicit approved tools. | Working tree (uncommitted) |
 
 ## Inspect
 
@@ -231,7 +230,7 @@ This is a supported subset of filesystem configuration and local plugin content,
 
 ## 2026-11-07 — Bounded plugin hooks with explicit trust and isolated conversation projection
 
-The original isolated `CLAUDE_CONFIG_DIR` path/environment decision is superseded by the authentication-preserving projection decision below; the hook trust and conversation-content boundaries remain in force.
+The original isolated `CLAUDE_CONFIG_DIR` path/environment decision is superseded by the authentication-preserving projection decision below. The initial Cogit-specific continuation adaptation is superseded by the generic context decision below; the hook trust and conversation-content boundaries remain in force.
 
 - Status: implemented
 - Rationale: Support generic local plugin command hooks and Cogit recording without claiming full Claude parity or executing Markdown. Explicit enabledPlugins discovery and fingerprinted execution trust remain separate; hook timeouts are latency bounds, not containment. Supersedes the former no-plugin-hook-runtime limitation above.
@@ -245,3 +244,11 @@ The original isolated `CLAUDE_CONFIG_DIR` path/environment decision is supersede
 - Rationale: Supersedes only the isolated CLAUDE_CONFIG_DIR projection path/environment in the earlier 2026-11-07 bounded-plugin-hooks decision. Actual Cogit side recording inherited that private unauthenticated config. Keep the caller's runtime configuration unchanged and publish transcripts in a kh-plugin-<cwd-sha256> project namespace under the actual Claude config, without copying credentials or changing recorder mode/cadence.
 - Affected: internal/pluginhooks runner and transcript storage/migration; projection and CLI lifecycle tests; owning guide and release-notes/2026-11-07.md.
 - Verification / outstanding: go test -race ./internal/pluginhooks/test ./internal/tools/test passed; go test ./cmd/kh/test -run '^TestPluginLifecycleCLI$' -count=1 passed; gofmt and git diff --check passed. Coverage includes inherited default/custom Claude config, child-process authentication sentinel and transcript scan, legacy byte/identity preservation and idempotence, shared-directory permissions, symlink replacement, hard links and cwd namespace collisions. Independent review, broader tests, and approved real Cogit side-recording verification remain outstanding; no installed process or user config/state was changed.
+
+
+## 2026-11-07 — Generic plugin context and on-demand skill flow
+
+- Status: implemented
+- Rationale: Supersedes the Cogit-specific continuation adaptation in the earlier bounded-plugin-hooks decision. Remove identity-based root selection, exact slash recognition and Markdown substitution interpretation rather than introducing another parser or registry. Preserve existing fingerprinted hook trust and lifecycle bounds; represent hook output as JSON-quoted untrusted data with plugin/event provenance and use existing on-demand capability loading plus explicitly approved tools for any relevant skill named in prose.
+- Affected: cmd/kh plugin lifecycle/tool wiring and CLI fixture; internal/pluginhooks result provenance and regression tests; this guide and release-notes/2026-11-07.md. Recorder configuration, records/cadence, runtime authentication and projection migration are unchanged.
+- Verification / outstanding: Targeted TestPluginLifecycleCLI passed, including discovery/load/explicit Bash/edit, two plugin hook roots, generic Bash ambient-root reset, quoted injection-like prose, inert inline Markdown, empty reply/image/peer/facade regressions. Race pluginhooks, projectconfig and tools suites passed; latest pluginhooks race rerun passed. Full CLI race suite remains in progress; independent generalization/correctness/simplification reviews and approved real-recorder verification remain outstanding. Gofmt, git diff --check and 47 local link target checks passed. No commit, push, install, restart, real recorder execution or user configuration/state change performed.

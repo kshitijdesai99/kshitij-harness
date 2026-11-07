@@ -205,7 +205,7 @@ func (c *chat) turn(ctx context.Context, msg string) error {
 			if !ok {
 				return false, fmt.Errorf("provider does not support plugin Stop continuation context")
 			}
-			setter.SetContext(c.hooks.continuation(extra))
+			setter.SetContext(extra)
 			return true, nil
 		},
 		AfterTools: func(calls []provider.Call, results []provider.Result) error {

@@ -40,10 +40,18 @@ type Input struct {
 	Prompt         string          `json:"prompt,omitempty"`
 }
 
+// Context preserves the provenance of each untrusted hook output field.
+// JSON encoding keeps payload text separate from the host's context framing.
+type Context struct {
+	Plugin string `json:"plugin"`
+	Event  string `json:"event"`
+	Kind   string `json:"kind"`
+	Text   string `json:"text"`
+}
+
 type Result struct {
-	AdditionalContext []string
-	SystemMessage     []string
-	Diagnostics       []string
+	Context     []Context
+	Diagnostics []string
 }
 
 type Runner struct {
@@ -52,8 +60,8 @@ type Runner struct {
 	DefaultTimeout time.Duration
 }
 
-// Environment returns the same compatibility environment used by hook commands.
-// Approved tools that invoke plugin CLIs should receive these values as well.
+// Environment supplies session/project compatibility values. Hook subprocesses
+// pass their own plugin root; generic Bash passes empty, never a selected root.
 func (r Runner) Environment(in Input, pluginRoot string) map[string]string {
 	env := map[string]string{"CLAUDE_PLUGIN_ROOT": pluginRoot, "CLAUDE_PROJECT_DIR": in.Cwd, "CLAUDE_SESSION_ID": in.SessionID, "CLAUDE_CODE_SESSION_ID": in.SessionID}
 	// Preserve the caller's Claude configuration/authentication, including an
@@ -125,11 +133,11 @@ func (r Runner) Run(ctx context.Context, hooks []projectconfig.Hook, in Input) R
 			continue
 		}
 		if response.SystemMessage != "" {
-			out.SystemMessage = append(out.SystemMessage, response.SystemMessage)
+			out.Context = append(out.Context, Context{h.Plugin, in.Event, "systemMessage", response.SystemMessage})
 		}
 		for _, s := range []string{response.AdditionalContext, response.HookSpecificOutput.AdditionalContext} {
 			if s != "" {
-				out.AdditionalContext = append(out.AdditionalContext, s)
+				out.Context = append(out.Context, Context{h.Plugin, in.Event, "additionalContext", s})
 			}
 		}
 	}

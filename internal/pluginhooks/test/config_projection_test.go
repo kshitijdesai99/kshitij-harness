@@ -59,7 +59,7 @@ func TestProjectionPreservesClaudeRuntimeConfig(t *testing.T) {
 			// hook environment and scans projects by session ID rather than input path.
 			h := hook(`read line; /bin/sh -c 'root=${CLAUDE_CONFIG_DIR:-$HOME/.claude}; test -f "$root/auth-sentinel" || exit 11; found=0; for p in "$root"/projects/*/"$CLAUDE_SESSION_ID.jsonl"; do test ! -f "$p" || found=1; done; test "$found" = 1' || exit $?; printf '%s' '{"additionalContext":"auth-and-transcript-ok"}'`)
 			got := r.Run(context.Background(), []projectconfig.Hook{h}, in)
-			if len(got.Diagnostics) != 0 || strings.Join(got.AdditionalContext, "") != "auth-and-transcript-ok" {
+			if len(got.Diagnostics) != 0 || len(got.Context) != 1 || got.Context[0].Text != "auth-and-transcript-ok" {
 				t.Fatalf("%+v", got)
 			}
 			info, err := os.Stat(config)

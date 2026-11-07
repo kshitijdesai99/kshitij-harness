@@ -29,8 +29,9 @@ func TestRunnerJSONEnvironmentAndShell(t *testing.T) {
 	h := hook(`read line; case "$line" in *'"session_id":"abc"'*) ;; *) exit 10;; esac; test "$CLAUDE_SESSION_ID" = abc && test "$CLAUDE_CODE_SESSION_ID" = abc && test "$CLAUDE_CONFIG_DIR" = "$EXPECTED" && test "$CLAUDE_PROJECT_DIR" = "$EXPECTED_PROJECT" || exit 8; printf '%s' '{"systemMessage":"notice","hookSpecificOutput":{"additionalContext":"context"}}'`)
 	h.Env = map[string]string{"EXPECTED": r.ConfigDir, "EXPECTED_PROJECT": in.Cwd}
 	h.Matcher = "startup"
+	h.Plugin = "atlas-notes"
 	got := r.Run(context.Background(), []projectconfig.Hook{h}, in)
-	if len(got.Diagnostics) > 0 || len(got.AdditionalContext) != 1 || got.AdditionalContext[0] != "context" || len(got.SystemMessage) != 1 {
+	if len(got.Diagnostics) > 0 || len(got.Context) != 2 || got.Context[0].Text != "notice" || got.Context[1].Text != "context" || got.Context[0].Kind != "systemMessage" || got.Context[1].Kind != "additionalContext" || got.Context[1].Event != in.Event || got.Context[1].Plugin != h.Plugin {
 		t.Fatalf("%+v", got)
 	}
 	env := r.Environment(in, "/plugin")
@@ -107,7 +108,7 @@ func TestShellPluginRootQuoting(t *testing.T) {
 	h.PluginRoot = `/a path/with"quotes$(exit 8)`
 	h.Env = map[string]string{"EXPECTED": h.PluginRoot}
 	got := (pluginhooks.Runner{}).Run(context.Background(), []projectconfig.Hook{h}, in)
-	if len(got.Diagnostics) > 0 || len(got.AdditionalContext) != 1 {
+	if len(got.Diagnostics) > 0 || len(got.Context) != 1 {
 		t.Fatal(got)
 	}
 }
