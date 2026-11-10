@@ -233,6 +233,7 @@ func TestWarmWorkerDeniedPushAndStructuredKeepRejected(t *testing.T) {
 
 func TestWarmWorkerFreshHistoryGuidanceAndDelegatedInput(t *testing.T) {
 	f := newWarmCLIFixture(t, 30)
+	projectCLIWrite(t, filepath.Join(os.Getenv("HOME"), ".kh/config.json"), `{"system":"CUSTOM-SYSTEM","auto":true,"memory_model":"off","memory_hybrid":false,"web_search":false,"map_cap":0,"agents":{"max_live":5,"idle_timeout_sec":30}}`)
 	proxy, requests := projectCLIProxyScript(t, os.Getenv("HOME"), func(int) *projectCLICall { return nil })
 	for key, value := range map[string]string{"KH_PROVIDER": "codex", "HTTPS_PROXY": proxy, "HTTP_PROXY": proxy, "ALL_PROXY": "", "NO_PROXY": "", "SSL_CERT_FILE": projectCLIProxyCA(os.Getenv("HOME"), proxy), "SSL_CERT_DIR": filepath.Dir(projectCLIProxyCA(os.Getenv("HOME"), proxy)), "GODEBUG": "x509sslcertoverrideplatform=1"} {
 		t.Setenv(key, value)
@@ -258,6 +259,7 @@ func TestWarmWorkerFreshHistoryGuidanceAndDelegatedInput(t *testing.T) {
 		}
 	}
 	request1 := receive()
+	assertMemoryPolicy(t, request1)
 	if !strings.Contains(request1.Instructions, "FIRST-FOUNDATION") {
 		t.Fatal("cold task lacked applicable guidance")
 	}
@@ -276,6 +278,7 @@ func TestWarmWorkerFreshHistoryGuidanceAndDelegatedInput(t *testing.T) {
 	f.cli.mustCommand(f.pane, "assign", first.Address, warmHandoffJSON(t, h))
 	second, next := f.waitTask(t, first.Address, 2)
 	request2 := receive()
+	assertMemoryPolicy(t, request2)
 	if second.Process != first.Process || next.Lease.ID == status.Lease.ID {
 		t.Fatal("warm task did not retain process with fresh task identity")
 	}

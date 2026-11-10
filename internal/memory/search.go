@@ -25,6 +25,8 @@ func (s *Store) Search(ctx context.Context, repo, kind, query string, limit int)
 // SearchTrace explains one retrieval without retaining query text or provider errors.
 type SearchTrace struct {
 	Started, LexicalComplete, SemanticComplete, RerankComplete bool
+	LexicalAttempted, SemanticAttempted, RerankAttempted       bool
+	LexicalTerms, RerankCandidates                             int
 	LexicalIDs, SemanticIDs, SelectedIDs                       []int64
 	SemanticEnabled, SemanticFallback                          bool
 	RerankEnabled, RerankFallback                              bool
@@ -108,7 +110,13 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 		trace.Started = true
 	}
 	var lexical []Note
+	if trace != nil {
+		trace.LexicalTerms = len(words(query))
+	}
 	if match := ftsQuery(query); match != "" {
+		if trace != nil {
+			trace.LexicalAttempted = true
+		}
 		since, until := "", ""
 		if !opts.Since.IsZero() {
 			since = opts.Since.UTC().Format(timeLayout)
@@ -146,6 +154,9 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 		// Similarity orders candidates; the bounded reranker decides relevance.
 		// A useful task instruction can fall below the standalone cosine floor.
 		minSimilarity = -1
+	}
+	if trace != nil {
+		trace.SemanticAttempted = trace.SemanticEnabled
 	}
 	semanticCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	semantic, err := s.semanticSearchBetween(semanticCtx, repo, kind, query, candidates, opts.Since, opts.Until, minSimilarity)
@@ -255,6 +266,10 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 		}
 		appendCandidates(false)
 		if len(batch) > 0 {
+			if trace != nil {
+				trace.RerankAttempted = true
+				trace.RerankCandidates = len(batch)
+			}
 			rctx, stop := context.WithTimeout(ctx, rerankTimeout)
 			scores, rerankErr := rerankCandidates(rctx, reranker, query, batch)
 			stop()

@@ -55,9 +55,9 @@ func TestRecallDiagnostics(t *testing.T) {
 
 func TestRecallDiagnosticsSanitizeStoredKeys(t *testing.T) {
 	s := open(t)
-	add(t, s, memory.Note{Kind: "fact", Key: "unsafe\x1b[31m\x07", Text: "car"})
+	add(t, s, memory.Note{Kind: "fact", Key: "private-key\x1b[31m\x07", Text: "car"})
 	_, trace, err := s.RecallWithTrace(context.Background(), repo, "car", nil, memory.Budget{TopKnowledge: 1})
-	if err != nil || len(trace.LoadedIDs) != 1 || strings.ContainsAny(trace.Diagnostic(err), "\x1b\x07") {
+	if err != nil || len(trace.LoadedIDs) != 1 || strings.ContainsAny(trace.Diagnostic(err), "\x1b\x07") || strings.Contains(trace.Diagnostic(err), "private-key") {
 		t.Fatalf("unsafe diagnostic: %q %v", trace.Diagnostic(err), err)
 	}
 }

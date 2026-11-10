@@ -5,11 +5,27 @@ import (
 	"strings"
 )
 
-// RecallTrace contains IDs and note keys: no query, note bodies, or provider errors.
+// RecallTrace contains IDs and scores, never query text, note content or provider errors.
 type RecallTrace struct {
 	Search    SearchTrace
 	LoadedIDs []int64
-	Loaded    []string
+}
+
+// Diagnostic reports search-stage state and counts without stored content,
+// endpoint/model identities, or raw errors. Attempted means the pipeline entered
+// a stage, not that a model necessarily received a request.
+func (t SearchTrace) Diagnostic(err error) string {
+	status := "ok"
+	if t.SkipReason != "" {
+		status = "skipped"
+	}
+	if err != nil {
+		status = "failed"
+	}
+	return fmt.Sprintf("Memory search: %s; keyword: attempted=%t, complete=%t, terms=%d, candidates=%d; semantic: configured=%t, attempted=%t, complete=%t, fallback=%t, candidates=%d; rerank: configured=%t, attempted=%t, complete=%t, fallback=%t, candidates=%d, scored=%d, rejected=%d; selected=%d",
+		status, t.LexicalAttempted, t.LexicalComplete, t.LexicalTerms, len(t.LexicalIDs),
+		t.SemanticEnabled, t.SemanticAttempted, t.SemanticComplete, t.SemanticFallback, len(t.SemanticIDs),
+		t.RerankEnabled, t.RerankAttempted, t.RerankComplete, t.RerankFallback, t.RerankCandidates, len(t.RerankScores), len(t.RejectedIDs), len(t.SelectedIDs))
 }
 
 // Diagnostic retains full candidate IDs and scores for on-demand inspection.
@@ -72,14 +88,18 @@ func (t RecallTrace) diagnostic(err error, detailed bool) string {
 		status = "skipped"
 	}
 	loaded := "none (no new relevant memories or budget)"
-	if len(t.Loaded) > 0 {
-		n := len(t.Loaded)
+	if len(t.LoadedIDs) > 0 {
+		n := len(t.LoadedIDs)
 		if !detailed {
 			n = min(n, 5)
 		}
-		loaded = strings.Join(t.Loaded[:n], ", ")
-		if n < len(t.Loaded) {
-			loaded += fmt.Sprintf(" (+%d more; /memory explain)", len(t.Loaded)-n)
+		ids := make([]string, n)
+		for i, id := range t.LoadedIDs[:n] {
+			ids[i] = fmt.Sprintf("#%d", id)
+		}
+		loaded = strings.Join(ids, ", ")
+		if n < len(t.LoadedIDs) {
+			loaded += fmt.Sprintf(" (+%d more; /memory explain)", len(t.LoadedIDs)-n)
 		}
 	}
 	if err != nil {

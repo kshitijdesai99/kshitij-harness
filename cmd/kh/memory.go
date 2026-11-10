@@ -20,7 +20,7 @@ import (
 const memoryUsage = `usage: kh memory <command>
   list                                          current notes and summary for this repo
   search <query>                                matching current knowledge (hybrid when configured)
-  explain <query>                               candidate IDs, semantic fallback, and selected notes
+  explain <query>                               content-free retrieval stage counts and fallback
   status                                        memory counts and retrieval configuration
   get <id>                                      one memory with context and timestamps
   history <repo|global> <key>                   every version of one topic
@@ -137,17 +137,24 @@ func memoryCommand(args []string, cfg config.Config) error {
 		if err := need(2); err != nil {
 			return err
 		}
-		startMemory(ctx, s, cfg, memoryNotice)
+		notice := memoryNotice
+		if args[0] == "explain" {
+			// The trace reports stage state without exposing startup/provider errors.
+			notice = func(string) {}
+		}
+		configured := startMemory(ctx, s, cfg, notice)
 		found, trace, err := s.SearchWithTrace(ctx, repo, "", args[1], 30, memory.SearchOptions{})
+		if args[0] == "explain" {
+			fmt.Println("scope: repo+global")
+			fmt.Printf("hybrid requested: %t; pipeline configured: %t\n", cfg.HybridMemory(), configured)
+			fmt.Println(trace.Diagnostic(err))
+			if err != nil {
+				return fmt.Errorf("memory retrieval failed")
+			}
+			return nil
+		}
 		if err != nil {
 			return err
-		}
-		if args[0] == "explain" {
-			fmt.Printf("lexical candidates: %v\nsemantic enabled: %t; fallback: %t\nsemantic candidates: %v\nselected: %v\n", trace.LexicalIDs, trace.SemanticEnabled, trace.SemanticFallback, trace.SemanticIDs, trace.SelectedIDs)
-			fmt.Printf("rerank enabled: %t; fallback: %t\nreranked: %v\n", trace.RerankEnabled, trace.RerankFallback, trace.RerankedIDs)
-			if trace.RerankComplete {
-				fmt.Printf("relevance scores: %v\nrejected (<%.4g): %v\n", trace.RerankScores, trace.RelevanceCutoff, trace.RejectedIDs)
-			}
 		}
 		for _, n := range found {
 			fmt.Println(tools.Note(n))
@@ -241,7 +248,7 @@ func memoryCommand(args []string, cfg config.Config) error {
 
 // Configuration is download-free. Explicit activation handles installation;
 // startup only starts cached local services, leaving keyword search usable.
-func configureMemory(s *memory.Store, cfg config.Config) error {
+func configureMemory(s *memory.Store, cfg config.Config, notice func(string)) error {
 	if !cfg.HybridMemory() {
 		return disableHybrid(s)
 	}
@@ -258,10 +265,10 @@ func configureMemory(s *memory.Store, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
-	if err := s.ConfigureReranker(r, memoryNotice); err != nil {
+	if err := s.ConfigureReranker(r, notice); err != nil {
 		return err
 	}
-	if err := s.ConfigureSemantic(e, memoryNotice); err != nil {
+	if err := s.ConfigureSemantic(e, notice); err != nil {
 		_ = disableHybrid(s)
 		return err
 	}
@@ -299,7 +306,7 @@ func startMemory(ctx context.Context, s *memory.Store, cfg config.Config, notice
 			notice(fmt.Sprintf("Hybrid runtime unavailable; using keyword search until services recover: %v", err))
 		}
 	}
-	if err := configureMemory(s, cfg); err != nil {
+	if err := configureMemory(s, cfg, notice); err != nil {
 		_ = disableHybrid(s)
 		notice(fmt.Sprintf("Hybrid configuration unavailable; using keyword search: %v", err))
 		return false
@@ -335,7 +342,7 @@ func (c *chat) restoreMemory() {
 		_ = disableHybrid(c.memory)
 		return
 	}
-	if err := configureMemory(c.memory, c.seen); err != nil {
+	if err := configureMemory(c.memory, c.seen, memoryNotice); err != nil {
 		_ = disableHybrid(c.memory)
 		c.memoryActive = false
 		c.memoryNotice("Cannot restore hybrid pipeline; using keyword search.")
@@ -365,7 +372,7 @@ func (c *chat) memoryCommand(ctx context.Context, args []string) error {
 		if err := hybrid.Ensure(setup, memoryNotice); err != nil {
 			return fmt.Errorf("hybrid setup failed; mode unchanged: %w", err)
 		}
-		if err := configureMemory(c.memory, cfg); err != nil {
+		if err := configureMemory(c.memory, cfg, memoryNotice); err != nil {
 			c.restoreMemory()
 			return fmt.Errorf("hybrid configuration failed; mode not saved: %w", err)
 		}

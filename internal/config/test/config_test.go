@@ -26,6 +26,20 @@ func TestCompactMemoryBudgetDefaultsAndExplicitOverrides(t *testing.T) {
 	}
 }
 
+func TestCustomSystemRemainsAnExactOverride(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if err := config.Set("system", "CUSTOM-SYSTEM"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := config.Load()
+	if err != nil || got.System != "CUSTOM-SYSTEM" {
+		t.Fatalf("custom system changed: %q: %v", got.System, err)
+	}
+	if strings.Contains(config.Defaults.System, "Memory policy:") || strings.Contains(config.Defaults.System, "Memory lives in a local database") {
+		t.Fatal("memory policy belongs in shared runtime guidance, not replaceable defaults")
+	}
+}
+
 // Set changes one key and keeps the rest of the user's file.
 func TestSetKeepsOtherKeys(t *testing.T) {
 	home := t.TempDir()

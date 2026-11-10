@@ -200,7 +200,7 @@ func TestMemoryHybridCLI(t *testing.T) {
 		waitFor("Memory search: ok; keyword: ok", 1)
 		waitFor("semantic: ok", 1)
 		waitFor("rerank: ok", 1)
-		waitFor(" context", 1) // loaded memory key, not just candidate counts
+		waitFor("loaded: #1", 1) // stored IDs, never loaded memory keys
 		if calls.Load() < 2 {
 			t.Fatalf("reload did not enable both services: %d calls", calls.Load())
 		}

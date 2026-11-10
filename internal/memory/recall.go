@@ -83,7 +83,7 @@ func (s *Store) recall(ctx context.Context, repo, query string, seen map[int64]b
 	}
 	used := len(Header)
 	var lines []string
-	appendLine := func(id int64, key, line string) bool {
+	appendLine := func(id int64, line string) bool {
 		if used+len(line)+1 > total {
 			return false
 		}
@@ -92,14 +92,6 @@ func (s *Store) recall(ctx context.Context, repo, query string, seen map[int64]b
 		seen[id] = true
 		if trace != nil {
 			trace.LoadedIDs = append(trace.LoadedIDs, id)
-			// Keys are stored data, not trusted terminal control sequences.
-			key = strings.Map(func(r rune) rune {
-				if unicode.IsControl(r) {
-					return -1
-				}
-				return r
-			}, key)
-			trace.Loaded = append(trace.Loaded, fmt.Sprintf("#%d %s", id, key))
 		}
 		return true
 	}
@@ -111,7 +103,7 @@ func (s *Store) recall(ctx context.Context, repo, query string, seen map[int64]b
 		if n.Kind == "reference" {
 			note += fmt.Sprintf(" (load full procedure/assets with memory action=load id=%d; retrieval never executes assets)", n.ID)
 		}
-		return appendLine(n.ID, n.Key, fmt.Sprintf("[memory #%d] %s %s%s%s: %s [stated %s]", n.ID, n.Kind, n.Key, scope, note, n.Text, n.StatedAt.UTC().Format(time.RFC3339Nano)))
+		return appendLine(n.ID, fmt.Sprintf("[memory #%d] %s %s%s%s: %s [stated %s]", n.ID, n.Kind, n.Key, scope, note, n.Text, n.StatedAt.UTC().Format(time.RFC3339Nano)))
 	}
 	ids := make([]int64, 0, len(seen))
 	for id := range seen {
@@ -140,7 +132,7 @@ func (s *Store) recall(ctx context.Context, repo, query string, seen map[int64]b
 			continue
 		}
 		if cur.Forgotten {
-			appendLine(cur.ID, old.Key, fmt.Sprintf("[memory #%d] %s %s: no longer applies.", cur.ID, old.Kind, old.Key))
+			appendLine(cur.ID, fmt.Sprintf("[memory #%d] %s %s: no longer applies.", cur.ID, old.Kind, old.Key))
 		} else {
 			add(cur, " (replaces earlier note)")
 		}
@@ -169,7 +161,7 @@ func (s *Store) recall(ctx context.Context, repo, query string, seen map[int64]b
 		summaryUsed := 0
 		if !seen[sum.ID] {
 			line := fmt.Sprintf("[memory summary #%d] %s", sum.ID, sum.Text)
-			if len(sum.Text) <= b.SummaryChars && appendLine(sum.ID, sum.Key, line) {
+			if len(sum.Text) <= b.SummaryChars && appendLine(sum.ID, line) {
 				summaryUsed += len(sum.Text)
 			}
 		}

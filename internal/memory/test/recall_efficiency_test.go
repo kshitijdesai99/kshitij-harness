@@ -2,7 +2,6 @@ package test
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -52,7 +51,7 @@ func TestRecallCompactDiagnosticsAndFullDetails(t *testing.T) {
 		trace.Search.RerankScores = append(trace.Search.RerankScores, memory.RerankScore{ID: i, Score: .9})
 	}
 	for i := 0; i < 10; i++ {
-		trace.Loaded = append(trace.Loaded, fmt.Sprintf("#%d %s", i, strings.Repeat("key", 30)))
+		trace.LoadedIDs = append(trace.LoadedIDs, int64(i))
 	}
 	compact, full := trace.Summary(nil), trace.Diagnostic(nil)
 	if len(compact) > 1024 || strings.Contains(compact, "scores:") || strings.Contains(compact, "[1 2 3") || !strings.Contains(compact, "/memory explain") || !strings.Contains(full, "#100=0.9") {
