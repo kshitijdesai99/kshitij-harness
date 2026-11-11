@@ -23,13 +23,13 @@ The tool accepts notebook names, not arbitrary server commands or environment ov
 
 ![Session-owned marimo servers, retained artifacts, and shared cache](../diagrams/visual-companion.svg)
 
-[Ownership SVG](../diagrams/visual-companion.svg): process lifetime, not tmux attachment or turn lifetime, controls cleanup.
+[Ownership SVG](../diagrams/visual-companion.svg): the root manager process owns cleanup, independently of worker panes and model turns.
 
-Managed notebooks use a private `~/.kh/artifacts/visual-<random-process-instance>/` workspace for notebooks, logs, temporary files, configuration, and state. Dependencies and reusable caches live separately under `~/.kh/cache/visual/` (including uv, Python, tools, data, bytecode, and matplotlib caches). Generated files stay outside the repository; cache reuse does not transfer ownership of a server.
+Managed notebooks use a private `~/.kh/artifacts/visual-<root-process-identity-hash>/` workspace shared by the root manager and its workers for notebooks, logs, temporary files, configuration, and state. Notebook names are unique within that root session; workers can list or stop a server another worker launched. Dependencies and reusable caches live separately under `~/.kh/cache/visual/` (including uv, Python, tools, data, bytecode, and matplotlib caches). Generated files stay outside the repository; cache reuse does not transfer ownership of a server.
 
-A server belongs to the kh process that launched it, not to a tmux attachment or a model turn. Detaching tmux, cancelling a later turn, or finishing an answer leaves an already-running server alive. Cancelling startup aborts that new launch. Normal session-process shutdown stops its owned servers; explicit `stop` does the same for one server. Unrelated marimo servers—including standalone launches—are not killed. Notebooks and logs are retained after shutdown.
+A server belongs to the root kh manager process, **not the worker that launched it**. Worker completion, automatic pane closure, tmux detach, cancelling a later turn, and finishing an answer leave an already-running server alive. Cancelling startup or losing its launching worker before readiness aborts that new launch. Closing the root manager session stops all its managed servers; explicit `stop` from the root or any worker stops one. Unrelated root sessions and standalone launches are not killed. Notebooks and logs are retained after shutdown.
 
-A pipe-watching guardian also cleans up after owner `os.Exit`, SIGTERM, or SIGKILL; process tests verify server and descendant termination while a sibling session survives. This protection requires the guardian to remain alive and descendants to stay in its process group: independently killing the guardian or escaping that group is not covered.
+The guardian starts in a detached OS session, outside the worker terminal's lifetime. A private launch pipe controls startup until readiness and an atomic private manifest transfer ownership to the root. The guardian then watches the root's PID **and kernel start identity**, plus explicit stop/closed markers, and cleans up after graceful shutdown, `os.Exit`, SIGTERM, SIGHUP, or SIGKILL. Shared-state locking serializes launch/stop; cancellation bounds lock waits, and root shutdown aborts pending launches rather than waiting for dependency installation. Root identity probes that fail inconclusively are retried, not treated as proof of exit. This protection requires the guardian to remain alive and descendants to stay in its process group: independently killing the guardian or escaping that group is not covered. A resumed root process uses a new identity/workspace, not the old process's servers.
 
 ## Example and limits
 
@@ -47,12 +47,13 @@ Lifecycle management is not chat synchronization, browser navigation, or noteboo
 
 ## Evidence
 
-- [Tool interface](../internal/tools/visual.go) and [CLI wiring](../cmd/kh/main.go): native actions, shared approval policy, and process-owned manager.
-- [Runtime manager](../internal/visual/manager.go): notebook creation, fixed marimo launch, readiness, storage, and owned-server lifecycle; [guardian](../internal/visual/guardian.go): private ownership pipe and process-group cleanup.
+- [Tool interface](../internal/tools/visual.go), [CLI wiring](../cmd/kh/main.go), and [task-worker wiring](../cmd/kh/worker.go): native actions, shared approval policy, and root-process-owned manager. [Worker setup regressions](../cmd/kh/test/worker_visual_test.go) exercise structured and reusable workers through their actual tool registry and verify shared root artifacts without closing root ownership.
+- [Runtime manager](../internal/visual/manager.go): notebook creation, fixed marimo launch, readiness, storage, and owned-server lifecycle; [shared state](../internal/visual/shared.go): root-scoped manifests and explicit stop; [guardian](../internal/visual/guardian.go): launch handoff, root monitoring, and process-group cleanup.
 - [Lifecycle regression tests](../internal/visual/test/manager_test.go): fixed uv dependency and `--no-sandbox` launch arguments, owned-server isolation, retained artifacts, cancellation, failed starts, invalid paths, and guardian cleanup after owner `os.Exit`, SIGTERM, and SIGKILL using a fake server and descendant process.
+- [Root/worker regressions](../internal/visual/test/shared_test.go): worker close/exit/SIGTERM/SIGKILL/pane-style SIGHUP survival, root graceful/abrupt cleanup, cross-client list/stop, independent-session isolation, stale start-identity rejection, cancellable lock waits, and worker/root death during startup using a fake server and descendant process.
 - [Notebook source](../examples/visual-companion/companion.py): dependency metadata, slider, update rule, plots, and explanation.
 - [Notebook regression checks](../examples/visual-companion/test/check_companion.py): public `app.run()` API, default value, five regimes, trajectories, explanations, plotted series, and log-scale loss. Commands live in the [example README](../examples/visual-companion/README.md#regression-checks).
-- Historical native browser/lifecycle smoke check (before filesystem confinement was removed): the rendered, watched companion updated its plot and final x from approximately 0.0001462 to 153.4 when η changed from 0.20 to 1.10, without JavaScript errors. Explicit stop closed the listener and retained the notebook; restarting and then exiting the owning worker also closed the listener and retained the notebook. This is a manual smoke check, not automated regression coverage.
+- Historical native browser/lifecycle smoke check (before filesystem confinement was removed): the rendered, watched companion updated its plot and final x from approximately 0.0001462 to 153.4 when η changed from 0.20 to 1.10, without JavaScript errors. Explicit stop closed the listener and retained the notebook; restarting and then exiting the owning worker also closed the listener and retained the notebook. This is a manual smoke check of the superseded worker-owned lifecycle, not current ownership behavior or automated regression coverage.
 - Initial standalone browser smoke check: changing η from 0.20 to 1.10 updated both plots and the explanation without page errors; screenshots were visually inspected. This historical check is not native-runtime regression coverage.
 
 ## History
@@ -60,6 +61,14 @@ Lifecycle management is not chat synchronization, browser navigation, or noteboo
 | Date | Change | Commit |
 |---|---|---|
 | 2026-10-29 | Standalone marimo demonstration and initial documentation. | `ed67393` |
-| 2026-10-29 | Native session-owned notebook/server lifecycle; external artifacts and shared dependency cache. | This release |
+| 2026-10-29 | Native launcher-process-owned lifecycle; external artifacts and shared cache. Launcher ownership superseded below. | This release |
+| 2026-11-11 | Root manager owns worker-launched visuals; shared list/stop and detached guardian. | This release |
+
+### 2026-11-11 — Root manager owns managed visual servers
+
+- Status: implemented
+- Rationale: Supersedes the 2026-10-29 launcher-process ownership rule: completing a worker closed its manager and ownership pipe, killing the user's visual. Bind ownership to the root manager's exact PID and kernel start identity instead; detach the guardian from worker terminals while preserving root shutdown cleanup, authenticated loopback launch and explicit stop from any root-session worker.
+- Affected: internal/visual/manager.go, guardian.go and shared.go; internal/visual/test/manager_test.go and shared_test.go; cmd/kh/main.go and worker.go; cmd/kh/test/worker_visual_test.go; internal/tools/visual.go; diagrams/visual-companion.svg; this feature's ownership and evidence sections.
+- Verification / outstanding: Targeted `go test ./internal/visual/test -count=1` passed, covering worker exit and pane-style SIGHUP survival, root graceful/abrupt cleanup, pending-startup cancellation, PID/start-token fencing, same-home independent roots, shared list/stop and retained artifacts. Formatting, diff whitespace, feature links and SVG XML checked; rendered SVG pixels inspected. Independent review found startup locking/shutdown edges, now fixed and regression-tested. Coverage simulates pane closure with process-group SIGHUP; it does not automate tmux or a real marimo browser session. Independently killed guardians or group-escaping descendants remain unsupported.
 
 [Feature index](README.md)

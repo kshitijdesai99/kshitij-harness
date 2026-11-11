@@ -3,8 +3,10 @@ package visual
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -17,10 +19,15 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"kh/internal/ecosystem"
 )
 
 // Options is application wiring, never model-supplied command configuration.
 type Options struct {
+	// Owner shares servers across clients of one root process. A zero identity
+	// retains private, process-owned behavior for standalone callers.
+	Owner          ecosystem.ProcessIdentity
 	Home           string
 	Guardian       []string
 	UV             string
@@ -63,6 +70,9 @@ func privateDir(path string) error {
 }
 
 func New(options Options) (*Manager, error) {
+	if (options.Owner.PID != 0 || options.Owner.StartToken != "") && !options.Owner.Valid() {
+		return nil, fmt.Errorf("invalid visual owner identity")
+	}
 	home := options.Home
 	if home == "" {
 		var err error
@@ -86,7 +96,19 @@ func New(options Options) (*Manager, error) {
 			return nil, err
 		}
 	}
-	root, err := os.MkdirTemp(filepath.Join(base, "artifacts"), "visual-")
+	var root string
+	if options.Owner.Valid() {
+		alive, probeErr := ecosystem.ProbeProcess(options.Owner)
+		if probeErr != nil || !alive {
+			return nil, fmt.Errorf("visual owner is not live: %v", probeErr)
+		}
+		// Include the kernel start identity, not just the reusable PID.
+		key := sha256.Sum256([]byte(fmt.Sprintf("%d:%s", options.Owner.PID, options.Owner.StartToken)))
+		root = filepath.Join(base, "artifacts", fmt.Sprintf("visual-%x", key[:16]))
+		err = privateDir(root)
+	} else {
+		root, err = os.MkdirTemp(filepath.Join(base, "artifacts"), "visual-")
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +196,16 @@ func (m *Manager) Start(ctx context.Context, name string, port int) (Server, err
 	if m.closed {
 		return Server{}, fmt.Errorf("visual manager is closed")
 	}
+	if m.options.Owner.Valid() {
+		unlock, err := m.lockShared(ctx)
+		if err != nil {
+			return Server{}, err
+		}
+		defer unlock()
+		if err := m.checkOwner(); err != nil {
+			return Server{}, err
+		}
+	}
 	if err := ctx.Err(); err != nil {
 		return Server{}, err
 	}
@@ -190,6 +222,13 @@ func (m *Manager) Start(ctx context.Context, name string, port int) (Server, err
 	}
 	if port != 0 && (port < 1024 || port > 65535) {
 		return Server{}, fmt.Errorf("port must be 1024-65535, or omitted")
+	}
+	if m.options.Owner.Valid() {
+		if old, err := m.readShared(name); err == nil && sharedRunning(old) {
+			return old.Server, nil
+		} else if err != nil && !os.IsNotExist(err) {
+			return Server{}, err
+		}
 	}
 	if old := m.servers[name]; old != nil {
 		select {
@@ -229,8 +268,19 @@ func (m *Manager) Start(ctx context.Context, name string, port int) (Server, err
 		return Server{}, err
 	}
 	defer ownerRead.Close()
+	spec := launch{Argv: argv, Dir: m.root, Env: m.environment(), Owner: m.options.Owner}
+	if m.options.Owner.Valid() {
+		run, err := os.MkdirTemp(filepath.Join(m.root, "state"), "run-")
+		if err != nil {
+			ownerWrite.Close()
+			return Server{}, err
+		}
+		spec.Stop = filepath.Join(run, "stop")
+	}
 	cmd := exec.Command(m.options.Guardian[0], m.options.Guardian[1:]...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// A separate session, not merely a group, removes the worker pane's
+	// controlling-terminal lifetime from the server and guardian.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.ExtraFiles = []*os.File{ownerRead}
 	cmd.Stdout, cmd.Stderr = log, log
 	if err := cmd.Start(); err != nil {
@@ -242,6 +292,9 @@ func (m *Manager) Start(ctx context.Context, name string, port int) (Server, err
 	go func() { cmd.Wait(); close(item.done) }()
 	fail := func(cause error) (Server, error) {
 		ownerWrite.Close()
+		if spec.Stop != "" {
+			_ = os.WriteFile(spec.Stop, nil, 0600)
+		}
 		<-item.done
 		data, _ := os.ReadFile(server.Log)
 		if len(data) > 4096 {
@@ -249,7 +302,7 @@ func (m *Manager) Start(ctx context.Context, name string, port int) (Server, err
 		}
 		return Server{}, fmt.Errorf("visual start failed (%w); log %s: %s", cause, server.Log, data)
 	}
-	if err := json.NewEncoder(ownerWrite).Encode(launch{Argv: argv, Dir: m.root, Env: m.environment()}); err != nil {
+	if err := json.NewEncoder(ownerWrite).Encode(spec); err != nil {
 		return fail(err)
 	}
 	// Guardian exit and authenticated HTTP response cover launch failure and
@@ -275,7 +328,24 @@ func (m *Manager) Start(ctx context.Context, name string, port int) (Server, err
 					if err := ctx.Err(); err != nil {
 						return fail(err)
 					}
-					m.servers[name] = item
+					if m.options.Owner.Valid() {
+						if err := m.checkOwner(); err != nil {
+							return fail(err)
+						}
+						identity, err := ecosystem.ProcessForPID(cmd.Process.Pid)
+						if err != nil {
+							return fail(err)
+						}
+						if err := m.writeShared(sharedServer{Server: server, Guardian: identity, Stop: spec.Stop}); err != nil {
+							return fail(err)
+						}
+						if err := json.NewEncoder(ownerWrite).Encode(true); err != nil {
+							return fail(err)
+						}
+						ownerWrite.Close()
+					} else {
+						m.servers[name] = item
+					}
 					return server, nil
 				}
 			}
@@ -285,6 +355,14 @@ func (m *Manager) Start(ctx context.Context, name string, port int) (Server, err
 func (m *Manager) List() []Server {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.options.Owner.Valid() {
+		unlock, err := m.lockShared(context.Background())
+		if err != nil {
+			return nil
+		}
+		defer unlock()
+		return m.listShared()
+	}
 	result := []Server{}
 	for _, item := range m.servers {
 		server := item.server
@@ -304,6 +382,14 @@ func (m *Manager) Stop(name string) error {
 	if !validName.MatchString(name) {
 		return fmt.Errorf("invalid visual name")
 	}
+	if m.options.Owner.Valid() {
+		unlock, err := m.lockShared(context.Background())
+		if err != nil {
+			return err
+		}
+		defer unlock()
+		return m.stopShared(name)
+	}
 	item := m.servers[name]
 	if item == nil {
 		return fmt.Errorf("no owned server named %q", name)
@@ -314,9 +400,43 @@ func (m *Manager) Stop(name string) error {
 	return nil
 }
 func (m *Manager) Close() error {
+	if m.options.Owner.Valid() {
+		self, err := ecosystem.CurrentProcess()
+		if err != nil {
+			return err
+		}
+		if self == m.options.Owner {
+			// Publish before waiting for either lock: pending startups must
+			// abort so graceful root shutdown cannot wait on dependency installs.
+			if err := os.WriteFile(filepath.Join(m.root, "state", "closed"), nil, 0600); err != nil {
+				return err
+			}
+		}
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.closed = true
+	if m.options.Owner.Valid() {
+		self, err := ecosystem.CurrentProcess()
+		if err != nil {
+			return err
+		}
+		// A worker only closes its client. The root owns shutdown, including
+		// servers launched by workers which have already exited.
+		if self != m.options.Owner {
+			return nil
+		}
+		unlock, err := m.lockShared(context.Background())
+		if err != nil {
+			return err
+		}
+		defer unlock()
+		var result error
+		for _, server := range m.listShared() {
+			result = errors.Join(result, m.stopShared(server.Name))
+		}
+		return result
+	}
 	for name, item := range m.servers {
 		item.pipe.Close()
 		<-item.done

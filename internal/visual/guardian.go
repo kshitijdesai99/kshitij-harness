@@ -1,4 +1,4 @@
-// Package visual owns process-scoped marimo companions and their artifacts.
+// Package visual owns session-root marimo companions and their artifacts.
 package visual
 
 import (
@@ -8,20 +8,25 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
+
+	"kh/internal/ecosystem"
 )
 
 // GuardianArgument is an internal entry point, not a model-callable command.
 const GuardianArgument = "__kh_visual_guardian"
 
 type launch struct {
-	Argv []string
-	Dir  string
-	Env  []string
+	Argv  []string
+	Dir   string
+	Env   []string
+	Owner ecosystem.ProcessIdentity
+	Stop  string
 }
 
-// GuardianMain runs only in a fresh process group with private inherited pipes.
+// GuardianMain runs in a detached session with a private launch pipe.
 // The guardian never signals a saved PID: it kills its own still-live group.
 // Servers must not daemonize or escape that group.
 func GuardianMain() error {
@@ -37,7 +42,8 @@ func GuardianMain() error {
 		return fmt.Errorf("invalid visual owner pipe")
 	}
 	var spec launch
-	if err := json.NewDecoder(owner).Decode(&spec); err != nil {
+	decoder := json.NewDecoder(owner)
+	if err := decoder.Decode(&spec); err != nil {
 		return err
 	}
 	if len(spec.Argv) == 0 {
@@ -53,11 +59,44 @@ func GuardianMain() error {
 		return err
 	}
 	eof := make(chan struct{})
-	go func() { io.Copy(io.Discard, owner); close(eof) }()
+	go func() {
+		if !spec.Owner.Valid() {
+			io.Copy(io.Discard, owner)
+		} else {
+			// Transfer only after startup succeeds and a discoverable manifest
+			// exists. A worker dying during startup must not leak a server.
+			var committed bool
+			if err := decoder.Decode(&committed); err != nil || !committed {
+				close(eof)
+				return
+			}
+			// The launcher's pipe is no longer ownership after commit.
+			owner.Close()
+			return
+		}
+		close(eof)
+	}()
+	var sessionDone chan struct{}
+	if spec.Owner.Valid() {
+		sessionDone = make(chan struct{})
+		go func() {
+			defer close(sessionDone)
+			for {
+				alive, err := ecosystem.ProbeProcess(spec.Owner)
+				_, stopErr := os.Stat(spec.Stop)
+				_, closeErr := os.Stat(filepath.Join(spec.Dir, "state", "closed"))
+				if (err == nil && !alive) || stopErr == nil || closeErr == nil {
+					return
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		}()
+	}
 	done := make(chan struct{})
 	go func() { cmd.Wait(); close(done) }()
 	select {
 	case <-eof:
+	case <-sessionDone:
 	case <-done:
 	case <-signals:
 	}
@@ -73,5 +112,10 @@ func GuardianMain() error {
 	}
 	// Self remains group leader until this atomic signal. PID/group reuse cannot
 	// redirect cleanup at unrelated sessions, even after the server has exited.
+	if spec.Stop != "" {
+		// Orphaned guardians may briefly be zombies on systems whose PID 1
+		// reaps slowly. Publish completion without mistaking that for liveness.
+		_ = os.WriteFile(spec.Stop+".done", nil, 0600)
+	}
 	return syscall.Kill(0, syscall.SIGKILL)
 }

@@ -271,7 +271,9 @@ func main() {
 	eco.stopTitles = eco.startLiveDescendants(ctx, ui.Activity)
 	defer eco.stopTitles()
 	policy := tools.NewApprovalPolicy(cfg.Auto)
-	visualManager, err := visual.New(visual.Options{})
+	visualRoot, err := eco.store.Get(ctx, eco.self.EcosystemID)
+	exit(err)
+	visualManager, err := visual.New(visual.Options{Owner: visualRoot.Process})
 	exit(err)
 	defer visualManager.Close()
 	ts := []tools.Tool{tools.BashWithPolicy(cfg, console, policy), tools.EditWithOutput(ui.Action), tools.Memory(db, repoScope, owner), tools.ViewImage(ui.Action), agentTool(cfg, ui.Action, policy), tools.Visual(visualManager, cfg, console, policy)}

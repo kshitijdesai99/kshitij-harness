@@ -82,7 +82,7 @@ Shared guides: [Architecture](architecture.md) · [Development](development.md) 
 | [Terminal feedback](terminal-feedback.md) | 2026-10-01 | Activity indicators, commentary, peer colors, URLs, live descendant counts and roles |
 | [Turn metrics](turn-metrics.md) | 2026-09-28 | Thinking/context metrics, corrected TTFT and assignment phase timings |
 | [Images](images.md) | 2026-09-30 | Encoding cleanup and local image-viewing tool |
-| [Visual companion](visual-companion.md) | 2026-10-29 | Native session-owned marimo lifecycle, external artifacts, shared cache |
+| [Visual companion](visual-companion.md) | 2026-10-29 | Root-session marimo ownership survives worker exit; external artifacts and shared cache |
 
 ## Reliability and updates
 

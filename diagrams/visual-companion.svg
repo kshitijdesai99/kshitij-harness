@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1120" height="620" viewBox="0 0 1120 620" role="img" aria-labelledby="title description" font-family="Arial, Helvetica, sans-serif">
   <title id="title">Visual companion ownership</title>
-  <desc id="description">A kh process starts and stops only its owned marimo servers. Artifacts remain after shutdown, while dependency caches are shared. Tmux detach and turn cancellation do not end the process. Manual servers are unmanaged.</desc>
+  <desc id="description">The root manager process owns marimo servers shared by its workers. Worker exit and pane closure do not stop servers; root exit does. Artifacts remain after shutdown, while dependency caches are shared. Manual servers are unmanaged.</desc>
   <rect width="1120" height="620" fill="#f8fafc"/>
   <text x="50" y="58" font-size="32" font-weight="700" fill="#0f172a">Visual companion ownership</text>
   <text x="50" y="94" font-size="19" fill="#475569">Blue: owned lifecycle · Purple dashed: shared cache reuse</text>
@@ -17,7 +17,7 @@
   <polygon points="860,290 853,303 867,303" fill="#8b5cf6"/>
   <g font-size="18">
     <text x="436" y="207" fill="#2563eb">Start / stop</text>
-    <text x="436" y="261" fill="#2563eb">Stop on process exit</text>
+    <text x="436" y="261" fill="#2563eb">Stop on root exit</text>
     <text x="258" y="350" fill="#2563eb">Create; retain on exit</text>
     <text x="879" y="350" fill="#7c3aed">Reuse</text>
   </g>
@@ -29,17 +29,17 @@
   </g>
   <rect x="700" y="400" width="320" height="120" rx="14" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5"/>
   <g font-size="23" font-weight="700" fill="#0f172a">
-    <text x="102" y="217">kh session process</text>
+    <text x="102" y="217">Root manager process</text>
     <text x="722" y="217">Owned marimo server</text>
     <text x="102" y="447">Private artifacts</text>
     <text x="722" y="447">Shared cache</text>
   </g>
   <g font-size="18" fill="#334155">
-    <text x="102" y="253">visual create / start / list / stop</text>
+    <text x="102" y="253">Workers share create / list / stop</text>
     <text x="722" y="253">Loopback URL; open manually</text>
     <text x="102" y="483">Notebooks, logs, runtime files</text>
     <text x="722" y="483">Dependencies, reusable data</text>
   </g>
-  <text x="50" y="566" font-size="19" fill="#475569">Tmux detach / turn cancel ≠ process exit. Manual shell launches are unmanaged.</text>
+  <text x="50" y="566" font-size="19" fill="#475569">Worker exit / pane close / turn cancel: server stays alive. Root manager exit: stop.</text>
   <text x="50" y="595" font-size="19" fill="#475569">Only owned servers stop; generated artifacts stay outside the repository.</text>
 </svg>

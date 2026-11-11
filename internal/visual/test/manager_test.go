@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"kh/internal/ecosystem"
 	"kh/internal/visual"
 )
 
@@ -65,17 +66,29 @@ func TestVisualProcess(t *testing.T) {
 			os.Exit(3)
 		}
 		os.Exit(0)
+	case "root":
+		runSharedRoot()
 	case "owner":
-		manager, err := visual.New(visual.Options{Home: os.Getenv("KH_VISUAL_TEST_HOME"), UV: os.Getenv("KH_VISUAL_TEST_UV"), Guardian: guardianCommand(), StartupTimeout: 5 * time.Second})
+		var owner ecosystem.ProcessIdentity
+		if encoded := os.Getenv("KH_VISUAL_TEST_OWNER"); encoded != "" {
+			if err := json.Unmarshal([]byte(encoded), &owner); err != nil {
+				os.Exit(8)
+			}
+		}
+		manager, err := visual.New(visual.Options{Owner: owner, Home: os.Getenv("KH_VISUAL_TEST_HOME"), UV: os.Getenv("KH_VISUAL_TEST_UV"), Guardian: guardianCommand(), StartupTimeout: 5 * time.Second})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(4)
 		}
-		if _, err = manager.Create("owned"); err != nil {
+		name := os.Getenv("KH_VISUAL_TEST_NOTEBOOK")
+		if name == "" {
+			name = "owned"
+		}
+		if _, err = manager.Create(name); err != nil {
 			os.Exit(5)
 		}
 		os.Setenv("KH_VISUAL_TEST_ROLE", "guardian")
-		server, err := manager.Start(context.Background(), "owned", 0)
+		server, err := manager.Start(context.Background(), name, 0)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(6)
@@ -85,6 +98,9 @@ func TestVisualProcess(t *testing.T) {
 		for {
 			if os.Getenv("KH_VISUAL_TEST_EXIT") == "1" {
 				if _, err := os.Stat(os.Getenv("KH_VISUAL_TEST_RESULT") + ".exit"); err == nil {
+					if os.Getenv("KH_VISUAL_TEST_CLOSE") == "1" {
+						_ = manager.Close()
+					}
 					os.Exit(17)
 				}
 			}

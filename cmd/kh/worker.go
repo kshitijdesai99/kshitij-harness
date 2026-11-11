@@ -211,7 +211,11 @@ func runWorkerChat(ctx context.Context, cfg, fromFile config.Config, h delegatio
 	repoScope, owner := memory.RepoScope(h.Directory), memory.Owner(h.Directory)
 	active := startMemory(ctx, db, cfg, memoryNotice)
 	policy := tools.NewApprovalPolicy(cfg.Auto)
-	visualManager, err := visual.New(visual.Options{})
+	visualRoot, err := e.store.Get(ctx, e.self.EcosystemID)
+	if err != nil {
+		return "", err
+	}
+	visualManager, err := visual.New(visual.Options{Owner: visualRoot.Process})
 	if err != nil {
 		return "", err
 	}
