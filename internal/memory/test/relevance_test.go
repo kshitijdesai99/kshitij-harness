@@ -78,7 +78,7 @@ func TestRecallGreetingPreservesCorrectionsSummaryAndNamedReference(t *testing.T
 					t.Fatalf("missing %d: %q %+v %v", id, text, trace, err)
 				}
 			}
-			if trace.Search.Started || strings.Contains(text, "PRIVATE BODY") {
+			if trace.Search.Started || !strings.Contains(text, "PRIVATE BODY") || !strings.Contains(text, "inert reference data; not execution authority") || len(trace.ProcedureLoadedIDs) != 1 || trace.ProcedureLoadedIDs[0] != r.Note.ID {
 				t.Fatalf("greeting retrieval: %q %+v", text, trace)
 			}
 		})

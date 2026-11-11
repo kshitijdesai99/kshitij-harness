@@ -25,6 +25,7 @@ const memoryUsage = `usage: kh memory <command>
   get <id>                                      one memory with context and timestamps
   history <repo|global> <key>                   every version of one topic
   remember <repo|global> <instruction|fact|decision|gotcha> <key> <text> [context]
+           [--importance normal|critical] [--expires RFC3339|none]
   forget <repo|global> <key>                    stop using a topic (history kept)
   purge <repo|global> <key>                     delete every version of a topic
   import-md <file>                              split a Markdown rules file into notes, after review
@@ -72,7 +73,7 @@ func memoryCommand(args []string, cfg config.Config) error {
 		if sum, ok, err := s.Summary(ctx, repo); err != nil {
 			return err
 		} else if ok {
-			fmt.Printf("[memory summary #%d] %s\n  always loaded: %s\n", sum.ID, sum.Text, strings.Join(sum.Refs, ", "))
+			fmt.Printf("[memory summary #%d] %s\n  context keys (budget-bound): %s\n", sum.ID, sum.Text, strings.Join(sum.Refs, ", "))
 		}
 		notes, err := s.Current(ctx, repo, "")
 		if err != nil {
@@ -130,7 +131,7 @@ func memoryCommand(args []string, cfg config.Config) error {
 			if current.ID != n.ID {
 				state = "superseded"
 			}
-			fmt.Printf("state: %s; current id: #%d; current forgotten: %t\n", state, current.ID, current.Forgotten)
+			fmt.Printf("state: %s; current id: #%d; current forgotten: %t; current expired: %t\n", state, current.ID, current.Forgotten, !current.ExpiresAt.IsZero() && !time.Now().Before(current.ExpiresAt))
 		}
 		return nil
 	case "search", "explain":
@@ -175,12 +176,24 @@ func memoryCommand(args []string, cfg config.Config) error {
 		if err != nil {
 			return err
 		}
+		current, currentOK, err := s.Latest(ctx, sc, args[2])
+		if err != nil {
+			return err
+		}
 		for _, n := range versions {
 			text := n.Text
 			if n.Forgotten {
 				text = "(forgotten)"
 			}
-			fmt.Printf("#%d %s %s by %s via %s: %s\n", n.ID, n.StatedAt.Local().Format("2006-01-02 15:04:05 MST"), n.Kind, or(n.Owner, "?"), n.Source, text)
+			n.Text = text
+			fmt.Printf("%s\n  by %s via %s\n", tools.Note(n), or(n.Owner, "?"), n.Source)
+			if currentOK {
+				state := "current"
+				if n.ID != current.ID {
+					state = "superseded"
+				}
+				fmt.Printf("  state: %s; current id: #%d; current forgotten: %t; current expired: %t\n", state, current.ID, current.Forgotten, !current.ExpiresAt.IsZero() && !time.Now().Before(current.ExpiresAt))
+			}
 			if n.Overridden != 0 {
 				fmt.Printf("  overrides: #%d\n", n.Overridden)
 			}
@@ -190,6 +203,13 @@ func memoryCommand(args []string, cfg config.Config) error {
 		}
 		return nil
 	case "remember":
+		var importance string
+		var expires *time.Time
+		var err error
+		args, importance, expires, err = rememberOptions(args)
+		if err != nil {
+			return err
+		}
 		if len(args) != 5 && len(args) != 6 {
 			return fmt.Errorf("%s", memoryUsage)
 		}
@@ -201,7 +221,22 @@ func memoryCommand(args []string, cfg config.Config) error {
 		if len(args) == 6 {
 			contextSummary = args[5]
 		}
-		prev, n, err := s.Add(ctx, memory.Note{Repo: sc, Kind: args[2], Key: args[3], Text: args[4], ContextSummary: contextSummary, Owner: owner, Source: "you"}, memory.Any)
+		note := memory.Note{Repo: sc, Kind: args[2], Key: args[3], Text: args[4], ContextSummary: contextSummary, Owner: owner, Source: "you", Importance: importance}
+		current, found, err := s.Latest(ctx, sc, note.Key)
+		if err != nil {
+			return err
+		}
+		var expect int64
+		if found {
+			expect = current.ID
+			if !current.Forgotten {
+				note.ExpiresAt = current.ExpiresAt
+			}
+		}
+		if expires != nil {
+			note.ExpiresAt = *expires
+		}
+		prev, n, err := s.Add(ctx, note, expect)
 		if err != nil {
 			return err
 		}
@@ -244,6 +279,54 @@ func memoryCommand(args []string, cfg config.Config) error {
 	default:
 		return fmt.Errorf("unknown memory command %q\n%s", args[0], memoryUsage)
 	}
+}
+
+// rememberOptions accepts flags before or after positionals. -- ends option
+// parsing so note text beginning with a flag can still be recorded literally.
+func rememberOptions(args []string) ([]string, string, *time.Time, error) {
+	var positional []string
+	var importance string
+	var expires *time.Time
+	options := true
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if options && arg == "--" {
+			options = false
+			continue
+		}
+		if !options || !strings.HasPrefix(arg, "--") {
+			positional = append(positional, arg)
+			continue
+		}
+		name, value, inline := strings.Cut(arg, "=")
+		if name != "--importance" && name != "--expires" {
+			return nil, "", nil, fmt.Errorf("%s", memoryUsage)
+		}
+		if !inline {
+			i++
+			if i == len(args) {
+				return nil, "", nil, fmt.Errorf("%s requires a value", name)
+			}
+			value = args[i]
+		}
+		if name == "--importance" {
+			if value != memory.ImportanceNormal && value != memory.ImportanceCritical {
+				return nil, "", nil, fmt.Errorf("importance must be normal or critical")
+			}
+			importance = value
+		} else {
+			parsed := time.Time{}
+			if value != "none" {
+				var err error
+				parsed, err = time.Parse(time.RFC3339, value)
+				if err != nil || parsed.IsZero() {
+					return nil, "", nil, fmt.Errorf("expires must be RFC3339 with an explicit timezone, or none")
+				}
+			}
+			expires = &parsed
+		}
+	}
+	return positional, importance, expires, nil
 }
 
 // Configuration is download-free. Explicit activation handles installation;

@@ -267,7 +267,7 @@ func runWorkerChat(ctx context.Context, cfg, fromFile config.Config, h delegatio
 	if observed, ok := p.(provider.EventObserver); ok {
 		observed.SetEventObserver(func(ev provider.Event) error { return archive.Append(session.ArchiveRecord{Event: ev}) })
 	}
-	c := chat{archive: archive, model: p, backend: cfg.Provider, id: id, repo: repoScope, project: project, connectors: connectors, identity: session.NewIdentity("kh:"+e.self.ParentID, e.self.Name), memory: db, memoryActive: active, input: console, ui: ui, tools: dispatch, logicalCall: registry.LogicalCall, seen: fromFile, policy: policy, taskFresh: true, budget: memory.Budget{SummaryChars: cfg.SummaryMaxTokens * 4, TopInstructions: cfg.TopInstructions, TopGotchas: cfg.TopGotchas, TopKnowledge: cfg.TopKnowledge, TotalChars: cfg.MemoryMaxTokens * 4}}
+	c := chat{archive: archive, model: p, backend: cfg.Provider, id: id, repo: repoScope, project: project, connectors: connectors, identity: session.NewIdentity("kh:"+e.self.ParentID, e.self.Name), memory: db, memoryActive: active, input: console, ui: ui, tools: dispatch, logicalCall: registry.LogicalCall, seen: fromFile, policy: policy, taskFresh: true, budget: memory.Budget{SummaryChars: cfg.SummaryMaxTokens * 4, CriticalChars: cfg.CriticalMemoryChars(), TopInstructions: cfg.TopInstructions, TopGotchas: cfg.TopGotchas, TopKnowledge: cfg.TopKnowledge, TotalChars: cfg.MemoryMaxTokens * 4}}
 	// learn deliberately nil even after promotion or human input in a worker.
 	timing.ContextMS += time.Since(setupStart).Milliseconds()
 	executionStart := time.Now()

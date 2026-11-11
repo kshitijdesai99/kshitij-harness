@@ -41,7 +41,7 @@ func TestRecallDiagnostics(t *testing.T) {
 			}
 			// Fully seen requested knowledge must skip expensive search altogether.
 			again, next, err := s.RecallWithTrace(context.Background(), repo, "car", memory.Seen(state(t, text)), b)
-			if err != nil || again != "" || len(next.LoadedIDs) != 0 || next.Search.Started || !strings.Contains(next.Search.SkipReason, "already in chat") {
+			if err != nil || again != "" || len(next.LoadedIDs) != 0 || next.Search.Started || !strings.Contains(next.Search.SkipReason, "excluded from this search") {
 				t.Fatalf("seen: %q %+v %v", again, next, err)
 			}
 			// Selected candidates that do not fit must not be reported as loaded.

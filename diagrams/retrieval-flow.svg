@@ -1,52 +1,69 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title description" font-family="Arial, Helvetica, sans-serif">
-  <title id="title">Recall before answering</title>
-  <desc id="description">Required recall precedes the optional topic branch. Topic skipping does not skip required recall. Selection is bounded and traced.</desc>
-  <rect width="1400" height="900" fill="#f8fafc"/>
-  <text x="60" y="60" font-size="32" font-weight="700" fill="#0f172a">Recall before answering</text>
-  <text x="60" y="100" font-size="19" fill="#475569">Blue arrows: recall flow. Dashed arrows: skip topic search. Green arrow: diagnostic output.</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1000" viewBox="0 0 1400 1000" role="img" aria-labelledby="title description" font-family="Arial, Helvetica, sans-serif">
+  <title id="title">Bounded recall before answering</title>
+  <desc id="description">Fixed harness core remains separate from memory. Active current repo and global critical notes enter as whole blocks within a reserve of the same total budget, before topic relevance. Overflow is visible. A background synopsis is used only whole and source-fingerprint fresh. Optional keyword, semantic and rerank retrieval uses the remaining budget. Only trusted host-origin memory receipts suppress repeated blocks; compaction permits missing blocks to reload.</desc>
+  <rect width="1400" height="1000" fill="#f8fafc"/>
+  <text x="60" y="60" font-size="32" font-weight="700" fill="#0f172a">Bounded recall before answering</text>
+  <text x="60" y="100" font-size="19" fill="#475569">Blue: answer-time recall. Dashed: skip topic search. Green: diagnostics. Gray: separate fixed policy.</text>
 
-  <line x1="310" y1="235" x2="378" y2="235" stroke="#2563eb" stroke-width="3"/>
-  <polygon points="390,235 377,228 377,242" fill="#2563eb"/>
-  <line x1="790" y1="235" x2="878" y2="235" stroke="#2563eb" stroke-width="3"/>
-  <polygon points="890,235 877,228 877,242" fill="#2563eb"/>
-  <line x1="1110" y1="300" x2="1110" y2="378" stroke="#2563eb" stroke-width="3"/>
+  <line x1="310" y1="245" x2="378" y2="245" stroke="#2563eb" stroke-width="3"/>
+  <polygon points="390,245 377,238 377,252" fill="#2563eb"/>
+  <line x1="790" y1="245" x2="878" y2="245" stroke="#2563eb" stroke-width="3"/>
+  <polygon points="890,245 877,238 877,252" fill="#2563eb"/>
+  <line x1="1110" y1="320" x2="1110" y2="378" stroke="#2563eb" stroke-width="3"/>
   <polygon points="1110,390 1103,377 1117,377" fill="#2563eb"/>
-  <text x="1130" y="350" font-size="18" fill="#2563eb">search needed</text>
-  <polyline points="890,270 830,270 830,575 802,575" stroke="#2563eb" stroke-width="3" stroke-dasharray="8 6" fill="none"/>
-  <polygon points="790,575 803,568 803,582" fill="#2563eb"/>
-  <rect x="798" y="320" width="65" height="28" fill="#f8fafc"/>
-  <text x="808" y="341" font-size="18" fill="#2563eb">skip</text>
-  <polyline points="1110,530 1110,635 802,635" stroke="#2563eb" stroke-width="3" fill="none"/>
-  <polygon points="790,635 803,628 803,642" fill="#2563eb"/>
-  <line x1="390" y1="610" x2="322" y2="610" stroke="#2563eb" stroke-width="3"/>
-  <polygon points="310,610 323,603 323,617" fill="#2563eb"/>
-  <line x1="590" y1="675" x2="590" y2="738" stroke="#059669" stroke-width="3"/>
-  <polygon points="590,750 583,737 597,737" fill="#059669"/>
+  <line x1="1110" y1="520" x2="1110" y2="613" stroke="#2563eb" stroke-width="3"/>
+  <polygon points="1110,625 1103,612 1117,612" fill="#2563eb"/>
+  <text x="1130" y="578" font-size="18" fill="#2563eb">search needed</text>
+  <polyline points="890,455 840,455 840,700 802,700" stroke="#2563eb" stroke-width="3" stroke-dasharray="8 6" fill="none"/>
+  <polygon points="790,700 803,693 803,707" fill="#2563eb"/>
+  <rect x="811" y="549" width="58" height="30" fill="#f8fafc"/>
+  <text x="822" y="571" font-size="18" fill="#2563eb">skip</text>
+  <polyline points="1110,775 1110,800 802,800" stroke="#2563eb" stroke-width="3" fill="none"/>
+  <polygon points="790,800 803,793 803,807" fill="#2563eb"/>
+  <polyline points="310,465 345,465 345,720 378,720" stroke="#64748b" stroke-width="3" fill="none"/>
+  <polygon points="390,720 377,713 377,727" fill="#64748b"/>
+  <line x1="590" y1="830" x2="590" y2="878" stroke="#059669" stroke-width="3"/>
+  <polygon points="590,890 583,877 597,877" fill="#059669"/>
 
-  <rect x="60" y="170" width="250" height="130" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
-  <text x="80" y="213" font-size="22" font-weight="700" fill="#0f172a">Actual message</text>
-  <text x="80" y="248" font-size="18" fill="#334155">Initial, steering, queued</text>
-  <text x="80" y="277" font-size="18" fill="#334155">Before provider step</text>
-  <rect x="390" y="170" width="400" height="130" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
-  <text x="410" y="213" font-size="22" font-weight="700" fill="#0f172a">Required recall first</text>
-  <text x="410" y="248" font-size="18" fill="#334155">Corrections · named-reference hints</text>
-  <text x="410" y="277" font-size="18" fill="#334155">Summary + required notes; within budget</text>
-  <rect x="890" y="170" width="440" height="130" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
-  <text x="910" y="213" font-size="22" font-weight="700" fill="#0f172a">Topic search needed?</text>
-  <text x="910" y="248" font-size="18" fill="#334155">Skip social-only queries, exhausted budget,</text>
-  <text x="910" y="277" font-size="18" fill="#334155">or no unseen notes in requested kinds</text>
-  <rect x="890" y="390" width="440" height="140" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
-  <text x="910" y="429" font-size="22" font-weight="700" fill="#0f172a">Keywords · optional hybrid</text>
-  <text x="910" y="461" font-size="18" fill="#334155">Model-stage failure: keyword fallback</text>
-  <text x="910" y="493" font-size="18" fill="#334155">Zero relevant: no topic notes, not fallback</text>
-  <rect x="390" y="545" width="400" height="130" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
-  <text x="410" y="588" font-size="22" font-weight="700" fill="#0f172a">Bounded, new context</text>
-  <text x="410" y="623" font-size="18" fill="#334155">Seen IDs + total budget constrain loading</text>
-  <text x="410" y="652" font-size="18" fill="#334155">Only injected notes become seen</text>
-  <rect x="60" y="545" width="250" height="130" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
-  <text x="80" y="595" font-size="22" font-weight="700" fill="#0f172a">Provider context</text>
-  <text x="80" y="632" font-size="18" fill="#334155">May add nothing</text>
-  <rect x="390" y="750" width="400" height="90" rx="14" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
-  <text x="410" y="787" font-size="22" font-weight="700" fill="#0f172a">Recall trace</text>
-  <text x="410" y="818" font-size="18" fill="#334155">Candidates, skips, fallback, loaded IDs</text>
+  <rect x="60" y="170" width="250" height="150" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="80" y="215" font-size="22" font-weight="700" fill="#0f172a">Actual message</text>
+  <text x="80" y="253" font-size="18" fill="#334155">Initial · steering · queued</text>
+  <text x="80" y="286" font-size="18" fill="#334155">Correct / retract first</text>
+
+  <rect x="390" y="170" width="400" height="150" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="410" y="210" font-size="22" font-weight="700" fill="#0f172a">Stable critical pack first</text>
+  <text x="410" y="244" font-size="18" fill="#334155">Active current repo/global notes</text>
+  <text x="410" y="274" font-size="18" fill="#334155">Whole notes · same-total reserve</text>
+  <text x="410" y="304" font-size="18" fill="#334155">Overflow reported</text>
+
+  <rect x="890" y="170" width="440" height="150" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="910" y="210" font-size="22" font-weight="700" fill="#0f172a">Fresh synopsis</text>
+  <text x="910" y="244" font-size="18" fill="#334155">Background-built · whole-source fingerprint</text>
+  <text x="910" y="274" font-size="18" fill="#334155">Whole nonauthoritative gist, if it fits</text>
+  <text x="910" y="304" font-size="18" fill="#334155">Stale or absent: omit</text>
+
+  <rect x="60" y="400" width="250" height="130" rx="14" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="80" y="442" font-size="22" font-weight="700" fill="#0f172a">Fixed harness core</text>
+  <text x="80" y="479" font-size="18" fill="#334155">Runtime policy</text>
+  <text x="80" y="511" font-size="18" fill="#334155">Not the memory budget</text>
+
+  <rect x="890" y="390" width="440" height="130" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="910" y="432" font-size="22" font-weight="700" fill="#0f172a">Topic relevance gate</text>
+  <text x="910" y="469" font-size="18" fill="#334155">Skip social-only, exhausted budget,</text>
+  <text x="910" y="501" font-size="18" fill="#334155">or no unseen candidates</text>
+
+  <rect x="890" y="625" width="440" height="150" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="910" y="667" font-size="22" font-weight="700" fill="#0f172a">Keyword · semantic · rerank</text>
+  <text x="910" y="704" font-size="18" fill="#334155">Optional models; failure: keyword fallback</text>
+  <text x="910" y="737" font-size="18" fill="#334155">Zero relevant: no topic notes</text>
+
+  <rect x="390" y="660" width="400" height="170" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="410" y="702" font-size="22" font-weight="700" fill="#0f172a">Provider context</text>
+  <text x="410" y="739" font-size="18" fill="#334155">Memory: one shared total budget</text>
+  <text x="410" y="772" font-size="18" fill="#334155">Trusted host-seen IDs deduplicate</text>
+  <text x="410" y="805" font-size="18" fill="#334155">Missing after compaction: reload</text>
+
+  <rect x="390" y="890" width="400" height="80" rx="14" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+  <text x="410" y="923" font-size="22" font-weight="700" fill="#0f172a">Recall trace</text>
+  <text x="410" y="953" font-size="18" fill="#334155">Loaded · skipped · overflow · fallback</text>
 </svg>

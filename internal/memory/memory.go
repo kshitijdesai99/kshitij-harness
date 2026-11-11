@@ -50,6 +50,9 @@ type Note struct {
 	ContextSummary string    // discussion context explaining when and why this was stated
 	StatedAt       time.Time // time of the original statement, independent of insertion
 	Overridden     int64     // previous version of this topic, or zero
+	Importance     string    // empty only for legacy unclassified rows; normal or critical
+	ExpiresAt      time.Time // zero means no expiry; expired versions remain in history
+	SourceRevision string    // summary only: fingerprint of its canonical source snapshot
 }
 
 type Store struct {
@@ -123,6 +126,10 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("memory: migrate provenance: %w", err)
 	}
+	if err = s.migrateHierarchy(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("memory: migrate hierarchy: %w", err)
+	}
 	if err = s.migrateReferenceOrigin(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("memory: migrate reference origin: %w", err)
@@ -146,15 +153,15 @@ const latest = `WITH latest AS (
         SELECT m.id FROM notes m WHERE m.repo = n.repo AND m.key = n.key
         ORDER BY m.created_at DESC, m.id DESC LIMIT 1))`
 
-const columns = `id, repo, kind, key, text, refs, owner, source, forgotten, created_at, context_summary, stated_at, overridden`
+const columns = `id, repo, kind, key, text, refs, owner, source, forgotten, created_at, context_summary, stated_at, overridden, importance, expires_at, source_revision`
 
 func scan(rows *sql.Rows) ([]Note, error) {
 	defer rows.Close()
 	var out []Note
 	for rows.Next() {
 		var n Note
-		var refs, at, stated string
-		if err := rows.Scan(&n.ID, &n.Repo, &n.Kind, &n.Key, &n.Text, &refs, &n.Owner, &n.Source, &n.Forgotten, &at, &n.ContextSummary, &stated, &n.Overridden); err != nil {
+		var refs, at, stated, expiry string
+		if err := rows.Scan(&n.ID, &n.Repo, &n.Kind, &n.Key, &n.Text, &refs, &n.Owner, &n.Source, &n.Forgotten, &at, &n.ContextSummary, &stated, &n.Overridden, &n.Importance, &expiry, &n.SourceRevision); err != nil {
 			return nil, err
 		}
 		if refs != "" {
@@ -162,12 +169,28 @@ func scan(rows *sql.Rows) ([]Note, error) {
 		}
 		n.CreatedAt, _ = time.Parse(timeLayout, at)
 		n.StatedAt, _ = time.Parse(timeLayout, stated)
+		if expiry != "" {
+			var err error
+			n.ExpiresAt, err = time.Parse(timeLayout, expiry)
+			if err != nil {
+				return nil, fmt.Errorf("memory: invalid stored expiry: %w", err)
+			}
+		}
 		out = append(out, n)
 	}
 	return out, rows.Err()
 }
 
 func valid(n Note) error {
+	if n.Importance != "" && n.Importance != ImportanceNormal && n.Importance != ImportanceCritical {
+		return fmt.Errorf("memory: importance must be normal or critical")
+	}
+	if !n.ExpiresAt.IsZero() && (n.ExpiresAt.UTC().Year() < 1 || n.ExpiresAt.UTC().Year() > 9999) {
+		return fmt.Errorf("memory: expiry must be a valid RFC3339 timestamp")
+	}
+	if n.SourceRevision != "" && n.Kind != "summary" {
+		return fmt.Errorf("memory: source revision is only valid on summaries")
+	}
 	if n.Repo == "" || !one(n.Kind, Kinds) || !one(n.Source, Sources) {
 		return fmt.Errorf("memory: repo, kind (instruction|gotcha|summary|fact|decision|reference) and source are required")
 	}
@@ -207,6 +230,9 @@ func one(v string, set []string) bool {
 // a topic to a different kind, so a gotcha can never overwrite an instruction.
 // A zero StatedAt defaults to insertion time; explicit older statements return
 // ErrStale. Overridden is always assigned from the current topic revision.
+// Empty Importance preserves an existing classified tier or defaults to normal.
+// ExpiresAt is a full-version field: callers clone it to preserve omitted expiry;
+// zero explicitly clears expiry.
 func (s *Store) Add(ctx context.Context, n Note, expect int64) (prev *Note, saved Note, err error) {
 	if n.Kind == "reference" {
 		return nil, n, fmt.Errorf("memory: references require PutReference or Forget")
@@ -230,6 +256,10 @@ func (s *Store) add(ctx context.Context, n Note, expect int64) (prev *Note, save
 // addTx is the single validation, CAS and provenance path for note writes.
 func (s *Store) addTx(ctx context.Context, tx *sql.Tx, n Note, expect int64) (prev *Note, saved Note, err error) {
 	if err = valid(n); err != nil {
+		return nil, n, err
+	}
+	n.ID, err = allocateNoteID(ctx, tx)
+	if err != nil {
 		return nil, n, err
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT `+columns+` FROM notes WHERE repo = ? AND key = ?
@@ -267,15 +297,23 @@ func (s *Store) addTx(ctx context.Context, tx *sql.Tx, n Note, expect int64) (pr
 			return nil, n, ErrStale
 		}
 	}
+	if n.Importance == "" {
+		if prev != nil && prev.Importance != "" {
+			n.Importance = prev.Importance
+		} else {
+			n.Importance = ImportanceNormal
+		}
+	}
+	n.ExpiresAt = n.ExpiresAt.UTC()
 	n.Overridden = curID
 	// Clocks can tie or step back; never order a new version before the old one.
 	if len(cur) == 1 && !now.After(cur[0].CreatedAt) {
 		now = cur[0].CreatedAt.Add(time.Nanosecond)
 	}
 	n.CreatedAt = now
-	err = tx.QueryRowContext(ctx, `INSERT INTO notes(repo, kind, key, text, refs, owner, source, forgotten, created_at, context_summary, stated_at, overridden)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`, n.Repo, n.Kind, n.Key, n.Text, strings.Join(n.Refs, "\n"),
-		n.Owner, n.Source, n.Forgotten, now.Format(timeLayout), n.ContextSummary, n.StatedAt.Format(timeLayout), n.Overridden).Scan(&n.ID)
+	err = tx.QueryRowContext(ctx, `INSERT INTO notes(id, repo, kind, key, text, refs, owner, source, forgotten, created_at, context_summary, stated_at, overridden, importance, expires_at, source_revision)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`, n.ID, n.Repo, n.Kind, n.Key, n.Text, strings.Join(n.Refs, "\n"),
+		n.Owner, n.Source, n.Forgotten, now.Format(timeLayout), n.ContextSummary, n.StatedAt.Format(timeLayout), n.Overridden, n.Importance, expiryText(n.ExpiresAt), n.SourceRevision).Scan(&n.ID)
 	if err != nil {
 		return nil, n, err
 	}
@@ -328,11 +366,14 @@ func (s *Store) Get(ctx context.Context, id int64) (Note, bool, error) {
 	return ns[0], true, nil
 }
 
-// Current lists live notes of one kind ("" = all non-summary kinds) for a
-// repo and global, oldest first.
+// Current lists active newest notes of one kind ("" = all non-summary kinds)
+// for a repo and global, oldest first. Expiry never resurrects an older version.
 func (s *Store) Current(ctx context.Context, repo, kind string) ([]Note, error) {
+	if kind == "summary" {
+		return s.currentSummaries(ctx, repo)
+	}
 	rows, err := s.db.QueryContext(ctx, latest+` SELECT `+columns+` FROM latest
-        WHERE forgotten = 0 AND (kind = ? OR (? = '' AND kind != 'summary')) ORDER BY id`, repo, kind, kind)
+        WHERE forgotten = 0 AND (expires_at = '' OR expires_at > ?) AND (kind = ? OR (? = '' AND kind != 'summary')) ORDER BY id`, repo, expiryText(time.Now()), kind, kind)
 	if err != nil {
 		return nil, err
 	}
@@ -347,27 +388,6 @@ func (s *Store) History(ctx context.Context, repo, key string) ([]Note, error) {
 		return nil, err
 	}
 	return scan(rows)
-}
-
-// Summary is this repo's current summary row, if one was written.
-func (s *Store) Summary(ctx context.Context, repo string) (Note, bool, error) {
-	n, ok, err := s.Latest(ctx, repo, SummaryKey)
-	if n.Forgotten {
-		return Note{}, false, err
-	}
-	return n, ok, err
-}
-
-// Changed reports whether any instruction or gotcha for the repo is newer
-// than its summary, so the summary needs rebuilding.
-func (s *Store) Changed(ctx context.Context, repo string) (bool, error) {
-	sum, _, err := s.Summary(ctx, repo)
-	if err != nil {
-		return false, err
-	}
-	var newest sql.NullInt64
-	err = s.db.QueryRowContext(ctx, `SELECT max(id) FROM notes WHERE repo IN (?, 'global') AND kind != 'summary'`, repo).Scan(&newest)
-	return newest.Valid && newest.Int64 > sum.ID, err
 }
 
 func (s *Store) byIDs(ctx context.Context, ids []int64) ([]Note, error) {
@@ -553,8 +573,12 @@ func (s *Store) migrate() error {
 		if last, err := time.Parse(timeLayout, created); err == nil && !now.After(last) {
 			now = last.Add(time.Nanosecond)
 		}
-		if _, err := tx.Exec(`INSERT INTO notes(repo, kind, key, text, source, created_at, stated_at, overridden) VALUES (?,?,?,?,?,?,?,?)`,
-			repo, kind, o.key, text, "you", now.Format(timeLayout), at.UTC().Format(timeLayout), previous); err != nil {
+		id, err := allocateNoteID(context.Background(), tx)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO notes(id, repo, kind, key, text, source, created_at, stated_at, overridden) VALUES (?,?,?,?,?,?,?,?,?)`,
+			id, repo, kind, o.key, text, "you", now.Format(timeLayout), at.UTC().Format(timeLayout), previous); err != nil {
 			return err
 		}
 	}

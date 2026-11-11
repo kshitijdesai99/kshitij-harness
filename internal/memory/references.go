@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -238,8 +239,8 @@ func (s *Store) Reference(ctx context.Context, scope string, id int64) (Referenc
 func (s *Store) LatestReference(ctx context.Context, scope, name string) (Reference, bool, error) {
 	rows, err := s.db.QueryContext(ctx, latest+` SELECT `+prefixed("l.")+` FROM latest l
         JOIN reference_payloads p ON p.note_id=l.id
-        WHERE l.kind='reference' AND l.forgotten=0
-        AND (l.key=? OR EXISTS (SELECT 1 FROM json_each(p.aliases) WHERE value=?))`, scope, name, name)
+        WHERE l.kind='reference' AND l.forgotten=0 AND (l.expires_at='' OR l.expires_at>?)
+        AND (l.key=? OR EXISTS (SELECT 1 FROM json_each(p.aliases) WHERE value=?))`, scope, expiryText(time.Now()), name, name)
 	if err != nil {
 		return Reference{}, false, err
 	}

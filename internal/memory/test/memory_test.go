@@ -157,7 +157,12 @@ func TestSearchSkipsOldVersionsAndUnrelatedNotes(t *testing.T) {
 
 // state mimics a provider's saved chat holding a memory message.
 func state(t *testing.T, texts ...string) []byte {
-	b, err := json.Marshal(map[string]any{"input": texts})
+	var input []map[string]any
+	for _, text := range texts {
+		input = append(input, map[string]any{"type": "message", "role": "user", "kh_memory": true,
+			"content": []map[string]any{{"type": "input_text", "text": text}}})
+	}
+	b, err := json.Marshal(map[string]any{"input": input})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +174,14 @@ func TestRecallSendsEachNoteOncePerChat(t *testing.T) {
 	b := memory.Budget{SummaryChars: 10000, TopInstructions: 10, TopGotchas: 10}
 	css := add(t, s, memory.Note{Kind: "instruction", Key: "css-framework", Text: "Use Tailwind."})
 	main := add(t, s, memory.Note{Kind: "instruction", Key: "main-branch", Text: "Never commit to main."})
-	sum := add(t, s, memory.Note{Kind: "summary", Key: memory.SummaryKey, Text: "A small web app.", Refs: []string{"main-branch"}, Source: "summary"})
+	snapshot, err := s.SourceSnapshot(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum, err := s.SaveSummary(ctx, memory.Note{Repo: repo, Kind: "summary", Key: memory.SummaryKey, Text: "A small web app.", Refs: []string{"main-branch"}, Source: "summary"}, snapshot.SummaryID, snapshot.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	first, err := s.Recall(ctx, repo, "Tailwind style the button", map[int64]bool{}, b)
 	if err != nil || !strings.HasPrefix(first, memory.Header) {
@@ -219,7 +231,13 @@ func TestChangedTracksSummaryAge(t *testing.T) {
 	if ch, _ := s.Changed(ctx, repo); !ch {
 		t.Fatal("new note not reported")
 	}
-	add(t, s, memory.Note{Kind: "summary", Key: memory.SummaryKey, Text: "Overview.", Source: "summary"})
+	snapshot, err := s.SourceSnapshot(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SaveSummary(ctx, memory.Note{Repo: repo, Kind: "summary", Key: memory.SummaryKey, Text: "Overview.", Source: "summary"}, snapshot.SummaryID, snapshot.Revision); err != nil {
+		t.Fatal(err)
+	}
 	if ch, _ := s.Changed(ctx, repo); ch {
 		t.Fatal("fresh summary reported stale")
 	}

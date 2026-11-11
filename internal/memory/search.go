@@ -99,7 +99,7 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 				if trace != nil {
 					trace.SkipReason = "no memories in requested kinds"
 					if requested > 0 {
-						trace.SkipReason = fmt.Sprintf("all %d requested memories already in chat", requested)
+						trace.SkipReason = fmt.Sprintf("all %d requested memories excluded from this search", requested)
 					}
 				}
 				return nil, nil
@@ -133,8 +133,9 @@ func (s *Store) search(ctx context.Context, repo, kind, query string, limit int,
 		}
 		rows, err := s.db.QueryContext(ctx, latest+` SELECT `+prefixed("l.")+` FROM notes_fts f JOIN latest l ON l.id = f.rowid
             WHERE notes_fts MATCH ? AND (l.kind = ? OR (? = '' AND l.kind != 'summary')) AND l.forgotten = 0
+            AND (l.expires_at = '' OR l.expires_at > ?)
             AND (? = '' OR l.stated_at >= ?) AND (? = '' OR l.stated_at <= ?)
-            ORDER BY `+order+` LIMIT ?`, repo, match, kind, kind, since, since, until, until, candidates)
+            ORDER BY `+order+` LIMIT ?`, repo, match, kind, kind, expiryText(time.Now()), since, since, until, until, candidates)
 		if err != nil {
 			return nil, err
 		}

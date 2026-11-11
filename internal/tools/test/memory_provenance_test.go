@@ -13,6 +13,57 @@ import (
 	"kh/internal/tools"
 )
 
+func TestNoteImportanceAndExpiryMetadata(t *testing.T) {
+	past := time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name, importance string
+		expires          time.Time
+		want             []string
+	}{
+		{"legacy", "", time.Time{}, []string{"importance: legacy (unclassified)", "expires: never", "expired: false"}},
+		{"normal", memory.ImportanceNormal, time.Time{}, []string{"importance: normal", "expires: never"}},
+		{"critical expired", memory.ImportanceCritical, past, []string{"importance: critical", "expires: 2001-01-01T00:00:00Z", "expired: true"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			n := memory.Note{ID: 42, Kind: "instruction", Key: "safety", Text: "Reference only.", Importance: tc.importance, ExpiresAt: tc.expires}
+			for _, format := range []func(memory.Note) string{tools.Note, tools.NoteDetails} {
+				out := format(n)
+				for _, want := range append([]string{"[memory #42]", "Reference only."}, tc.want...) {
+					if !strings.Contains(out, want) {
+						t.Errorf("missing %q: %s", want, out)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestMemoryExpiredVersionInspection(t *testing.T) {
+	ctx := context.Background()
+	s, err := memory.Open(filepath.Join(t.TempDir(), "memory.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	_, n, err := s.Add(ctx, memory.Note{Repo: "repo", Kind: "fact", Key: "deadline", Text: "A historical deadline.", Source: "you", Importance: memory.ImportanceCritical, ExpiresAt: time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)}, memory.Any)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := tools.Memory(s, "repo", "owner")
+	for _, in := range []map[string]any{{"action": "get", "id": n.ID}, {"action": "history", "key": n.Key}} {
+		data, _ := json.Marshal(in)
+		out, err := tool.Run(ctx, data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"importance: critical", "expires: 2001-01-01T00:00:00Z", "expired: true", "state: current", "current expired: true"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("missing %q: %s", want, out)
+			}
+		}
+	}
+}
+
 func TestMemoryProvenanceActions(t *testing.T) {
 	ctx := context.Background()
 	s, err := memory.Open(filepath.Join(t.TempDir(), "memory.db"))

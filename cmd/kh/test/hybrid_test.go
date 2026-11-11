@@ -215,7 +215,7 @@ func TestMemoryHybridCLI(t *testing.T) {
 		stdin.Write([]byte("context\n"))
 		waitFor("error: not logged in", 2)
 		waitFor("Memory search: skipped;", 1)
-		waitFor("already in chat", 1)
+		waitFor("excluded from this search", 1)
 		waitFor("semantic: not run; rerank: not run", 1)
 		if calls.Load() != before {
 			t.Fatal("disabled reload contacted models")

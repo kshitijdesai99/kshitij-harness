@@ -7,8 +7,15 @@ import (
 
 // RecallTrace contains IDs and scores, never query text, note content or provider errors.
 type RecallTrace struct {
-	Search    SearchTrace
-	LoadedIDs []int64
+	Search                SearchTrace
+	LoadedIDs             []int64
+	CriticalConsideredIDs []int64
+	CriticalSelectedIDs   []int64 // stable whole-set pack, before seen filtering
+	CriticalPresentIDs    []int64 // selected canonical notes already in history
+	CriticalOverflowIDs   []int64 // allowance or total envelope prevented delivery
+	ProcedureSelectedIDs  []int64
+	ProcedureLoadedIDs    []int64
+	ProcedureOverflowIDs  []int64
 }
 
 // Diagnostic reports search-stage state and counts without stored content,
@@ -105,5 +112,11 @@ func (t RecallTrace) diagnostic(err error, detailed bool) string {
 	if err != nil {
 		status, loaded = "failed", "none (retrieval aborted)"
 	}
-	return strings.Join([]string{"Memory search: " + status, "keyword: " + keyword, "semantic: " + semantic, "rerank: " + rerank, "loaded: " + loaded}, "; ")
+	critical := fmt.Sprintf("critical: considered=%d, selected=%d, present=%d, overflow=%d", len(t.CriticalConsideredIDs), len(t.CriticalSelectedIDs), len(t.CriticalPresentIDs), len(t.CriticalOverflowIDs))
+	procedure := fmt.Sprintf("procedure: selected=%d, loaded=%d, overflow=%d", len(t.ProcedureSelectedIDs), len(t.ProcedureLoadedIDs), len(t.ProcedureOverflowIDs))
+	if detailed {
+		critical = fmt.Sprintf("critical: considered=%v, selected=%v, present=%v, overflow=%v", t.CriticalConsideredIDs, t.CriticalSelectedIDs, t.CriticalPresentIDs, t.CriticalOverflowIDs)
+		procedure = fmt.Sprintf("procedure: selected=%v, loaded=%v, overflow=%v", t.ProcedureSelectedIDs, t.ProcedureLoadedIDs, t.ProcedureOverflowIDs)
+	}
+	return strings.Join([]string{"Memory search: " + status, "keyword: " + keyword, "semantic: " + semantic, "rerank: " + rerank, "loaded: " + loaded, critical, procedure}, "; ")
 }

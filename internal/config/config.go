@@ -33,12 +33,13 @@ type Config struct {
 	TopInstructions     int          `json:"top_instructions"`       // matching instructions sent per message
 	TopGotchas          int          `json:"top_gotchas"`            // matching gotchas sent per message
 
-	TopKnowledge         int    `json:"top_knowledge"`          // matching facts and decisions per kind
-	MemoryMaxTokens      int    `json:"memory_max_tokens"`      // total injected memory budget, estimated as chars/4
-	MemoryHybrid         *bool  `json:"memory_hybrid"`          // explicit opt-in; nil preserves legacy endpoint/model opt-in
-	MemoryEmbeddingURL   string `json:"memory_embedding_url"`   // empty uses the managed local embedding endpoint
-	MemoryEmbeddingModel string `json:"memory_embedding_model"` // empty uses the managed embedding model
-	MemoryRerankerURL    string `json:"memory_reranker_url"`    // empty uses the managed local reranker
+	TopKnowledge            int    `json:"top_knowledge"`              // matching facts and decisions per kind
+	MemoryMaxTokens         int    `json:"memory_max_tokens"`          // total injected memory budget, estimated as chars/4
+	CriticalMemoryMaxTokens int    `json:"critical_memory_max_tokens"` // 0 = half total automatically; negative = disable critical section
+	MemoryHybrid            *bool  `json:"memory_hybrid"`              // explicit opt-in; nil preserves legacy endpoint/model opt-in
+	MemoryEmbeddingURL      string `json:"memory_embedding_url"`       // empty uses the managed local embedding endpoint
+	MemoryEmbeddingModel    string `json:"memory_embedding_model"`     // empty uses the managed embedding model
+	MemoryRerankerURL       string `json:"memory_reranker_url"`        // empty uses the managed local reranker
 }
 
 // Short and fixed on purpose: short = fast, fixed = cacheable.
@@ -71,6 +72,19 @@ var Defaults = Config{
 	TopGotchas:       10,
 	TopKnowledge:     5,
 	MemoryMaxTokens:  500, // compact automatic recall; explicit configured budgets still win
+}
+
+// CriticalMemoryChars converts the critical sub-budget without scaling its
+// disabled sentinel. Recall normalizes the automatic share against the total.
+func (c Config) CriticalMemoryChars() int {
+	if c.CriticalMemoryMaxTokens < 0 {
+		return -1
+	}
+	maxInt := int(^uint(0) >> 1)
+	if c.CriticalMemoryMaxTokens > maxInt/4 {
+		return maxInt // keep oversized positive budgets positive for recall's clamp
+	}
+	return c.CriticalMemoryMaxTokens * 4
 }
 
 // HybridMemory preserves legacy opt-in unless an explicit mode was saved.

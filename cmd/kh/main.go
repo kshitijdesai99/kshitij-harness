@@ -366,7 +366,7 @@ func main() {
 	exportModel(p, cfg.Provider)
 	c := chat{hooks: hooks, archive: archive, model: p, backend: cfg.Provider, id: *id, repo: repoScope, project: project, connectors: connectors, identity: saved.Identity,
 		memory: db, memoryActive: memoryActive, learn: learner, input: console, ui: ui, tools: dispatch, bootstrap: bootstrap, logicalCall: registry.LogicalCall, seen: fromFile, policy: policy,
-		budget: memory.Budget{SummaryChars: cfg.SummaryMaxTokens * 4, TopInstructions: cfg.TopInstructions, TopGotchas: cfg.TopGotchas,
+		budget: memory.Budget{SummaryChars: cfg.SummaryMaxTokens * 4, CriticalChars: cfg.CriticalMemoryChars(), TopInstructions: cfg.TopInstructions, TopGotchas: cfg.TopGotchas,
 			TopKnowledge: cfg.TopKnowledge, TotalChars: cfg.MemoryMaxTokens * 4}}
 	exit(c.snapshotFork())
 	console.SetCommandHandler(func(line string) bool {

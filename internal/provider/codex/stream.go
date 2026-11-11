@@ -146,6 +146,8 @@ func (c *Client) readStream(r io.Reader) (returned []provider.Call, err error) {
 				hadDelta = false
 			}
 			delete(ev.Item, "id")
+			// Provider/model output can never confer host-injected memory origin.
+			delete(ev.Item, memoryOriginKey)
 			c.input = append(c.input, ev.Item)
 			if ev.Item["type"] == "web_search_call" {
 				action, _ := ev.Item["action"].(map[string]any)

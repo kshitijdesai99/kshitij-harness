@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -126,7 +127,7 @@ func (c *Client) Step(ctx context.Context, user string, results []provider.Resul
 		// cannot look like a newer request, and stays in history: the caller
 		// skips notes already there, and the provider caches them.
 		if c.memory != "" {
-			c.input = append(c.input, map[string]any{"type": "message", "role": "user",
+			c.input = append(c.input, map[string]any{"type": "message", "role": "user", memoryOriginKey: true,
 				"content": []map[string]any{{"type": "input_text", "text": c.memory}}})
 			c.memory = ""
 		}
@@ -165,7 +166,7 @@ func (c *Client) Step(ctx context.Context, user string, results []provider.Resul
 	body, _ := json.Marshal(map[string]any{
 		"model":               c.model,
 		"instructions":        c.instructions(),
-		"input":               c.input,
+		"input":               c.wireInput(),
 		"tools":               requestTools,
 		"tool_choice":         choice,
 		"parallel_tool_calls": true,
@@ -299,6 +300,35 @@ func setHeaders(req *http.Request, access, account string) {
 	req.Header.Set("User-Agent", userAgent)
 }
 
+// memoryOriginKey is private saved-state metadata, never a Responses API field.
+// Only SetMemory insertion can confer this origin; message text cannot do so.
+const memoryOriginKey = "kh_memory"
+
+func hostMemory(item map[string]any) bool {
+	if item[memoryOriginKey] != true || item["type"] != "message" || item["role"] != "user" {
+		return false
+	}
+	var parts []struct{ Type, Text string }
+	b, err := json.Marshal(item["content"])
+	if err != nil || json.Unmarshal(b, &parts) != nil || len(parts) != 1 {
+		return false
+	}
+	return parts[0].Type == "input_text" && strings.HasPrefix(parts[0].Text, provider.MemoryHeader+"\n")
+}
+
+// Keep private metadata in history without leaking it to the API or mutating
+// maps shared with Compact's private history copy.
+func (c *Client) wireInput() []map[string]any {
+	input := append([]map[string]any(nil), c.input...)
+	for i, item := range input {
+		if _, ok := item[memoryOriginKey]; ok {
+			input[i] = maps.Clone(item)
+			delete(input[i], memoryOriginKey)
+		}
+	}
+	return input
+}
+
 type codexState struct {
 	Session string           `json:"session"`
 	Map     string           `json:"map"`
@@ -316,6 +346,13 @@ func (c *Client) Load(b []byte) error {
 	var s codexState
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
+	}
+	// Legacy untagged histories remain untrusted, so recall may safely re-inject
+	// bounded memories. Invalid metadata must not grant trust to other items.
+	for _, item := range s.Input {
+		if !hostMemory(item) {
+			delete(item, memoryOriginKey)
+		}
 	}
 	c.session, c.input = s.Session, s.Input
 	if s.Map != "" {
@@ -348,7 +385,7 @@ func (c *Client) Replay(out provider.Output) {
 			for _, part := range m.Content {
 				if part.Type == "input_image" {
 					out.Action("[image attached]")
-				} else if m.Role == "user" && strings.HasPrefix(part.Text, provider.MemoryHeader) {
+				} else if hostMemory(it) {
 					out.Action(fmt.Sprintf("[memory: %d notes]", strings.Count(part.Text, "\n[memory ")))
 				} else if m.Role == "user" {
 					out.Query(part.Text)

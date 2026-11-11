@@ -24,7 +24,7 @@ func TestRecallAllSeenSkipsModelsButExplicitSearchStillWorks(t *testing.T) {
 		t.Fatal(err)
 	}
 	text, trace, err := s.RecallWithTrace(context.Background(), repo, "car", map[int64]bool{n.ID: true}, memory.Budget{TopKnowledge: 1})
-	if err != nil || text != "" || calls != 0 || trace.Search.Started || !strings.Contains(trace.Search.SkipReason, "already in chat") {
+	if err != nil || text != "" || calls != 0 || trace.Search.Started || trace.Search.SkipReason != "all 1 requested memories excluded from this search" {
 		t.Fatalf("all seen: %q %+v calls=%d err=%v", text, trace, calls, err)
 	}
 	// A new note or version must remain discoverable on the very next message.

@@ -225,7 +225,7 @@ func (s *Store) semanticSearchBetween(ctx context.Context, repo, kind, query str
 }
 
 func semanticEligible(n Note, since, until time.Time) bool {
-	return !n.Forgotten && n.Kind != "summary" && !Secret(n.Key) && !Secret(n.Text) && !Secret(n.ContextSummary) &&
+	return n.Active(time.Now()) && n.Kind != "summary" && !Secret(n.Key) && !Secret(n.Text) && !Secret(n.ContextSummary) &&
 		(since.IsZero() || !n.StatedAt.Before(since)) && (until.IsZero() || !n.StatedAt.After(until))
 }
 

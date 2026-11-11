@@ -41,7 +41,13 @@ func TestSearchTraceReportsCandidatesWithoutProviderErrors(t *testing.T) {
 
 func TestRecallFullSummaryPayloadFitsBudget(t *testing.T) {
 	s := open(t)
-	add(t, s, memory.Note{Kind: "summary", Key: memory.SummaryKey, Text: strings.Repeat("s", 100), Source: "summary"})
+	snapshot, err := s.SourceSnapshot(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SaveSummary(context.Background(), memory.Note{Repo: repo, Kind: "summary", Key: memory.SummaryKey, Text: strings.Repeat("s", 100), Source: "summary"}, snapshot.SummaryID, snapshot.Revision); err != nil {
+		t.Fatal(err)
+	}
 	text, err := s.Recall(context.Background(), repo, "query", nil, memory.Budget{SummaryChars: 100, TotalChars: 1000})
 	if err != nil || !strings.Contains(text, strings.Repeat("s", 100)) {
 		t.Fatalf("full summary: %q %v", text, err)

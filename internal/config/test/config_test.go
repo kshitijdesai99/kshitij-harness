@@ -26,6 +26,29 @@ func TestCompactMemoryBudgetDefaultsAndExplicitOverrides(t *testing.T) {
 	}
 }
 
+func TestCriticalMemoryBudgetRoundTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	defaults, err := config.Load()
+	if err != nil || defaults.CriticalMemoryMaxTokens != 0 || defaults.CriticalMemoryChars() != 0 {
+		t.Fatalf("automatic critical share: %+v: %v", defaults, err)
+	}
+	for _, value := range []int{0, -1, -17, 125, 4000, int(^uint(0) >> 1)} {
+		if err := config.Set("critical_memory_max_tokens", value); err != nil {
+			t.Fatal(err)
+		}
+		got, err := config.Load()
+		wantChars := value * 4
+		if value < 0 {
+			wantChars = -1
+		} else if value > int(^uint(0)>>1)/4 {
+			wantChars = int(^uint(0) >> 1)
+		}
+		if err != nil || got.CriticalMemoryMaxTokens != value || got.CriticalMemoryChars() != wantChars || got.MemoryMaxTokens != 500 {
+			t.Fatalf("critical budget %d: %+v: %v", value, got, err)
+		}
+	}
+}
+
 func TestCustomSystemRemainsAnExactOverride(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	if err := config.Set("system", "CUSTOM-SYSTEM"); err != nil {

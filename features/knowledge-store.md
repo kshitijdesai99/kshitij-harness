@@ -16,7 +16,8 @@ SQLite at `~/.kh/memory.db` is the runtime source of truth for repo/global instr
 
 | Table | Purpose |
 |---|---|
-| `notes` | Append-only topic versions, scope, provenance, replacement links, and forgotten markers. |
+| `notes` | Append-only topic versions, scope, provenance, importance, expiry, summary source revisions, replacement links, and forgotten markers. |
+| `notes_sequence` | Metadata-only persistent ID high-water mark, preventing new-code reuse after purge. |
 | `notes_fts` | FTS5 keyword index over note keys and text. |
 | `notes_vectors` | Optional vector cache keyed by note and model/endpoint identity, with content hashes to detect changes. |
 | `reference_payloads` | Full procedures, aliases, inert assets, portable IDs, versions, and import provenance linked to a note version. |

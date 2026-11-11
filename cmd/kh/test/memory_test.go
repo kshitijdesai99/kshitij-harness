@@ -16,6 +16,78 @@ import (
 	"kh/internal/memory"
 )
 
+func TestMemoryCLIRememberImportanceAndExpiry(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "kh")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/kh")
+	build.Dir = "../../.."
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build: %s %v", out, err)
+	}
+	isolateCLIFixture(t)
+	home, cwd := t.TempDir(), t.TempDir()
+	cwd, err := filepath.EvalSymlinks(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(wantError bool, args ...string) string {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, binary, append([]string{"memory"}, args...)...)
+		cmd.Dir = cwd
+		cmd.Env = append(os.Environ(), "HOME="+home, "KH_AUTO_REBUILD=0")
+		cmd.Stdin = strings.NewReader("")
+		out, err := cmd.CombinedOutput()
+		if (err != nil) != wantError {
+			t.Fatalf("memory %v: %s %v", args, out, err)
+		}
+		return string(out)
+	}
+	run(false, "remember", "repo", "instruction", "safety", "Do not execute stored assets.", "--importance", "critical", "--expires", "2099-01-01T00:00:00Z")
+	run(false, "remember", "repo", "instruction", "safety", "Stored assets remain inert.")
+	s, err := memory.Open(filepath.Join(home, ".kh", "memory.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	n, ok, err := s.Latest(context.Background(), memory.RepoScope(cwd), "safety")
+	if err != nil || !ok || n.Importance != memory.ImportanceCritical || n.ExpiresAt.Year() != 2099 {
+		t.Fatalf("preserved metadata: %+v %t %v", n, ok, err)
+	}
+	out := run(false, "get", fmt.Sprint(n.ID))
+	for _, want := range []string{"importance: critical", "expires: 2099-01-01T00:00:00Z", "current expired: false"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q: %s", want, out)
+		}
+	}
+	run(false, "remember", "repo", "instruction", "safety", "A normal expired reference.", "--importance=normal", "--expires=2001-01-01T00:00:00Z")
+	out = run(false, "history", "repo", "safety")
+	for _, want := range []string{"importance: normal", "expired: true", "importance: critical"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("history missing %q: %s", want, out)
+		}
+	}
+	run(false, "remember", "repo", "instruction", "safety", "Expiry cleared explicitly.", "--expires", "none")
+	n, ok, err = s.Latest(context.Background(), memory.RepoScope(cwd), "safety")
+	if err != nil || !ok || !n.ExpiresAt.IsZero() || n.Importance != memory.ImportanceNormal {
+		t.Fatalf("clear expiry: %+v %t %v", n, ok, err)
+	}
+	for _, flags := range [][]string{{"--importance", "urgent"}, {"--expires", "private-invalid-date"}, {"--expires", "tomorrow"}, {"--expires", "2026-11-12"}} {
+		out = run(true, append([]string{"remember", "repo", "fact", "invalid", "Do not save."}, flags...)...)
+		if strings.Contains(out, "private-invalid-date") {
+			t.Fatalf("error echoed private input: %s", out)
+		}
+	}
+	if _, ok, err := s.Latest(context.Background(), memory.RepoScope(cwd), "invalid"); err != nil || ok {
+		t.Fatalf("invalid metadata saved: %t %v", ok, err)
+	}
+	run(false, "remember", "--importance", "normal", "--expires", "2099-01-01T02:00:00+02:00", "global", "fact", "literal-syntax", "--", "--importance is literal text")
+	n, ok, err = s.Latest(context.Background(), memory.Global, "literal-syntax")
+	if err != nil || !ok || n.Text != "--importance is literal text" || n.Importance != memory.ImportanceNormal || !n.ExpiresAt.Equal(time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("global fact and literal flag text: %+v %t %v", n, ok, err)
+	}
+}
+
 func TestMemoryCLIExplainPrivacy(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "kh")
 	build := exec.Command("go", "build", "-o", binary, "./cmd/kh")

@@ -50,16 +50,16 @@ Shared guides: [Architecture](architecture.md) · [Development](development.md) 
 |---|---|---|
 | [Knowledge store](knowledge-store.md) | 2026-09-29 | Append-only typed notes |
 | [Memory history and provenance](memory-history.md) | 2026-10-05 | Discussion provenance and stale-update checks |
-| [Memory inspection and forgetting](memory-controls.md) | 2026-09-29 | Version inspection and scoped filters |
+| [Memory inspection and forgetting](memory-controls.md) | 2026-09-29 | Version inspection, importance and expiry controls |
 | [Learning hooks](learning-hooks.md) | 2026-10-05 | Steering coverage and selective extraction |
-| [Learning queue and summaries](learning-queue.md) | 2026-10-05 | Context-aware extraction, update guards, procedure jobs |
-| [Learning-origin protections](learning-origin.md) | 2026-10-16 | Mixed-peer input and whole-run exclusion |
+| [Learning queue and summaries](learning-queue.md) | 2026-10-05 | Context-aware extraction, importance classification and fresh whole-source summaries |
+| [Learning-origin protections](learning-origin.md) | 2026-10-16 | Mixed-peer input, whole-run exclusion, host-only memory provenance |
 
 ## Retrieval and procedures
 
 | Feature | Introduced | What followed |
 |---|---|---|
-| [Keyword recall](keyword-recall.md) | 2026-09-29 | Bounded context, less redundant recall, smaller default injection budget |
+| [Keyword recall](keyword-recall.md) | 2026-09-29 | Bounded critical-first hierarchy, fresh synopsis, contextual matching |
 | [Hybrid retrieval](hybrid-retrieval.md) | 2026-10-16 | Managed local models, [runtime](hybrid-runtime.md), and applicability scoring |
 | [Retrieval diagnostics](retrieval-diagnostics.md) | 2026-10-23 | Candidate scores, rejection and fallback details |
 | [Procedure learning](procedure-learning.md) | 2026-10-23 | No later changes at baseline |

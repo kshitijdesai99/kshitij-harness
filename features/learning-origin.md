@@ -14,6 +14,10 @@ Once a run includes peer coordination, its tool evidence, final reply, and recen
 
 The [learning flow](learning-hooks.md#learning-flow) distinguishes query eligibility from completion eligibility. A peer-containing composite skips query extraction; any peer contribution makes the whole run ineligible for post-response learning. That fence also excludes recent learning context after failure or cancellation, without stopping shared recall. Cancellation excludes the completion hook, not query work already queued before it.
 
+## Host memory provenance
+
+Recall's seen tracking is distinct from learning eligibility. Only host-created memory items receive a private persisted `kh_memory` marker in provider history. It survives save/resume, is stripped from model-wire input, and is removed from streamed provider items rather than accepting a provider-supplied spoof. User text, tool results, and note text cannot establish host origin by copying a memory header. Legacy untagged saved memories are conservatively treated as unseen and may be reinjected within the normal budget. Compaction and failed-turn cleanup retain the provider's existing history lifecycle.
+
 ## Evolution
 
 | Date | Change | Commit |
@@ -23,7 +27,15 @@ The [learning flow](learning-hooks.md#learning-flow) distinguishes query eligibi
 
 ## Inspect
 
-- Source: [startup boundary](../cmd/kh/main.go), [peer-input checks](../internal/learn/learn.go), [run origin](../internal/learn/origin.go), [chat wiring](../cmd/kh/chat.go).
-- Tests: [origin fencing](../internal/learn/test/origin_test.go), [selective learning](../internal/learn/test/selective_test.go).
+- Source: [startup boundary](../cmd/kh/main.go), [peer-input checks](../internal/learn/learn.go), [run origin](../internal/learn/origin.go), [chat wiring](../cmd/kh/chat.go), [provider history provenance](../internal/provider/codex/client.go), [seen tracking](../internal/memory/recall.go).
+- Tests: [origin fencing](../internal/learn/test/origin_test.go), [selective learning](../internal/learn/test/selective_test.go), [host-origin persistence and spoof resistance](../internal/provider/codex/test/memory_origin_test.go).
 
 [Feature index](README.md)
+
+
+## 2026-11-11 — Host-only persisted memory origin for seen tracking
+
+- Status: implemented
+- Rationale: Memory-looking strings are not host provenance. Persist a private kh_memory tag only on host-created provider history items, strip it from model-wire input and incoming streamed items, and trust it for recall seen tracking. Conservatively reinject bounded notes from legacy untagged histories rather than allowing user/tool/note text to suppress recall. Keep this separate from user-facing learning eligibility.
+- Affected: internal/provider/codex/client.go and stream.go; internal/memory/recall.go; learning-origin.md; provider memory-origin tests
+- Verification / outstanding: Provider persistence, spoof, resume, compaction and failure/replay coverage passed with the final normal suite, vet and applicable provider/memory race checks. Independent review found no remaining demonstrated defects. See [combined verification and race scope](keyword-recall.md). Existing history lifecycle is preserved.

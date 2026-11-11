@@ -202,6 +202,15 @@ func Note(n memory.Note) string {
 	if !n.StatedAt.IsZero() {
 		line += " [stated: " + n.StatedAt.UTC().Format(time.RFC3339Nano) + "]"
 	}
+	importance := n.Importance
+	if importance == "" {
+		importance = "legacy (unclassified)"
+	}
+	expires := "never"
+	if !n.ExpiresAt.IsZero() {
+		expires = n.ExpiresAt.UTC().Format(time.RFC3339Nano)
+	}
+	line += fmt.Sprintf(" [importance: %s; expires: %s; expired: %t]", importance, expires, !n.ExpiresAt.IsZero() && !time.Now().Before(n.ExpiresAt))
 	return line
 }
 
@@ -232,5 +241,5 @@ func noteState(n, current memory.Note) string {
 	if n.ID != current.ID {
 		state = "superseded"
 	}
-	return fmt.Sprintf("%s\nstate: %s; current id: #%d; current forgotten: %t", NoteDetails(n), state, current.ID, current.Forgotten)
+	return fmt.Sprintf("%s\nstate: %s; current id: #%d; current forgotten: %t; current expired: %t", NoteDetails(n), state, current.ID, current.Forgotten, !current.ExpiresAt.IsZero() && !time.Now().Before(current.ExpiresAt))
 }
